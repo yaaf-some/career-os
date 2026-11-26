@@ -13,6 +13,7 @@ Adopt a three-part runtime architecture:
 
 1. **`app` container (`crates/` + `web/`):**
    - Built via multi-stage `Dockerfile` (`node:26-alpine` -> `cargo-chef` Debian 13 Trixie -> `gcr.io/distroless/cc-debian13:nonroot`).
+   - Image hardening: base images pinned by tag + digest (Dependabot-managed), hermetic build (Swagger UI vendored, no network in `build.rs`), root-owned read-only binary/assets with only `/var/lib/career-os` writable, built-in `career-os-api --healthcheck` (no shell needed), SIGTERM graceful shutdown, and compose runs with `read_only`, `cap_drop: [ALL]`, `no-new-privileges`. CI smoke-tests both images natively on `linux/arm64`.
    - Rust/Axum serves both the REST API and static React 19 PWA assets (`STATIC_DIR=/app/static`), backed by SQLite in WAL mode on a persistent volume (`career_os_db`).
    - Binds to `127.0.0.1:8080` behind `tailscale serve` and enforces `ALLOWED_TAILSCALE_USER`.
 2. **`scanner` sidecar container (`scanner/`):**
