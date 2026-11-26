@@ -2,7 +2,7 @@
 
 # Zero-dependency Node service: no npm/npx/corepack shipped at runtime, non-root UID 10001.
 # Base pinned by tag + digest; Dependabot (docker ecosystem) bumps both together.
-FROM node:26.9.0-alpine3.23@sha256:9dac39bfd053b458593c44a099d2667994c8fa9e1a8c10bc7ff2f3d97b62412d
+FROM node:26.13.1-alpine3.23@sha256:39d8c143e60e99ae98f014bebea1e72fc96d3c9bdf9504bc3a27af5c05bfa39f
 
 LABEL org.opencontainers.image.title="career-os-scanner" \
       org.opencontainers.image.description="career-os internal ATS/portal scanner" \
