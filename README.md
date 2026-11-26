@@ -87,7 +87,7 @@ career-os/
 ├── .agents/skills/         # Cross-agent workflow skills (OpenSpec + GSD)
 ├── .claude/skills/         # Symlinks to .agents/skills/ for Claude Code parity
 ├── .github/workflows/      # Stack-filtered CI Gate, auto-merge, and GHCR release workflows
-├── Dockerfile              # Multi-stage build (Node 26 web + rust:1-trixie + debian:trixie-slim)
+├── Dockerfile              # Multi-stage build (Node 26 web + cargo-chef Trixie + Distroless Debian 13)
 ├── scanner.Dockerfile      # Minimal node:26-alpine image for scanner sidecar
 ├── docker-compose.yml      # Local single-user stack (app + scanner)
 └── .env.example            # Documented runtime configuration template

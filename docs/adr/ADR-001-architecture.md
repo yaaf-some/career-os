@@ -12,7 +12,7 @@
 Adopt a three-part runtime architecture:
 
 1. **`app` container (`crates/` + `web/`):**
-   - Built via multi-stage `Dockerfile` (`node:26-alpine` -> `rust:1-trixie` -> `debian:trixie-slim` non-root).
+   - Built via multi-stage `Dockerfile` (`node:26-alpine` -> `cargo-chef` Debian 13 Trixie -> `gcr.io/distroless/cc-debian13:nonroot`).
    - Rust/Axum serves both the REST API and static React 19 PWA assets (`STATIC_DIR=/app/static`), backed by SQLite in WAL mode on a persistent volume (`career_os_db`).
    - Binds to `127.0.0.1:8080` behind `tailscale serve` and enforces `ALLOWED_TAILSCALE_USER`.
 2. **`scanner` sidecar container (`scanner/`):**
