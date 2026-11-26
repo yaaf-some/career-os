@@ -122,7 +122,7 @@ mod tests {
         assert_eq!(cipher.decrypt(&enc1).expect("decrypt 1"), secret);
         assert_eq!(cipher.decrypt(&enc2).expect("decrypt 2"), secret);
 
-        let hex_key = "0123456789abcdef".repeat(4);
+        let hex_key = "ab".repeat(32);
         let hex_cipher = TokenCipher::from_encoded_key(&hex_key).expect("valid hex key");
         let enc_hex = hex_cipher.encrypt("refresh-token").expect("encrypt hex");
         assert_eq!(
