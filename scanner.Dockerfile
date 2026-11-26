@@ -1,19 +1,12 @@
-FROM node:22-alpine
+FROM gcr.io/distroless/nodejs22-debian12:nonroot
 
 WORKDIR /app
 
-RUN addgroup -S scanner && adduser -S -G scanner scanner
-
-COPY scanner/package*.json ./
-RUN npm ci --omit=dev
-
-COPY scanner/ ./
-RUN chown -R scanner:scanner /app
-
-USER scanner
+COPY --chown=nonroot:nonroot scanner/package.json ./
+COPY --chown=nonroot:nonroot scanner/src ./src
 
 ENV NODE_ENV=production
 ENV PORT=8081
 
 EXPOSE 8081
-CMD ["node", "src/server.mjs"]
+CMD ["src/server.mjs"]
