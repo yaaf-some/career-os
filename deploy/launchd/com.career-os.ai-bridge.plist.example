@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.career-os.ai-bridge</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/node</string>
+    <string>/Users/your-user/career-os/deploy/ai-bridge/server.mjs</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AI_BRIDGE_BIND</key>
+    <string>127.0.0.1:8787</string>
+    <key>AI_BRIDGE_TOKEN</key>
+    <string>change-me</string>
+    <key>AI_BRIDGE_AGENT</key>
+    <string>claude</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/your-user/career-os</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/your-user/Library/Logs/career-os-ai-bridge.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/your-user/Library/Logs/career-os-ai-bridge.err.log</string>
+</dict>
+</plist>

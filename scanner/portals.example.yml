@@ -1,0 +1,189 @@
+# Portal Scanner Configuration Example — US Platform / DevOps / SRE / Cloud
+# Target: (Remote US OR Los Angeles / Orange County metro) AND junior-mid (0-4 YOE)
+
+max_posting_age_days: 45
+
+location_filter:
+  always_allow:
+    - "United States"
+    - "USA"
+    - "Los Angeles"
+    - "Santa Monica"
+    - "Culver City"
+    - "El Segundo"
+    - "Pasadena"
+    - "Burbank"
+    - "Irvine"
+    - "Costa Mesa"
+    - "Newport Beach"
+    - "Orange County"
+  allow:
+    - "Remote"
+    - "United States"
+    - "USA"
+    - "Los Angeles"
+    - "Orange County"
+    - "Irvine"
+    - "Santa Monica"
+    - "Culver City"
+    - "El Segundo"
+  block_hard:
+    - "India"
+    - "Bengaluru"
+    - "Bangalore"
+    - "Hyderabad"
+    - "United Kingdom"
+    - "London"
+    - "Germany"
+    - "Berlin"
+    - "Munich"
+    - "France"
+    - "Paris"
+    - "Poland"
+    - "Warsaw"
+    - "Spain"
+    - "Madrid"
+    - "Barcelona"
+    - "Netherlands"
+    - "Amsterdam"
+    - "Ireland"
+    - "Dublin"
+    - "Singapore"
+    - "Japan"
+    - "Tokyo"
+    - "Australia"
+    - "Sydney"
+    - "Melbourne"
+    - "Brazil"
+    - "Canada"
+    - "Toronto"
+    - "Vancouver"
+    - "Montreal"
+    - "EMEA"
+    - "APAC"
+    - "LATAM"
+
+experience_filter:
+  enabled: true
+  max_yoe: 4
+  stretch_years: 1
+  action: drop
+
+title_filter:
+  positive:
+    - "Platform Engineer"
+    - "DevOps"
+    - "Site Reliability"
+    - "SRE"
+    - "Cloud Engineer"
+    - "Cloud Infrastructure"
+    - "Infrastructure Engineer"
+    - "Kubernetes"
+    - "Build and Release"
+    - "Release Engineer"
+    - "CI/CD"
+    - "DevSecOps"
+    - "Systems Engineer"
+  negative:
+    - "word:Staff"
+    - "Principal"
+    - "Distinguished"
+    - "Fellow"
+    - "Director"
+    - "Head of"
+    - "word:VP"
+    - "Vice President"
+    - "word:Manager"
+    - "word:Lead"
+    - "word:Intern"
+    - "word:Interns"
+    - "Internship"
+    - "Mechanical"
+    - "Electrical"
+    - "Civil"
+    - "Physical Infrastructure"
+    - "Network Infrastructure"
+    - "Data Center Infrastructure"
+    - "Facilities"
+    - "Documentation"
+    - "Technical Writer"
+    - "Sales"
+    - "Account Executive"
+    - "Recruiter"
+    - ".NET"
+    - "Java "
+    - "iOS"
+    - "Android"
+    - "PHP"
+    - "Ruby"
+    - "Embedded"
+    - "Firmware"
+    - "FPGA"
+    - "ASIC"
+    - "Blockchain"
+    - "Web3"
+    - "Crypto"
+    - "Salesforce Admin"
+    - "SAP "
+    - "Oracle EBS"
+    - "Mainframe"
+    - "COBOL"
+
+reddit_subreddits:
+  - RemoteJobs
+  - forhire
+  - digitalnomad
+  - cscareerquestions
+  - remotework
+
+job_boards:
+  - name: Built In LA
+    careers_url: https://www.builtinla.com/jobs/dev-engineering
+    provider: builtin
+    enabled: true
+    builtin:
+      host: www.builtinla.com
+      queries:
+        - "platform engineer"
+        - "devops"
+        - "site reliability"
+        - "cloud engineer"
+      max_pages: 2
+
+tracked_companies:
+  - name: Example Greenhouse Corp
+    careers_url: https://job-boards.greenhouse.io/examplecorp
+    api: https://boards-api.greenhouse.io/v1/boards/examplecorp/jobs
+    enabled: true
+
+  - name: Example Ashby Labs
+    careers_url: https://jobs.ashbyhq.com/examplelabs
+    enabled: true
+
+  - name: Example Lever Systems
+    careers_url: https://jobs.lever.co/examplesystems
+    enabled: true
+
+  - name: Example Workday Inc
+    careers_url: https://example.wd5.myworkdayjobs.com/en-US/Careers
+    enabled: false
+
+  - name: Example SmartRecruiters Co
+    careers_url: https://jobs.smartrecruiters.com/ExampleCo
+    enabled: false
+
+  - name: Example BambooHR Co
+    careers_url: https://example.bamboohr.com/careers
+    enabled: false
+
+  - name: Example Workable Co
+    careers_url: https://apply.workable.com/exampleco
+    enabled: false
+
+  - name: Example Rippling Co
+    careers_url: https://ats.rippling.com/exampleco/jobs
+    enabled: false
+
+  - name: Example Paylocity Co
+    careers_url: https://recruiting.paylocity.com/Recruiting/Jobs/All/00000000-0000-0000-0000-000000000000
+    enabled: false

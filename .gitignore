@@ -1,0 +1,35 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Rust
+/target/
+**/*.rs.bk
+
+# Node / Web / Scanner
+node_modules/
+web/dist/
+web/.vite/
+*.tsbuildinfo
+
+# SQLite & local data
+*.db
+*.db-wal
+*.db-shm
+/data/
+/var/
+
+# OS & editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*

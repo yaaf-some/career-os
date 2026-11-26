@@ -1,0 +1,19 @@
+title = "career-os gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allow documented placeholder templates and example fixtures"
+paths = [
+  '''^\.env\.example$''',
+  '''^deploy/launchd/.*\.plist\.example$''',
+  '''^example-data/''',
+]
+regexes = [
+  '''change-me''',
+  '''base64-32-bytes''',
+  '''you@example\.com''',
+  '''your-mac-mini\.your-tailnet\.ts\.net''',
+  '''your-github-handle''',
+]

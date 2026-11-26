@@ -1,0 +1,14 @@
+{
+  "name": "career-os-scanner",
+  "version": "1.0.0",
+  "description": "Zero-dependency ATS & Reddit job scanner microservice with posting-guard sanitization and strict US-Remote/LA-OC + 0-4 YOE filtering.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test tests/*.test.mjs"
+  }
+}
