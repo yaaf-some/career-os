@@ -223,7 +223,7 @@ jobs:
           done
           docker logs scanner-smoke
           [ "$ok" = "true" ] || { echo "scanner never became healthy"; exit 1; }
-          [ "$(docker inspect -f '{{.Config.User}}' scanner-smoke)" = "scanner" ]
+          [ "$(docker inspect -f '{{.Config.User}}' scanner-smoke)" = "10001:10001" ]
           time docker stop scanner-smoke
           [ "$(docker inspect -f '{{.State.ExitCode}}' scanner-smoke)" = "0" ] || { echo "scanner did not exit cleanly on SIGTERM"; exit 1; }
       - name: Scan scanner image with Trivy

@@ -19,7 +19,7 @@ RUN apk upgrade --no-cache \
 COPY --chown=scanner:scanner scanner/package.json ./
 COPY --chown=scanner:scanner scanner/src ./src
 
-USER scanner
+USER 10001:10001
 
 ENV NODE_ENV=production
 ENV PORT=8081
