@@ -14,12 +14,18 @@ pub struct BearerAuthPolicy {
 impl BearerAuthPolicy {
     pub fn new(token: Option<String>) -> Self {
         Self {
-            expected_token: token.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
+            expected_token: token
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
         }
     }
 }
 
-pub fn verify_bearer_header(policy: &BearerAuthPolicy, path: &str, auth_header: Option<&str>) -> bool {
+pub fn verify_bearer_header(
+    policy: &BearerAuthPolicy,
+    path: &str,
+    auth_header: Option<&str>,
+) -> bool {
     if path == "/healthz" {
         return true;
     }
@@ -57,7 +63,7 @@ pub async fn bearer_auth_middleware(
     State(policy): State<BearerAuthPolicy>,
     req: Request,
     next: Next,
-) -> Result<Response, Response> {
+) -> Response {
     let path = req.uri().path();
     let auth_header = req
         .headers()
@@ -65,16 +71,16 @@ pub async fn bearer_auth_middleware(
         .and_then(|v| v.to_str().ok());
 
     if verify_bearer_header(&policy, path, auth_header) {
-        Ok(next.run(req).await)
+        next.run(req).await
     } else {
-        Err((
+        (
             StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({
                 "error": "missing or invalid bearer token",
                 "code": "UNAUTHORIZED"
             })),
         )
-            .into_response())
+            .into_response()
     }
 }
 
@@ -86,13 +92,25 @@ mod tests {
     fn bearer_verification_is_fail_closed() {
         let no_token = BearerAuthPolicy::new(None);
         assert!(verify_bearer_header(&no_token, "/healthz", None));
-        assert!(!verify_bearer_header(&no_token, "/v1/complete", Some("Bearer anything")));
+        assert!(!verify_bearer_header(
+            &no_token,
+            "/v1/complete",
+            Some("Bearer anything")
+        ));
 
         let policy = BearerAuthPolicy::new(Some("bridge-secret-123".to_string()));
         assert!(verify_bearer_header(&policy, "/healthz", None));
         assert!(!verify_bearer_header(&policy, "/v1/complete", None));
-        assert!(!verify_bearer_header(&policy, "/v1/complete", Some("Basic abc")));
-        assert!(!verify_bearer_header(&policy, "/v1/complete", Some("Bearer wrong")));
+        assert!(!verify_bearer_header(
+            &policy,
+            "/v1/complete",
+            Some("Basic abc")
+        ));
+        assert!(!verify_bearer_header(
+            &policy,
+            "/v1/complete",
+            Some("Bearer wrong")
+        ));
         assert!(verify_bearer_header(
             &policy,
             "/v1/complete",

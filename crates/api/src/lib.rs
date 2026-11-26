@@ -42,18 +42,12 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/jobs/ingest", post(routes::jobs::ingest_jobs))
         .route("/api/triage/{id}", post(routes::triage::triage_job))
         .route("/api/triage/batch", post(routes::triage::triage_batch))
-        .route(
-            "/api/applications",
-            get(routes::tracker::list_applications),
-        )
+        .route("/api/applications", get(routes::tracker::list_applications))
         .route(
             "/api/applications/{id}",
             patch(routes::tracker::update_application),
         )
-        .route(
-            "/api/tracker/stats",
-            get(routes::tracker::tracker_stats),
-        )
+        .route("/api/tracker/stats", get(routes::tracker::tracker_stats))
         .route(
             "/api/sources",
             get(routes::sources::list_sources).post(routes::sources::create_source),
@@ -67,10 +61,7 @@ pub fn build_router(state: AppState) -> Router {
             "/api/ai/score-pending",
             post(routes::ai::score_pending_jobs),
         )
-        .route(
-            "/api/ai/evaluate/{job_id}",
-            post(routes::ai::evaluate_job),
-        )
+        .route("/api/ai/evaluate/{job_id}", post(routes::ai::evaluate_job))
         .route("/api/ai/usage", get(routes::ai::get_ai_usage))
         .route(
             "/api/auth/google/status",
@@ -86,10 +77,7 @@ pub fn build_router(state: AppState) -> Router {
             post(routes::auth::google_auth_disconnect),
         )
         .route("/api/settings", get(routes::settings::list_settings))
-        .route(
-            "/api/settings/{key}",
-            put(routes::settings::upsert_setting),
-        )
+        .route("/api/settings/{key}", put(routes::settings::upsert_setting))
         .route("/api/sync-runs", get(routes::settings::list_sync_runs))
         .merge(SwaggerUi::new("/docs").url("/api/openapi.json", ApiDoc::openapi()));
 

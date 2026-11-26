@@ -41,7 +41,7 @@ impl TokenCipher {
         let trimmed = raw.trim();
         if trimmed.len() == KEY_LEN * 2 && trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
             let mut key = [0u8; KEY_LEN];
-            for (i, chunk) in trimmed.as_bytes().chunks_exact(2).enumerate() {
+            for (i, chunk) in trimmed.as_bytes().as_chunks::<2>().0.iter().enumerate() {
                 let hex_str = std::str::from_utf8(chunk).map_err(|_| CryptoError::InvalidKey)?;
                 key[i] = u8::from_str_radix(hex_str, 16).map_err(|_| CryptoError::InvalidKey)?;
             }
@@ -115,14 +115,20 @@ mod tests {
         let enc1 = cipher.encrypt(secret).expect("encrypt 1");
         let enc2 = cipher.encrypt(secret).expect("encrypt 2");
         assert!(enc1.starts_with("v1:"));
-        assert_ne!(enc1, enc2, "random nonces must produce distinct ciphertexts");
+        assert_ne!(
+            enc1, enc2,
+            "random nonces must produce distinct ciphertexts"
+        );
         assert_eq!(cipher.decrypt(&enc1).expect("decrypt 1"), secret);
         assert_eq!(cipher.decrypt(&enc2).expect("decrypt 2"), secret);
 
-        let hex_key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-        let hex_cipher = TokenCipher::from_encoded_key(hex_key).expect("valid hex key");
+        let hex_key = "0123456789abcdef".repeat(4);
+        let hex_cipher = TokenCipher::from_encoded_key(&hex_key).expect("valid hex key");
         let enc_hex = hex_cipher.encrypt("refresh-token").expect("encrypt hex");
-        assert_eq!(hex_cipher.decrypt(&enc_hex).expect("decrypt hex"), "refresh-token");
+        assert_eq!(
+            hex_cipher.decrypt(&enc_hex).expect("decrypt hex"),
+            "refresh-token"
+        );
     }
 
     #[test]

@@ -204,7 +204,13 @@ impl RuntimeMetrics {
         }
     }
 
-    pub fn record_attempt(&mut self, provider: CliProviderKind, result: &Result<CliInvokeOutput, CliInvokeError>, now: Instant, cooldown_secs: u64) {
+    pub fn record_attempt(
+        &mut self,
+        provider: CliProviderKind,
+        result: &Result<CliInvokeOutput, CliInvokeError>,
+        now: Instant,
+        cooldown_secs: u64,
+    ) {
         match provider {
             CliProviderKind::Claude => self.claude_requests += 1,
             CliProviderKind::Agy => self.agy_requests += 1,
@@ -400,9 +406,9 @@ mod tests {
     #[tokio::test]
     async fn failover_on_rate_limit_and_cooldown_routing() {
         let runner = Arc::new(ScriptedRunner {
-            claude_results: Mutex::new(VecDeque::from([
-                Err(CliInvokeError::RateLimited("429 rate limit".to_string())),
-            ])),
+            claude_results: Mutex::new(VecDeque::from([Err(CliInvokeError::RateLimited(
+                "429 rate limit".to_string(),
+            ))])),
             agy_results: Mutex::new(VecDeque::from([
                 Ok(CliInvokeOutput {
                     content: "agy fallback ok".to_string(),

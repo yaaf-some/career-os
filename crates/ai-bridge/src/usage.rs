@@ -65,12 +65,21 @@ mod tests {
         }"#;
         let parsed = parse_statusline_json(raw).expect("valid statusline JSON");
         assert_eq!(
-            parsed.model.as_ref().and_then(|m| m.display_name.as_deref()),
+            parsed
+                .model
+                .as_ref()
+                .and_then(|m| m.display_name.as_deref()),
             Some("Sonnet 4.5")
         );
-        assert_eq!(parsed.cost.as_ref().and_then(|c| c.total_cost_usd), Some(0.42));
         assert_eq!(
-            parsed.context_window.as_ref().and_then(|w| w.used_percentage),
+            parsed.cost.as_ref().and_then(|c| c.total_cost_usd),
+            Some(0.42)
+        );
+        assert_eq!(
+            parsed
+                .context_window
+                .as_ref()
+                .and_then(|w| w.used_percentage),
             Some(7.7)
         );
     }

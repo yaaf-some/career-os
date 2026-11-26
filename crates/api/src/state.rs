@@ -53,7 +53,11 @@ impl AppState {
         let client_id = self.config.google_client_id.clone()?;
         let client_secret = self.config.google_client_secret.clone()?;
         let redirect_uri = self.config.google_redirect_uri.clone()?;
-        Some(GoogleOAuthClient::new(client_id, client_secret, redirect_uri))
+        Some(GoogleOAuthClient::new(
+            client_id,
+            client_secret,
+            redirect_uri,
+        ))
     }
 
     pub async fn ingest_scanned_jobs(
@@ -156,8 +160,7 @@ impl AppState {
             .profile_summary
             .as_deref()
             .unwrap_or("Senior systems/backend engineer evaluating role fit.");
-        let (system_prompt, prompt) =
-            build_hydrogen_triage_batch_prompt(profile_summary, &inputs);
+        let (system_prompt, prompt) = build_hydrogen_triage_batch_prompt(profile_summary, &inputs);
 
         let started = Instant::now();
         let req = AiRequest {
@@ -214,8 +217,8 @@ impl AppState {
             } else {
                 "pending_triage"
             };
-            let tier1_json = serde_json::to_string(item)
-                .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
+            let tier1_json =
+                serde_json::to_string(item).map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
 
             let res = sqlx::query(
                 r#"
@@ -299,7 +302,11 @@ impl AppState {
 
         let threads = self
             .gmail
-            .list_and_fetch_threads(&access_token, "label:inbox (interview OR application OR recruiter)", 20)
+            .list_and_fetch_threads(
+                &access_token,
+                "label:inbox (interview OR application OR recruiter)",
+                20,
+            )
             .await?;
 
         let now = now_iso();

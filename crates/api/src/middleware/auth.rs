@@ -72,7 +72,7 @@ pub async fn tailscale_auth_middleware(
     State(policy): State<AuthPolicy>,
     req: Request,
     next: Next,
-) -> Result<Response, Response> {
+) -> Response {
     let path = req.uri().path().to_string();
     let remote_ip = req
         .extensions()
@@ -84,11 +84,9 @@ pub async fn tailscale_auth_middleware(
         .and_then(|v| v.to_str().ok());
 
     match evaluate_auth(&policy, &path, remote_ip, tailscale_header) {
-        AuthDecision::Allow => Ok(next.run(req).await),
-        AuthDecision::Unauthorized(msg) => {
-            Err(AppError::Unauthorized(msg.to_string()).into_response())
-        }
-        AuthDecision::Forbidden(msg) => Err(AppError::Forbidden(msg.to_string()).into_response()),
+        AuthDecision::Allow => next.run(req).await,
+        AuthDecision::Unauthorized(msg) => AppError::Unauthorized(msg.to_string()).into_response(),
+        AuthDecision::Forbidden(msg) => AppError::Forbidden(msg.to_string()).into_response(),
     }
 }
 

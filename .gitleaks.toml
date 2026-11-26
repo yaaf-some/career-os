@@ -4,16 +4,17 @@ title = "career-os gitleaks configuration"
 useDefault = true
 
 [allowlist]
-description = "Allow documented placeholder templates and example fixtures"
+description = "Allow documented placeholder templates and deterministic unit-test fixture in initial commit"
 paths = [
-  '''^\.env\.example$''',
-  '''^deploy/launchd/.*\.plist\.example$''',
-  '''^example-data/''',
+  """^\.env\.example$""",
+  """^deploy/launchd/.*\.plist\.example$""",
+  """^example-data/""",
 ]
 regexes = [
-  '''change-me''',
-  '''base64-32-bytes''',
-  '''you@example\.com''',
-  '''your-mac-mini\.your-tailnet\.ts\.net''',
-  '''your-github-handle''',
+  """change-me""",
+  """base64-32-bytes""",
+  """you@example\.com""",
+  """your-mac-mini\.your-tailnet\.ts\.net""",
+  """your-github-handle""",
+  """0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef""",
 ]

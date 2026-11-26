@@ -3,37 +3,56 @@ name: Release Container Images
 on:
   push:
     branches: [main]
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/**"
+      - "web/**"
+      - "scanner/**"
+      - "Dockerfile"
+      - "scanner.Dockerfile"
   workflow_dispatch:
 
 permissions:
   contents: read
-  packages: write
-  id-token: write
-  attestations: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  build-and-push:
-    name: Build & Publish Multi-Arch Images
+  build-and-publish:
+    name: Build, Sign & Publish Multi-Arch Images
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+
       - name: Metadata for career-os-app
         id: meta_app
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/career-os-app
           tags: |
@@ -42,19 +61,27 @@ jobs:
 
       - name: Build and push career-os-app
         id: build_app
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: Dockerfile
           platforms: linux/arm64,linux/amd64
           push: true
+          sbom: true
+          provenance: mode=max
           tags: ${{ steps.meta_app.outputs.tags }}
           labels: ${{ steps.meta_app.outputs.labels }}
-          cache-from: type=gha,scope=app
-          cache-to: type=gha,mode=max,scope=app
+          cache-from: type=gha,scope=app-release
+          cache-to: type=gha,mode=max,scope=app-release
 
-      - name: Attest career-os-app build provenance
-        uses: actions/attest-build-provenance@v2
+      - name: Sign career-os-app with Cosign (OIDC)
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/career-os-app
+          DIGEST: ${{ steps.build_app.outputs.digest }}
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"
+
+      - name: Attest career-os-app SLSA provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/career-os-app
           subject-digest: ${{ steps.build_app.outputs.digest }}
@@ -62,7 +89,7 @@ jobs:
 
       - name: Metadata for career-os-scanner
         id: meta_scanner
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/career-os-scanner
           tags: |
@@ -71,19 +98,27 @@ jobs:
 
       - name: Build and push career-os-scanner
         id: build_scanner
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: scanner.Dockerfile
           platforms: linux/arm64,linux/amd64
           push: true
+          sbom: true
+          provenance: mode=max
           tags: ${{ steps.meta_scanner.outputs.tags }}
           labels: ${{ steps.meta_scanner.outputs.labels }}
-          cache-from: type=gha,scope=scanner
-          cache-to: type=gha,mode=max,scope=scanner
+          cache-from: type=gha,scope=scanner-release
+          cache-to: type=gha,mode=max,scope=scanner-release
 
-      - name: Attest career-os-scanner build provenance
-        uses: actions/attest-build-provenance@v2
+      - name: Sign career-os-scanner with Cosign (OIDC)
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/career-os-scanner
+          DIGEST: ${{ steps.build_scanner.outputs.digest }}
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"
+
+      - name: Attest career-os-scanner SLSA provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/career-os-scanner
           subject-digest: ${{ steps.build_scanner.outputs.digest }}

@@ -21,7 +21,9 @@ async fn main() -> anyhow::Result<()> {
 
     let config = BridgeConfig::from_env();
     if config.bearer_token.is_none() {
-        tracing::warn!("AI_BRIDGE_TOKEN is unset; all authenticated endpoints will fail closed with 401");
+        tracing::warn!(
+            "AI_BRIDGE_TOKEN is unset; all authenticated endpoints will fail closed with 401"
+        );
     }
 
     let bind_addr = config.bind_addr.clone();

@@ -26,3 +26,5 @@ Self-hosted single-user job-search operating system (`crates/`, `web/`, `scanner
    - Web: `npm run typecheck`, `npm test`, `npm run build`
    - Scanner: `npm test`
 4. **Change discipline:** Non-trivial changes require a `spec.md` + `plan.md` under `project/changes/<id>-<slug>/` and human approval before implementation (`project-propose` -> `project-execute` -> `project-verify-archive`).
+
+5. **Git & PR Discipline (CRITICAL):** NEVER push directly to `main` and NEVER force-push (`--force` / `--force-with-lease`). Always branch, open a PR, keep `CI Gate` green (add follow-up commits rather than amending pushed history), and never auto-merge without explicit owner approval or the `automerge` workflow.

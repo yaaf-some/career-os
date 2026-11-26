@@ -224,11 +224,10 @@ pub async fn tracker_stats(
     .fetch_all(&state.pool)
     .await?;
 
-    let gmail_needs_reply = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM gmail_threads WHERE needs_reply = 1",
-    )
-    .fetch_one(&state.pool)
-    .await?;
+    let gmail_needs_reply =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM gmail_threads WHERE needs_reply = 1")
+            .fetch_one(&state.pool)
+            .await?;
 
     let now = now_iso();
     let pending_followups = sqlx::query_scalar::<_, i64>(

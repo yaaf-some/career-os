@@ -17,8 +17,7 @@ use crate::{
         health::HealthResponse,
         jobs::{
             ApplicationRecord, DriveArtifactRecord, EvaluationRecord, IngestJobInput,
-            IngestJobsRequest, IngestJobsResponse, JobDetailResponse, JobRecord,
-            ListJobsResponse,
+            IngestJobsRequest, IngestJobsResponse, JobDetailResponse, JobRecord, ListJobsResponse,
         },
         settings::{
             ListSettingsResponse, ListSyncRunsResponse, SettingRecord, SyncRunRecord,

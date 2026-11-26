@@ -78,9 +78,9 @@ pub async fn google_auth_status(
 pub async fn google_auth_url(
     State(state): State<AppState>,
 ) -> Result<Json<GoogleAuthUrlResponse>, AppError> {
-    let client = state
-        .build_google_oauth_client()
-        .ok_or_else(|| AppError::Config("Google OAuth credentials are not configured".to_string()))?;
+    let client = state.build_google_oauth_client().ok_or_else(|| {
+        AppError::Config("Google OAuth credentials are not configured".to_string())
+    })?;
 
     let csrf_state = crate::db::new_id();
     sqlx::query(
@@ -137,9 +137,9 @@ pub async fn google_auth_callback(
         .execute(&state.pool)
         .await?;
 
-    let client = state
-        .build_google_oauth_client()
-        .ok_or_else(|| AppError::Config("Google OAuth credentials are not configured".to_string()))?;
+    let client = state.build_google_oauth_client().ok_or_else(|| {
+        AppError::Config("Google OAuth credentials are not configured".to_string())
+    })?;
     let cipher = state
         .cipher
         .as_ref()

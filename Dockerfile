@@ -7,7 +7,7 @@ COPY web/ ./
 RUN npm run build
 
 # Stage 2: Build Rust Axum API binary
-FROM rust:1.85-bookworm AS rust-builder
+FROM rust:1-bookworm AS rust-builder
 WORKDIR /build
 COPY Cargo.toml Cargo.lock* ./
 COPY crates ./crates
