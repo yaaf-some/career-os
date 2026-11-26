@@ -103,8 +103,8 @@ impl DriveClient {
                 "mimeType": mime_type
             }),
         };
-        let meta_str = serde_json::to_string(&metadata)
-            .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
+        let meta_str =
+            serde_json::to_string(&metadata).map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
 
         let mut body = Vec::with_capacity(meta_str.len() + bytes.len() + 256);
         body.extend_from_slice(
@@ -177,7 +177,8 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
 
-        let client = DriveClient::new().with_bases(format!("http://{addr}"), format!("http://{addr}"));
+        let client =
+            DriveClient::new().with_bases(format!("http://{addr}"), format!("http://{addr}"));
         let record = client
             .upload_multipart_file(
                 "tok",

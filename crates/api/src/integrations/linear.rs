@@ -121,7 +121,9 @@ impl LinearClient {
             .data
             .filter(|d| d.issue_create.success)
             .and_then(|d| d.issue_create.issue)
-            .ok_or_else(|| AppError::Upstream("linear issueCreate did not return an issue".to_string()))?;
+            .ok_or_else(|| {
+                AppError::Upstream("linear issueCreate did not return an issue".to_string())
+            })?;
 
         Ok(issue)
     }

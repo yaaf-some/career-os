@@ -1,14 +1,13 @@
-FROM node:22-alpine
+FROM node:26-alpine
 
 WORKDIR /app
 
-RUN addgroup -S scanner && adduser -S -G scanner scanner
+RUN apk upgrade --no-cache \
+  && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+  && addgroup -S scanner && adduser -S -G scanner scanner
 
-COPY scanner/package*.json ./
-RUN npm ci --omit=dev
-
-COPY scanner/ ./
-RUN chown -R scanner:scanner /app
+COPY --chown=scanner:scanner scanner/package.json ./
+COPY --chown=scanner:scanner scanner/src ./src
 
 USER scanner
 

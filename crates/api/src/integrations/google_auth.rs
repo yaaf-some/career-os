@@ -70,7 +70,11 @@ impl GoogleOAuthClient {
         self
     }
 
-    pub fn build_authorization_url(&self, state: &str, scopes: &[&str]) -> Result<String, AppError> {
+    pub fn build_authorization_url(
+        &self,
+        state: &str,
+        scopes: &[&str],
+    ) -> Result<String, AppError> {
         let scope_str = if scopes.is_empty() {
             DEFAULT_GOOGLE_SCOPES.join(" ")
         } else {
@@ -122,7 +126,10 @@ impl GoogleOAuthClient {
             .map_err(|e| AppError::Upstream(format!("invalid google token JSON: {e}")))
     }
 
-    pub async fn refresh_token(&self, refresh_token: &str) -> Result<GoogleTokenResponse, AppError> {
+    pub async fn refresh_token(
+        &self,
+        refresh_token: &str,
+    ) -> Result<GoogleTokenResponse, AppError> {
         let resp = self
             .http
             .post(self.token_endpoint.as_str())
@@ -234,7 +241,8 @@ pub async fn get_valid_google_access_token(
         .unwrap_or(false);
 
     if needs_refresh {
-        if let (Some(client), Some(refresh_enc)) = (oauth_client, row.refresh_token_enc.as_deref()) {
+        if let (Some(client), Some(refresh_enc)) = (oauth_client, row.refresh_token_enc.as_deref())
+        {
             let refresh_tok = cipher
                 .decrypt(refresh_enc)
                 .map_err(|e| AppError::Config(format!("failed to decrypt refresh token: {e}")))?;
@@ -307,7 +315,8 @@ mod tests {
         assert_eq!(tokens.access_token, "ya29.test-access");
 
         let pool = init_pool("sqlite::memory:").await.unwrap();
-        let cipher = TokenCipher::from_encoded_key(&TokenCipher::generate_random_key_b64()).unwrap();
+        let cipher =
+            TokenCipher::from_encoded_key(&TokenCipher::generate_random_key_b64()).unwrap();
         store_google_tokens(&pool, &cipher, None, &tokens)
             .await
             .unwrap();

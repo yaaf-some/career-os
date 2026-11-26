@@ -51,23 +51,23 @@ async fn healthz(State(state): State<BridgeState>) -> Json<serde_json::Value> {
 async fn v1_complete(
     State(state): State<BridgeState>,
     Json(req): Json<CompleteRequest>,
-) -> Result<Json<crate::runner::CompleteResponse>, Response> {
+) -> Response {
     match state.router.complete(req).await {
-        Ok(resp) => Ok(Json(resp)),
+        Ok(resp) => Json(resp).into_response(),
         Err(err) => {
             let status = match err {
                 CliInvokeError::RateLimited(_) => StatusCode::TOO_MANY_REQUESTS,
                 CliInvokeError::TimedOut(_) => StatusCode::GATEWAY_TIMEOUT,
                 CliInvokeError::ExecutionFailed(_) => StatusCode::BAD_GATEWAY,
             };
-            Err((
+            (
                 status,
                 Json(serde_json::json!({
                     "error": err.to_string(),
                     "code": "BRIDGE_UPSTREAM_ERROR"
                 })),
             )
-                .into_response())
+                .into_response()
         }
     }
 }

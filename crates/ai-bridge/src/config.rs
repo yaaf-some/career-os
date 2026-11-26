@@ -76,7 +76,9 @@ impl BridgeConfig {
             cfg.bind_addr = v;
         }
         cfg.bearer_token = env_non_empty("AI_BRIDGE_TOKEN");
-        if let Some(v) = env_non_empty("AI_BRIDGE_PRIMARY").and_then(|s| CliProviderKind::from_str_lossy(&s)) {
+        if let Some(v) =
+            env_non_empty("AI_BRIDGE_PRIMARY").and_then(|s| CliProviderKind::from_str_lossy(&s))
+        {
             cfg.primary_provider = v;
         }
         if let Some(v) = env_non_empty("AI_BRIDGE_CLAUDE_BIN") {

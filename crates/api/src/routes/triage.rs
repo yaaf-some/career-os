@@ -63,14 +63,12 @@ async fn apply_triage_action(
     let target_status = action.target_status();
     let now = now_iso();
 
-    let res = sqlx::query(
-        "UPDATE jobs SET triage_status = ?1, updated_at = ?2 WHERE id = ?3",
-    )
-    .bind(target_status)
-    .bind(&now)
-    .bind(job_id)
-    .execute(&state.pool)
-    .await?;
+    let res = sqlx::query("UPDATE jobs SET triage_status = ?1, updated_at = ?2 WHERE id = ?3")
+        .bind(target_status)
+        .bind(&now)
+        .bind(job_id)
+        .execute(&state.pool)
+        .await?;
 
     if res.rows_affected() == 0 {
         return Err(AppError::NotFound(format!("job {job_id} not found")));

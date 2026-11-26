@@ -159,8 +159,7 @@ fn normalize_thread(raw: GmailThreadApiResponse) -> SyncedGmailThread {
     }
 
     let labels = last_msg.map(|m| m.label_ids.clone()).unwrap_or_default();
-    let needs_reply = labels.iter().any(|l| l == "INBOX")
-        && !labels.iter().any(|l| l == "SENT");
+    let needs_reply = labels.iter().any(|l| l == "INBOX") && !labels.iter().any(|l| l == "SENT");
 
     let last_message_at = last_msg
         .and_then(|m| m.internal_date.as_deref())

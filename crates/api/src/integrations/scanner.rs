@@ -264,7 +264,11 @@ impl ScannerClient {
             .collect())
     }
 
-    pub async fn fetch_reddit_rss(&self, feed_url: &str, label: &str) -> Result<Vec<ScannedJob>, AppError> {
+    pub async fn fetch_reddit_rss(
+        &self,
+        feed_url: &str,
+        label: &str,
+    ) -> Result<Vec<ScannedJob>, AppError> {
         let resp = self
             .http
             .get(feed_url)
@@ -305,10 +309,10 @@ pub fn parse_reddit_feed_xml(xml: &str, community_label: &str) -> Vec<ScannedJob
         if title.is_empty() || link.is_empty() {
             continue;
         }
-        let body = extract_xml_tag(chunk, "content")
-            .or_else(|| extract_xml_tag(chunk, "description"));
-        let posted_at = extract_xml_tag(chunk, "updated")
-            .or_else(|| extract_xml_tag(chunk, "pubDate"));
+        let body =
+            extract_xml_tag(chunk, "content").or_else(|| extract_xml_tag(chunk, "description"));
+        let posted_at =
+            extract_xml_tag(chunk, "updated").or_else(|| extract_xml_tag(chunk, "pubDate"));
 
         jobs.push(ScannedJob {
             canonical_key: canonicalize_url_key(&link),
@@ -376,7 +380,10 @@ pub fn canonicalize_url_key(raw_url: &str) -> String {
         if filtered_pairs.is_empty() {
             parsed.set_query(None);
         } else {
-            parsed.query_pairs_mut().clear().extend_pairs(filtered_pairs);
+            parsed
+                .query_pairs_mut()
+                .clear()
+                .extend_pairs(filtered_pairs);
         }
         parsed.set_fragment(None);
         let s = parsed.to_string();
@@ -415,7 +422,9 @@ mod tests {
 
     #[test]
     fn canonicalizes_urls_by_stripping_utm_and_trailing_slash() {
-        let a = canonicalize_url_key("https://boards.greenhouse.io/acme/jobs/123/?utm_source=x&gh_src=y");
+        let a = canonicalize_url_key(
+            "https://boards.greenhouse.io/acme/jobs/123/?utm_source=x&gh_src=y",
+        );
         let b = canonicalize_url_key("https://boards.greenhouse.io/acme/jobs/123");
         assert_eq!(a, b);
     }
