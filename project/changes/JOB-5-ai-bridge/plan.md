@@ -2,15 +2,15 @@
 
 Branch per PR off `main` (merge `origin/main` to catch up; never rebase pushed history). Three PRs, each green on `CI Gate` before the next.
 **Delegation:** `[haiku]` = one Haiku subagent gets only this task, `spec.md`, and the listed files (Goldfish); it never commits/pushes. `[lead]` = orchestrator does it (cross-cutting, judgment, or host-only). The lead reviews every diff and runs the Verify line before checking the box.
-Rust verify: `export PATH=$HOME/.cargo/bin:$PATH`.
+Rust verify: `export PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH` (Homebrew rustup on the M2).
 
 ## PR A — Bridge + deploy + macOS CI (`feat/job-5a-bridge`)
 
 - [ ] **1.1 [haiku] Config hardening** — `crates/ai-bridge/src/config.rs`, `src/main.rs`: token validation (missing / <32 chars / placeholders ⇒ startup error), new vars `AI_BRIDGE_WORKDIR`, `AI_BRIDGE_MAX_CONCURRENCY`(2), `AI_BRIDGE_STATUSLINE_MAX_AGE_SECS`(900); `#[cfg(test)]` tests for defaults + rejection (inject env via a map, not global env).
   Verify: `cargo test -p career-os-ai-bridge config`
-- [ ] **1.2 [lead] Pin CLI contracts** — run `claude -p --output-format json --tools "" …` and `agy -p --output-format json --sandbox --mode plan …` with stdin on the dev box; save sanitized sample outputs as `crates/ai-bridge/tests/fixtures/{claude,agy}_print.json`; record exact flags in `Execution Notes`.
+- [x] **1.2 [lead] Pin CLI contracts** — run `claude -p --output-format json --tools "" …` and `agy -p --output-format json --sandbox --mode plan …` with stdin on the dev box; save sanitized sample outputs as `crates/ai-bridge/tests/fixtures/{claude_print.json,agy_stream_ok.jsonl,agy_stream_tool_denied.jsonl}`; record exact flags in `Execution Notes`.
   Verify: fixtures committed, flags noted.
-- [ ] **1.3 [haiku] Isolated invocation** — `src/runner.rs` `SystemCliRunner`: stdin prompt, flags from 1.2, `--system-prompt` for claude, `env_clear` + allowlist, `current_dir(workdir)` (create 0700), parse JSON outputs (content, tokens, cost) using fixtures; `CliOutput` gains `prompt_tokens`, `completion_tokens`, `cost_usd`. Add `ProviderError::Unavailable` for spawn/not-found. Tests: argv/stdin/env/cwd via a `CommandSpec` builder unit-tested without spawning; fixture parsing.
+- [ ] **1.3 [haiku] Isolated invocation** — `src/runner.rs` `SystemCliRunner`: stdin prompt, flags from 1.2, `--system-prompt` for claude, `env_clear` + allowlist, `current_dir(workdir)` (create 0700), agy per spec (stream-json stdin line, `--agent career-os-bridge`, deny `--settings`; write agent + `hooks.json` into workdir at startup; watchdog kills on a tool `step_update` ⇒ `ProviderError::ToolUseAttempted`; delete `~/.gemini/antigravity-cli/brain/<conversation_id>` after each run); parse JSON outputs (content, tokens, cost) using fixtures; `CliOutput` gains `prompt_tokens`, `completion_tokens`, `cost_usd`. Add `ProviderError::Unavailable` for spawn/not-found. Tests: argv/stdin/env/cwd via a `CommandSpec` builder unit-tested without spawning; fixture parsing.
   Verify: `cargo test -p career-os-ai-bridge runner`
 - [ ] **1.4 [haiku] Routing, failover policy, concurrency, errors** — `src/runner.rs`, `src/lib.rs`: request `primary` + `allow_failover`; failover only on RateLimited/TimedOut/Unavailable; `Semaphore` with wait counted in timeout ⇒ `Busy`; error codes/status per spec; JSON 400 for bad bodies. Tests for each (extend `ScriptedRunner`).
   Verify: `cargo test -p career-os-ai-bridge`
@@ -49,4 +49,10 @@ Rust verify: `export PATH=$HOME/.cargo/bin:$PATH`.
 
 ## Execution Notes / Deviations
 
-_(empty)_
+- **2026-11-26 · 1.2 (M2, claude 2.1.332, agy 1.5.18):**
+  - claude: `claude -p --output-format json --tools "" --strict-mcp-config --no-session-persistence --system-prompt <sys>` with stdin prompt works; 0 tools. Fields: `result`, `is_error`, `subtype`, `usage.input_tokens`, `usage.output_tokens`, `total_cost_usd`, `api_error_status`.
+  - agy: `-p` always takes its value from argv (`-p=-` is a literal prompt), so plain-text stdin is impossible; use `--input-format stream-json --output-format stream-json -p=""` with stdin `{"event":"user","message":{"content":...}}`. Result line `{"event":"result","result":{status,response,error,usage,conversation_id}}`; no cost.
+  - agy `--mode plan` alone still runs tools (writes `implementation_plan.md` into its brain dir). `permissions.deny` (schema: `command|read_file|write_file|read_url|execute_url|mcp|unsandboxed`) blocks those but NOT `search_web` (server-side Google grounding), even with `"*"`.
+  - Lockdown that works: custom agent (`tools: []`, `excludeDefaultComponents: true`, `inheritMcp: false`) ⇒ model reports no search tool; `.agents/hooks.json` `PreToolUse` `*` ⇒ deny hard-blocks `search_web` ("tool call denied by pre-tool hook"). Both loaded from the cwd's `.agents/` without workspace trust. `init.tools` still lists the full pool, so don't use it as proof.
+  - agy always persists conversations to `~/.gemini/antigravity-cli/brain/<id>`; no flag/setting (agy docs: cli/headless.md, settings schema) — bridge deletes after run.
+  - Spec approved with this agy design (agy may be a tier primary; claude stays default).

@@ -1,15 +1,12 @@
 # Project State (Elephant Handoff — career-os)
 
 **Last updated:** 2026-11-26 · **Linear:** team `JOB` (`Yaaf-Career`), project Mac Mini Rebuild (v1)
-**Handoff:** paused on the WSL2 dev box; resume on the **M2 Mac mini** (arm64, container runtime **Kiri** 0.2.x beta).
+**Host:** now on the **M2 Mac mini** (arm64). Installed: claude, agy, Rust 1.100 (Homebrew rustup). Not yet: Kiri (needed for AC12 only).
 
 ## Current Focus
 
-- **`JOB-5` (Phase 3) — PROPOSED, awaiting Yaaf's approval.** Spec + plan: `project/changes/JOB-5-ai-bridge/{spec.md,plan.md}` on branch `feat/job-5a-bridge` (pushed, no PR yet).
-- **Exact Next Concrete Step (on the Mac):**
-  1. `git fetch && git switch feat/job-5a-bridge`; read `spec.md` + `plan.md`; get Yaaf's approval (or edits); set spec `Status: Approved`.
-  2. Run `project-execute` for PR A. Start with task **1.2 [lead]** on the real host: capture `claude -p --output-format json --tools "" --strict-mcp-config --no-session-persistence` and `agy -p --output-format json --sandbox --mode plan` outputs with stdin prompts; confirm agy can run tool-less (else record residual risk for ADR-002).
-  3. Delegate `[haiku]` tasks one per subagent (Goldfish: task + spec + listed files only; subagents never commit/push). Lead reviews each diff and runs Verify.
+- **`JOB-5` (Phase 3) — APPROVED 2026-11-26, executing PR A** on `feat/job-5a-bridge` (`project/changes/JOB-5-ai-bridge/{spec.md,plan.md}`). Task 1.2 done (CLI contracts + fixtures; agy lockdown = custom agent + PreToolUse deny hook + deny settings + watchdog — see plan Execution Notes).
+- **Exact Next Concrete Step:** `project-execute` task **1.1** (config hardening), then 1.3–1.7, 1.8 opens PR A. Delegate `[haiku]` tasks one per subagent (Goldfish; subagents never commit/push).
 
 ## Done This Session
 
@@ -40,6 +37,7 @@
 - `gh pr edit` fails (Projects classic GraphQL) → use `gh api -X PATCH repos/<owner>/<repo>/pulls/<n>`.
 - Dependabot: cargo = patch group, web = minor/patch group; 0.x/major bumps arrive singly and need manual migration.
 - Pin Docker tags by numeric version sort (26.13 > 26.9).
-- Node 26 LTS only. Rust: `export PATH=$HOME/.cargo/bin:$PATH` if cargo isn't on PATH.
+- Node 26 LTS only. Rust (M2, Homebrew rustup, keg-only): `export PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH`.
+- agy `-p` never reads plain stdin; `permissions.deny` can't block `search_web` — only the PreToolUse hook can. agy auto-updates: re-run the ignored agy smoke test after upgrades.
 - Zero PII/secrets in this public repo (placeholders: `your-user`, `you@example.com`).
 - Keep replies short (ADHD): answer/action first, clickable links.

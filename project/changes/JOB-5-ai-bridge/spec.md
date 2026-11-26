@@ -1,6 +1,6 @@
 # JOB-5 — Host ai-bridge: hardened daemon, tier routing & live Usage Bar
 
-**Status:** Proposed
+**Status:** Approved (2026-11-26, Yaaf)
 **Issue:** JOB-5 (Linear, no description) · Parent JOB-1 · Branches `feat/job-5a-bridge` → `feat/job-5b-api` → `feat/job-5c-web-docs` (spec/plan ship in PR A)
 
 ## Problem / Context
@@ -37,7 +37,13 @@ The Rust `ai-bridge` crate (`crates/ai-bridge`) and the API's `HostBridgeProvide
 ### Bridge (`crates/ai-bridge`)
 - **Invocation** (`runner.rs`): spawn with `current_dir` = `AI_BRIDGE_WORKDIR` (default `~/Library/Application Support/career-os-ai-bridge/work`, created 0700, empty), prompt written to **stdin**, `env_clear()` + allowlist (`PATH`, `HOME`, `USER`, `LANG`, `TMPDIR`).
   - Claude: `claude -p --model <m> --output-format json --tools "" --strict-mcp-config --no-session-persistence --system-prompt <sys>`; parse JSON result (`result`, `is_error`, `usage.input_tokens`, `usage.output_tokens`, `total_cost_usd`) — exact fields verified against the installed CLI (dev box) in task 1.2 and re-checked on the M2 in AC12.
-  - Agy: `agy -p --model <m> --output-format json --sandbox --mode plan` (+ `--json-schema` when `json_mode`); stdin prompt; flags verified in task 1.2. If agy can't run tool-less, document residual risk in ADR-002.
+  - Agy (verified on agy 1.5.18, task 1.2): `agy --agent career-os-bridge --input-format stream-json --output-format stream-json --sandbox --mode plan --settings <deny-json> [--model <m>] [--json-schema <s>] -p=""`. Prompt on stdin as one NDJSON line `{"event":"user","message":{"content":"<system + user prompt>"}}` (plain-text stdin is not supported: `-p` takes its value from argv). Parse the final `{"event":"result"}` line: `status`, `response`, `error`, `usage.{input_tokens,output_tokens}`, `conversation_id`; agy reports no cost (`cost_usd = null`).
+  - **agy tool lockdown** (`permissions.deny` cannot block `search_web`; the hook can), four layers:
+    1. Bridge writes `<workdir>/.agents/agents/career-os-bridge.md` (`mainAgent: true`, `excludeDefaultComponents: true`, `tools: []`, `inheritMcp: false`, text-only system prompt) at startup.
+    2. Bridge writes `<workdir>/.agents/hooks.json`: `PreToolUse` matcher `*` ⇒ `{"decision":"deny"}` (hard-blocks every tool, incl. `search_web`).
+    3. `--settings '{"permissions":{"deny":["command(*)","write_file(*)","read_file(*)","read_url(*)","execute_url(*)","mcp(*)","unsandboxed(*)"]}}'` + `--sandbox` (also stops the model rewriting layers 1–2).
+    4. Stream watchdog: any `step_update` with `step_type:"tool"` ⇒ kill the child, return `ProviderError::ToolUseAttempted` (eligible for failover to claude).
+  - **agy persistence**: agy always writes the conversation to `~/.gemini/antigravity-cli/brain/<conversation_id>`; the bridge deletes that directory after every run (success or failure). No agy setting exists to disable it — recorded in ADR-002.
 - **Routing**: `CompleteRequest` gains `primary: Option<"claude"|"agy">` and `allow_failover: bool` (default true). Request `primary` overrides `AI_BRIDGE_PRIMARY`; cooldown reordering unchanged. Failover only on `RateLimited`, `TimedOut`, `Unavailable` (spawn/not-found) — not on generic non-zero exit.
 - **Concurrency**: `tokio::Semaphore` (`AI_BRIDGE_MAX_CONCURRENCY`, default 2); waiting counts toward the request timeout; saturation past timeout ⇒ 503 `BRIDGE_BUSY`.
 - **Errors**: codes `RATE_LIMITED`(429), `TIMED_OUT`(504), `UPSTREAM_FAILED`(502), `BRIDGE_BUSY`(503), `UNAUTHORIZED`(401), JSON body for extractor rejections (400 `BAD_REQUEST`).
@@ -67,7 +73,7 @@ The Rust `ai-bridge` crate (`crates/ai-bridge`) and the API's `HostBridgeProvide
 ## Acceptance Criteria
 
 - [ ] AC1 Bridge refuses to start with missing/short/placeholder token (unit test).
-- [ ] AC2 Claude/agy invocations pass the prompt on stdin, never argv; argv contains the tool-less flags; cwd is the dedicated workdir (unit test via recording runner + one ignored-by-default real-CLI smoke test).
+- [ ] AC2 Claude/agy invocations pass the prompt on stdin, never argv; argv contains the tool-less flags; cwd is the dedicated workdir; agy agent + hook files are written to the workdir; a tool `step_update` aborts the agy run; agy brain dir is removed after each run (unit tests via recording runner + one ignored-by-default real-CLI smoke test that asks agy to call `search_web` and asserts it is denied).
 - [ ] AC3 Request `primary` and `allow_failover=false` are honored; failover does not trigger on generic non-zero exit (unit tests).
 - [ ] AC4 Concurrency cap enforced; saturation returns 503 `BRIDGE_BUSY` (unit test).
 - [ ] AC5 `/v1/usage` returns typed 5h/7d windows + `stale` from a fixture statusline (unit test).
@@ -87,5 +93,6 @@ The Rust `ai-bridge` crate (`crates/ai-bridge`) and the API's `HostBridgeProvide
 ## Risks / Open Points
 
 - Claude statusline JSON updates only while an interactive Claude Code session renders a status line; `claude -p` calls may not refresh it ⇒ shown as `stale`. Acceptable for v1; revisit if Claude CLI exposes rate-limit headers in `-p` JSON.
-- `agy` tool-less mode is unverified (`--sandbox`, `--mode plan`); task 1.2 confirms on host, else ADR-002 records the residual risk and agy defaults to secondary only.
+- agy tool lockdown relies on custom-agent + `PreToolUse` hook behaviour verified on agy 1.5.18 only; agy auto-updates, so the ignored-by-default smoke test must be re-run on the M2 (AC12) and after agy upgrades. The watchdog is the backstop; a tool could start before the kill lands (hook should deny first).
+- agy conversation persistence is cleaned up by the bridge, not disabled; a crash between run and cleanup leaves one conversation on disk.
 - Kiri is beta (0.2.2); host-loopback reachability is documented by Kiri but proven only by AC12.
