@@ -9,7 +9,13 @@ import {
 } from 'lucide-react';
 import type { ComponentType, ReactNode } from 'react';
 import { isDemoModeActive } from '@/api/client';
-import { useAiUsageQuery, useHealthQuery } from '@/api/queries';
+import {
+  useAiUsageQuery,
+  useGoogleAuthMutation,
+  useGoogleAuthStatusQuery,
+  useHealthQuery,
+} from '@/api/queries';
+import { GoogleAuthPill } from '@/components/GoogleAuthPill';
 import { Badge } from '@/components/ui';
 import { UsageBar } from '@/components/UsageBar';
 import { cn } from '@/lib/cn';
@@ -34,6 +40,18 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const healthQuery = useHealthQuery();
   const usageQuery = useAiUsageQuery();
+  const googleStatusQuery = useGoogleAuthStatusQuery();
+  const googleAuthMutation = useGoogleAuthMutation();
+
+  const handleQuickReconnect = () => {
+    googleAuthMutation.mutate(undefined, {
+      onSuccess: (res) => {
+        if (res.authUrl && typeof window !== 'undefined') {
+          window.open(res.authUrl, '_blank', 'noopener,noreferrer');
+        }
+      },
+    });
+  };
 
   const demoActive = Boolean(healthQuery.data?.demoMode) || isDemoModeActive();
 
@@ -106,7 +124,15 @@ export function AppShell({ children }: { children: ReactNode }) {
                 {demoActive ? 'Demo' : 'Live'}
               </Badge>
             </div>
-            <UsageBar usage={usageQuery.data} isLoading={usageQuery.isLoading} />
+            <div className="flex flex-wrap items-center gap-2">
+              <GoogleAuthPill
+                status={googleStatusQuery.data}
+                isLoading={googleStatusQuery.isLoading}
+                isReconnecting={googleAuthMutation.isPending}
+                onReconnect={handleQuickReconnect}
+              />
+              <UsageBar usage={usageQuery.data} isLoading={usageQuery.isLoading} />
+            </div>
           </div>
         </header>
 

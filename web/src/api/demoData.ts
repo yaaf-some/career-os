@@ -1,9 +1,13 @@
 import type {
   AiUsageResponse,
   CalendarReminder,
+  CommuteInfo,
+  CommutePreviewRequest,
   CreateSourceRequest,
   FilteredAuditEntry,
   GmailDraft,
+  GoogleAuthStartResponse,
+  GoogleAuthStatusResponse,
   JobDetail,
   JobSource,
   JobSummary,
@@ -246,8 +250,8 @@ const INITIAL_JOBS: JobDetail[] = [
     id: 'job-103',
     title: 'Principal Full-Stack Engineer — AI Workflows',
     company: 'Gridline AI',
-    location: 'Hybrid / Remote',
-    remotePolicy: 'Remote Optional',
+    location: 'Santa Monica, CA',
+    remotePolicy: 'Hybrid (3d/wk)',
     compensation: '$200k–$240k',
     source: 'Lever · gridline-ai',
     url: 'https://jobs.lever.co/gridline-ai/principal-ai-workflows',
@@ -405,10 +409,13 @@ const INITIAL_SETTINGS: SettingsState = {
   linearTeamKey: 'JOB',
   linearConnected: true,
   linearIssues: [
-    { key: 'JOB-101', title: 'Phase 1 Rust API & OpenAPI schema export', state: 'In Progress', priority: 'High' },
-    { key: 'JOB-102', title: 'React 19 PWA Shell & 5 Core Views', state: 'In Review', priority: 'High' },
-    { key: 'JOB-103', title: 'Google Docs tailoring pipeline grounded in Experience List.md', state: 'Backlog', priority: 'Medium' },
+    { key: 'JOB-4', title: 'Phase 2: Google OAuth 7-day Testing-mode UX & LA Commute', state: 'In Progress', priority: 'Medium' },
+    { key: 'JOB-5', title: 'Phase 3: Host ai-bridge daemon (claude -p / agy -p) & Usage Bar', state: 'Todo', priority: 'Medium' },
+    { key: 'JOB-6', title: 'Phase 4: Live Google Workspace sync, Linear ops & scheduler', state: 'Todo', priority: 'Medium' },
   ],
+  homeLocationArea: 'West Los Angeles, CA',
+  defaultTravelMode: 'drive',
+  mapsConfigured: true,
 };
 
 class DemoStore {
@@ -417,6 +424,7 @@ class DemoStore {
   private filteredAudit: FilteredAuditEntry[] = structuredClone(INITIAL_FILTERED_AUDIT);
   private settings: SettingsState = structuredClone(INITIAL_SETTINGS);
   private usage: AiUsageResponse = structuredClone(DEMO_USAGE);
+  private googleConnectedAtIso = hoursFromNowIso(-28);
 
   private toSummary(job: JobDetail): JobSummary {
     return {
@@ -767,7 +775,116 @@ class DemoStore {
     if (req.hydrogenPrimaryCli) this.settings.hydrogenPrimaryCli = req.hydrogenPrimaryCli;
     if (req.neonPrimaryCli) this.settings.neonPrimaryCli = req.neonPrimaryCli;
     if (typeof req.autoFailover === 'boolean') this.settings.autoFailover = req.autoFailover;
+    if (req.homeLocationArea !== undefined && req.homeLocationArea.trim()) {
+      this.settings.homeLocationArea = req.homeLocationArea.trim();
+    }
+    if (req.defaultTravelMode) {
+      this.settings.defaultTravelMode = req.defaultTravelMode;
+    }
     return structuredClone(this.settings);
+  }
+
+  getGoogleAuthStatus(): GoogleAuthStatusResponse {
+    const connectedAtMs = Date.parse(this.googleConnectedAtIso);
+    const testingExpiresMs = connectedAtMs + 7 * 86_400_000;
+    const hoursRemaining = Math.max(0, (testingExpiresMs - Date.now()) / 3_600_000);
+    return {
+      connected: this.settings.googleOAuthConnected,
+      authMode: 'testing',
+      accountEmail: 'demo@example.com',
+      connectedAt: this.googleConnectedAtIso,
+      testingExpiresAt: new Date(testingExpiresMs).toISOString(),
+      hoursRemaining: Number(hoursRemaining.toFixed(1)),
+      needsReconnect: !this.settings.googleOAuthConnected || hoursRemaining < 24,
+      expiresAt: hoursFromNowIso(1),
+      oauthConfigured: true,
+      encryptionConfigured: true,
+    };
+  }
+
+  startGoogleAuth(): GoogleAuthStartResponse {
+    this.googleConnectedAtIso = new Date().toISOString();
+    this.settings.googleOAuthConnected = true;
+    return {
+      authUrl:
+        'https://accounts.google.com/o/oauth2/v2/auth?client_id=demo-client&scope=gmail.compose+calendar.events+documents',
+      state: 'demo-oauth-state',
+    };
+  }
+
+  getJobCommute(id: string): CommuteInfo {
+    const job = this.jobs.find((j) => j.id === id);
+    if (!job) {
+      return this.previewCommute({ destination: 'Los Angeles, CA' });
+    }
+    const isRemote =
+      job.remotePolicy.toLowerCase().includes('remote') ||
+      job.location.toLowerCase().startsWith('remote');
+    if (isRemote) {
+      return {
+        isRemote: true,
+        configured: true,
+        originArea: this.settings.homeLocationArea,
+        destinationQuery: job.location,
+        resolvedAddress: null,
+        distanceMiles: null,
+        durationMinutes: null,
+        travelMode: this.settings.defaultTravelMode,
+        estimateSource: 'remote',
+        cached: false,
+        mapsUrl: null,
+      };
+    }
+    return this.previewCommute({
+      originArea: this.settings.homeLocationArea,
+      destination: job.location,
+      travelMode: this.settings.defaultTravelMode,
+    });
+  }
+
+  previewCommute(req: CommutePreviewRequest): CommuteInfo {
+    const origin = (req.originArea || this.settings.homeLocationArea).trim();
+    const dest = req.destination.trim();
+    const mode = req.travelMode ?? this.settings.defaultTravelMode;
+    const lowerDest = dest.toLowerCase();
+
+    let miles = 11.4;
+    let minutes = mode === 'transit' ? 38 : 24;
+    let resolved = `${dest}, Los Angeles, CA`;
+
+    if (lowerDest.includes('santa monica')) {
+      miles = 4.6;
+      minutes = mode === 'transit' ? 23 : 14;
+      resolved = 'Santa Monica, CA';
+    } else if (lowerDest.includes('culver')) {
+      miles = 5.8;
+      minutes = mode === 'transit' ? 27 : 17;
+      resolved = 'Culver City, CA';
+    } else if (lowerDest.includes('downtown') || lowerDest.includes('dtla')) {
+      miles = 13.8;
+      minutes = mode === 'transit' ? 42 : 31;
+      resolved = 'Downtown Los Angeles, CA';
+    } else if (lowerDest.includes('pasadena')) {
+      miles = 21.5;
+      minutes = mode === 'transit' ? 58 : 39;
+      resolved = 'Pasadena, CA';
+    }
+
+    const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(resolved)}&travelmode=${mode === 'transit' ? 'transit' : 'driving'}`;
+
+    return {
+      isRemote: false,
+      configured: true,
+      originArea: origin,
+      destinationQuery: dest,
+      resolvedAddress: resolved,
+      distanceMiles: miles,
+      durationMinutes: minutes,
+      travelMode: mode,
+      estimateSource: 'routes_api',
+      cached: false,
+      mapsUrl,
+    };
   }
 }
 

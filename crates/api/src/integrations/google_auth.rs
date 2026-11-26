@@ -1,4 +1,4 @@
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, SqlitePool};
 
@@ -11,6 +11,8 @@ use crate::{
 pub const GOOGLE_AUTH_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 pub const GOOGLE_TOKEN_ENDPOINT: &str = "https://oauth2.googleapis.com/token";
 pub const GOOGLE_PROVIDER_NAME: &str = "google";
+pub const TESTING_TOKEN_LIFETIME_DAYS: i64 = 7;
+pub const TESTING_RECONNECT_WARN_HOURS: i64 = 24;
 
 pub const DEFAULT_GOOGLE_SCOPES: &[&str] = &[
     "https://www.googleapis.com/auth/gmail.readonly",
@@ -38,8 +40,64 @@ pub struct OAuthTokenRow {
     pub token_type: Option<String>,
     pub scope: Option<String>,
     pub expires_at: Option<String>,
+    pub connected_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TestingModeStatus {
+    pub auth_mode: String,
+    pub connected_at: Option<String>,
+    pub testing_expires_at: Option<String>,
+    pub hours_remaining: Option<i64>,
+    pub needs_reconnect: bool,
+}
+
+/// Computes the 7-day Google OAuth Testing-mode refresh window and reconnect warning flag.
+pub fn compute_testing_status(
+    connected: bool,
+    connected_at: Option<&str>,
+    fallback_updated_at: Option<&str>,
+    now: DateTime<Utc>,
+) -> TestingModeStatus {
+    if !connected {
+        return TestingModeStatus {
+            auth_mode: "testing".to_string(),
+            connected_at: None,
+            testing_expires_at: None,
+            hours_remaining: None,
+            needs_reconnect: true,
+        };
+    }
+
+    let anchor_str = connected_at.or(fallback_updated_at);
+    let anchor_dt = anchor_str
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&Utc));
+
+    let Some(anchor) = anchor_dt else {
+        return TestingModeStatus {
+            auth_mode: "testing".to_string(),
+            connected_at: anchor_str.map(str::to_string),
+            testing_expires_at: None,
+            hours_remaining: None,
+            needs_reconnect: true,
+        };
+    };
+
+    let expires = anchor + Duration::days(TESTING_TOKEN_LIFETIME_DAYS);
+    let secs_left = (expires - now).num_seconds();
+    let hours_remaining = if secs_left <= 0 { 0 } else { secs_left / 3600 };
+    let needs_reconnect = hours_remaining <= TESTING_RECONNECT_WARN_HOURS;
+
+    TestingModeStatus {
+        auth_mode: "testing".to_string(),
+        connected_at: Some(anchor.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
+        testing_expires_at: Some(expires.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
+        hours_remaining: Some(hours_remaining),
+        needs_reconnect,
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -179,15 +237,20 @@ pub async fn store_google_tokens(
         (Utc::now() + Duration::seconds(secs)).to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
     });
     let now = now_iso();
+    let connected_at = if refresh_enc.is_some() {
+        Some(now.clone())
+    } else {
+        None
+    };
     let id = new_id();
 
     sqlx::query(
         r#"
         INSERT INTO oauth_tokens (
             id, provider, account_email, access_token_enc, refresh_token_enc,
-            token_type, scope, expires_at, created_at, updated_at
+            token_type, scope, expires_at, connected_at, created_at, updated_at
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, COALESCE(?9, ?10), ?10, ?10)
         ON CONFLICT(provider) DO UPDATE SET
             account_email = COALESCE(excluded.account_email, oauth_tokens.account_email),
             access_token_enc = excluded.access_token_enc,
@@ -195,6 +258,7 @@ pub async fn store_google_tokens(
             token_type = COALESCE(excluded.token_type, oauth_tokens.token_type),
             scope = COALESCE(excluded.scope, oauth_tokens.scope),
             expires_at = excluded.expires_at,
+            connected_at = COALESCE(?9, oauth_tokens.connected_at, excluded.updated_at),
             updated_at = excluded.updated_at
         "#,
     )
@@ -206,6 +270,7 @@ pub async fn store_google_tokens(
     .bind(&tokens.token_type)
     .bind(&tokens.scope)
     .bind(expires_at)
+    .bind(connected_at)
     .bind(now)
     .execute(pool)
     .await?;
@@ -215,7 +280,7 @@ pub async fn store_google_tokens(
 
 pub async fn load_google_token_row(pool: &SqlitePool) -> Result<Option<OAuthTokenRow>, AppError> {
     let row = sqlx::query_as::<_, OAuthTokenRow>(
-        "SELECT id, provider, account_email, access_token_enc, refresh_token_enc, token_type, scope, expires_at, created_at, updated_at FROM oauth_tokens WHERE provider = ?1",
+        "SELECT id, provider, account_email, access_token_enc, refresh_token_enc, token_type, scope, expires_at, connected_at, created_at, updated_at FROM oauth_tokens WHERE provider = ?1",
     )
     .bind(GOOGLE_PROVIDER_NAME)
     .fetch_optional(pool)
@@ -330,5 +395,30 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(decrypted, "ya29.test-access");
+    }
+
+    #[test]
+    fn testing_mode_status_handles_fresh_warning_and_expired() {
+        let now = DateTime::parse_from_rfc3339("2026-11-26T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let disconnected = compute_testing_status(false, None, None, now);
+        assert_eq!(disconnected.auth_mode, "testing");
+        assert!(disconnected.needs_reconnect);
+        assert_eq!(disconnected.hours_remaining, None);
+
+        let fresh = compute_testing_status(true, Some("2026-11-26T12:00:00Z"), None, now);
+        assert_eq!(fresh.hours_remaining, Some(168));
+        assert!(!fresh.needs_reconnect);
+        assert!(fresh.testing_expires_at.is_some());
+
+        let warn = compute_testing_status(true, Some("2026-11-20T06:00:00Z"), None, now);
+        assert_eq!(warn.hours_remaining, Some(18));
+        assert!(warn.needs_reconnect);
+
+        let expired = compute_testing_status(true, Some("2026-11-18T00:00:00Z"), None, now);
+        assert_eq!(expired.hours_remaining, Some(0));
+        assert!(expired.needs_reconnect);
     }
 }

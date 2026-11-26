@@ -12,11 +12,11 @@
 Adopt a three-part runtime architecture:
 
 1. **`app` container (`crates/` + `web/`):**
-   - Built via multi-stage `Dockerfile` (`node:22-alpine` -> `rust:1.85-bookworm` -> `gcr.io/distroless/cc-debian12:nonroot`).
+   - Built via multi-stage `Dockerfile` (`node:26-alpine` -> `rust:1-trixie` -> `debian:trixie-slim` non-root).
    - Rust/Axum serves both the REST API and static React 19 PWA assets (`STATIC_DIR=/app/static`), backed by SQLite in WAL mode on a persistent volume (`career_os_db`).
    - Binds to `127.0.0.1:8080` behind `tailscale serve` and enforces `ALLOWED_TAILSCALE_USER`.
 2. **`scanner` sidecar container (`scanner/`):**
-   - Runs `node:22-alpine` as a non-root user on port `8081` (`scanner.Dockerfile`), exposed only on the internal Docker Compose network.
+   - Runs `node:26-alpine` as a non-root user on port `8081` (`scanner.Dockerfile`), exposed only on the internal Docker Compose network.
    - Isolates HTTP/HTML parsing of untrusted external ATS boards from the database and OAuth secrets.
 3. **Host `ai-bridge` (`deploy/launchd/`):**
    - Managed by macOS `launchd` on `127.0.0.1:8787` and reached from `app` via `host.docker.internal:8787` using a shared bearer token (`AI_BRIDGE_TOKEN`).

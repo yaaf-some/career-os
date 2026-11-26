@@ -239,7 +239,7 @@ export interface ScanSourcesResponse {
 export interface LinearJobIssue {
   key: string;
   title: string;
-  state: 'Backlog' | 'In Progress' | 'In Review' | 'Done';
+  state: 'Backlog' | 'Todo' | 'In Progress' | 'In Review' | 'Done';
   priority: 'Urgent' | 'High' | 'Medium' | 'Low';
 }
 
@@ -252,15 +252,53 @@ export interface SettingsState {
   linearTeamKey: string;
   linearConnected: boolean;
   linearIssues: LinearJobIssue[];
+  homeLocationArea: string;
+  defaultTravelMode: 'drive' | 'transit';
+  mapsConfigured?: boolean;
 }
 
 export interface UpdateSettingsRequest {
   hydrogenPrimaryCli?: CliTierModel;
   neonPrimaryCli?: CliTierModel;
   autoFailover?: boolean;
+  homeLocationArea?: string;
+  defaultTravelMode?: 'drive' | 'transit';
 }
 
 export interface GoogleAuthStartResponse {
   authUrl: string;
   state: string;
+}
+
+export interface GoogleAuthStatusResponse {
+  connected: boolean;
+  authMode: 'testing' | 'production' | string;
+  accountEmail: string | null;
+  connectedAt: string | null;
+  testingExpiresAt: string | null;
+  hoursRemaining: number | null;
+  needsReconnect: boolean;
+  expiresAt: string | null;
+  oauthConfigured: boolean;
+  encryptionConfigured: boolean;
+}
+
+export interface CommuteInfo {
+  isRemote: boolean;
+  configured: boolean;
+  originArea: string | null;
+  destinationQuery: string | null;
+  resolvedAddress: string | null;
+  distanceMiles: number | null;
+  durationMinutes: number | null;
+  travelMode: string;
+  estimateSource: 'routes_api' | 'places_haversine' | 'remote' | 'unconfigured' | string | null;
+  cached: boolean;
+  mapsUrl: string | null;
+}
+
+export interface CommutePreviewRequest {
+  originArea?: string;
+  destination: string;
+  travelMode?: 'drive' | 'transit';
 }
