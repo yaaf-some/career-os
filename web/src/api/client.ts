@@ -2,9 +2,12 @@ import { demoStore } from './demoData';
 import type {
   AiUsageResponse,
   CalendarReminder,
+  CommuteInfo,
+  CommutePreviewRequest,
   CreateSourceRequest,
   GmailDraft,
   GoogleAuthStartResponse,
+  GoogleAuthStatusResponse,
   HealthResponse,
   JobDetail,
   JobSource,
@@ -198,14 +201,83 @@ export const careerApi = {
     );
   },
 
-  startGoogleAuth(): Promise<GoogleAuthStartResponse> {
-    return requestWithFallback(
-      '/api/auth/google/start',
-      { method: 'POST', body: JSON.stringify({}) },
-      () => ({
-        authUrl: 'https://accounts.google.com/o/oauth2/v2/auth?client_id=demo-client&scope=gmail.compose+calendar.events+documents',
-        state: 'demo-oauth-state',
-      }),
+  async getGoogleAuthStatus(): Promise<GoogleAuthStatusResponse> {
+    const raw = await requestWithFallback<Record<string, unknown>>(
+      '/api/auth/google/status',
+      { method: 'GET' },
+      () => demoStore.getGoogleAuthStatus() as unknown as Record<string, unknown>,
     );
+    return {
+      connected: Boolean(raw.connected),
+      authMode: String(raw.auth_mode ?? raw.authMode ?? 'testing'),
+      accountEmail: (raw.account_email ?? raw.accountEmail ?? null) as string | null,
+      connectedAt: (raw.connected_at ?? raw.connectedAt ?? null) as string | null,
+      testingExpiresAt: (raw.testing_expires_at ?? raw.testingExpiresAt ?? null) as string | null,
+      hoursRemaining:
+        typeof (raw.hours_remaining ?? raw.hoursRemaining) === 'number'
+          ? Number(raw.hours_remaining ?? raw.hoursRemaining)
+          : null,
+      needsReconnect: Boolean(raw.needs_reconnect ?? raw.needsReconnect ?? false),
+      expiresAt: (raw.expires_at ?? raw.expiresAt ?? null) as string | null,
+      oauthConfigured: Boolean(raw.oauth_configured ?? raw.oauthConfigured ?? false),
+      encryptionConfigured: Boolean(
+        raw.encryption_configured ?? raw.encryptionConfigured ?? false,
+      ),
+    };
+  },
+
+  async startGoogleAuth(): Promise<GoogleAuthStartResponse> {
+    const raw = await requestWithFallback<Record<string, unknown>>(
+      '/api/auth/google/url',
+      { method: 'GET' },
+      () => demoStore.startGoogleAuth() as unknown as Record<string, unknown>,
+    );
+    return {
+      authUrl: String(raw.url ?? raw.authUrl ?? ''),
+      state: String(raw.state ?? ''),
+    };
+  },
+
+  async getJobCommute(id: string): Promise<CommuteInfo> {
+    const raw = await requestWithFallback<Record<string, unknown>>(
+      `/api/jobs/${encodeURIComponent(id)}/commute`,
+      { method: 'GET' },
+      () => demoStore.getJobCommute(id) as unknown as Record<string, unknown>,
+    );
+    return normalizeCommute(raw);
+  },
+
+  async previewCommute(payload: CommutePreviewRequest): Promise<CommuteInfo> {
+    const raw = await requestWithFallback<Record<string, unknown>>(
+      '/api/commute/preview',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          origin_area: payload.originArea,
+          destination: payload.destination,
+          travel_mode: payload.travelMode,
+        }),
+      },
+      () => demoStore.previewCommute(payload) as unknown as Record<string, unknown>,
+    );
+    return normalizeCommute(raw);
   },
 };
+
+function normalizeCommute(raw: Record<string, unknown>): CommuteInfo {
+  const dist = raw.distance_miles ?? raw.distanceMiles;
+  const dur = raw.duration_minutes ?? raw.durationMinutes;
+  return {
+    isRemote: Boolean(raw.is_remote ?? raw.isRemote ?? false),
+    configured: Boolean(raw.configured ?? false),
+    originArea: (raw.origin_area ?? raw.originArea ?? null) as string | null,
+    destinationQuery: (raw.destination_query ?? raw.destinationQuery ?? null) as string | null,
+    resolvedAddress: (raw.resolved_address ?? raw.resolvedAddress ?? null) as string | null,
+    distanceMiles: typeof dist === 'number' ? dist : null,
+    durationMinutes: typeof dur === 'number' ? dur : null,
+    travelMode: String(raw.travel_mode ?? raw.travelMode ?? 'drive'),
+    estimateSource: (raw.estimate_source ?? raw.estimateSource ?? null) as string | null,
+    cached: Boolean(raw.cached ?? false),
+    mapsUrl: (raw.maps_url ?? raw.mapsUrl ?? null) as string | null,
+  };
+}

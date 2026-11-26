@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod auth;
+pub mod commute;
 pub mod health;
 pub mod jobs;
 pub mod settings;

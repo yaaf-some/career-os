@@ -10,7 +10,8 @@ use career_os_api::{
     crypto::TokenCipher,
     db::init_pool,
     integrations::{
-        calendar::CalendarClient, drive::DriveClient, gmail::GmailClient, scanner::ScannerClient,
+        calendar::CalendarClient, drive::DriveClient, gmail::GmailClient, maps::MapsClient,
+        scanner::ScannerClient,
     },
     openapi::export_openapi_to_file,
     scheduler::spawn_scheduler,
@@ -19,6 +20,10 @@ use career_os_api::{
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    if std::env::args().skip(1).any(|a| a == "--healthcheck") {
+        std::process::exit(if healthcheck() { 0 } else { 1 });
+    }
+
     if let Some(export_path) = parse_export_openapi_arg() {
         export_openapi_to_file(&export_path)?;
         return Ok(());
@@ -56,6 +61,7 @@ async fn main() -> anyhow::Result<()> {
         gmail: GmailClient::new(),
         drive: DriveClient::new(),
         calendar: CalendarClient::new(),
+        maps: MapsClient::new(config.google_maps_api_key.clone()),
     };
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -109,8 +115,66 @@ fn init_tracing() {
     }
 }
 
+/// Container liveness probe for shell-less (distroless) images: `career-os-api --healthcheck`
+/// issues `GET /healthz` against the configured bind port on loopback and exits 0 on HTTP 200.
+fn healthcheck() -> bool {
+    use std::io::{Read, Write};
+    use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
+    use std::time::Duration;
+
+    let bind = std::env::var("CAREER_OS_BIND").unwrap_or_else(|_| "127.0.0.1:3000".to_string());
+    let port = bind
+        .rsplit_once(':')
+        .and_then(|(_, p)| p.parse::<u16>().ok())
+        .unwrap_or(3000);
+    let addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, port).into();
+    let timeout = Duration::from_secs(2);
+
+    let Ok(mut stream) = TcpStream::connect_timeout(&addr, timeout) else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(timeout));
+    let _ = stream.set_write_timeout(Some(timeout));
+    if stream
+        .write_all(b"GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        .is_err()
+    {
+        return false;
+    }
+    let mut buf = [0u8; 32];
+    match stream.read(&mut buf) {
+        Ok(n) => {
+            let head = String::from_utf8_lossy(&buf[..n]);
+            head.starts_with("HTTP/1.1 200") || head.starts_with("HTTP/1.0 200")
+        }
+        Err(_) => false,
+    }
+}
+
+/// Resolve on SIGINT (Ctrl-C) or SIGTERM (`docker stop`). As container PID 1 the process
+/// ignores SIGTERM unless it installs a handler, which would force a SIGKILL after the
+/// stop timeout and skip the graceful SQLite/scheduler shutdown.
 async fn shutdown_signal(shutdown_tx: watch::Sender<bool>) {
-    let _ = tokio::signal::ctrl_c().await;
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut sig) => {
+                sig.recv().await;
+            }
+            Err(_) => std::future::pending::<()>().await,
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        () = ctrl_c => {},
+        () = terminate => {},
+    }
     tracing::info!("shutdown signal received");
     let _ = shutdown_tx.send(true);
 }

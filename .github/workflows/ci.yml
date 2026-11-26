@@ -17,11 +17,13 @@ jobs:
   changes:
     name: Detect Stack Changes
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
       web: ${{ steps.filter.outputs.web }}
       scanner: ${{ steps.filter.outputs.scanner }}
-      docker: ${{ steps.filter.outputs.docker }}
+      docker_app: ${{ steps.filter.outputs.docker_app }}
+      docker_scanner: ${{ steps.filter.outputs.docker_scanner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -38,9 +40,14 @@ jobs:
               - 'web/**'
             scanner:
               - 'scanner/**'
-            docker:
+            docker_app:
               - 'Dockerfile'
+              - '.dockerignore'
+              - 'docker-compose.yml'
+              - '.github/workflows/ci.yml'
+            docker_scanner:
               - 'scanner.Dockerfile'
+              - '.dockerignore'
               - 'docker-compose.yml'
               - '.github/workflows/ci.yml'
 
@@ -49,6 +56,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -78,6 +86,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: web
@@ -90,7 +99,7 @@ jobs:
           node-version: "26"
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - run: npm ci
+      - run: npm ci --no-audit --no-fund
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
@@ -100,6 +109,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.scanner == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     defaults:
       run:
         working-directory: scanner
@@ -112,45 +122,28 @@ jobs:
           node-version: "26"
           cache: npm
           cache-dependency-path: scanner/package-lock.json
-      - run: npm ci
+      - run: npm ci --no-audit --no-fund
       - run: npm test
 
-  docker:
-    name: Containers (hadolint, build, Trivy)
-    needs: changes
+  docker-app:
+    name: Container App (hadolint, build, Trivy)
+    needs: [changes, rust, web]
     if: >-
-      needs.changes.outputs.docker == 'true' ||
-      needs.changes.outputs.rust == 'true' ||
-      needs.changes.outputs.web == 'true' ||
-      needs.changes.outputs.scanner == 'true'
-    runs-on: ubuntu-latest
+      !failure() && !cancelled() && (
+        needs.changes.outputs.docker_app == 'true' ||
+        needs.changes.outputs.rust == 'true' ||
+        needs.changes.outputs.web == 'true'
+      )
+    # Native linux/arm64 matches the Mac mini deploy target; amd64 is built in release-images.yml.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Lint Dockerfiles with hadolint
-        run: |
-          docker run --rm -i hadolint/hadolint:v2.12.0 < Dockerfile
-          docker run --rm -i hadolint/hadolint:v2.12.0 < scanner.Dockerfile
+      - name: Lint Dockerfile with hadolint
+        run: docker run --rm -i hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d < Dockerfile
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - name: Build scanner image (CI)
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          file: scanner.Dockerfile
-          load: true
-          tags: career-os-scanner:ci
-          cache-from: type=gha,scope=scanner-ci
-          cache-to: type=gha,mode=max,scope=scanner-ci
-      - name: Scan scanner image with Trivy
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          scan-type: image
-          image-ref: career-os-scanner:ci
-          scanners: vuln
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          exit-code: "1"
       - name: Build app image (CI)
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -160,6 +153,25 @@ jobs:
           tags: career-os-app:ci
           cache-from: type=gha,scope=app-ci
           cache-to: type=gha,mode=max,scope=app-ci
+      - name: Report app image footprint
+        run: |
+          docker image ls career-os-app:ci --format "App image size: {{.Size}}"
+      - name: Smoke test app container (non-root, read-only rootfs, healthcheck)
+        run: |
+          docker run -d --name app-smoke --read-only --tmpfs /tmp --cap-drop ALL \
+            --security-opt no-new-privileges:true -e AI_DEMO_MODE=true career-os-app:ci
+          for _ in $(seq 1 30); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' app-smoke 2>/dev/null || echo missing)
+            [ "$status" = "healthy" ] && break
+            [ "$(docker inspect -f '{{.State.Running}}' app-smoke)" = "true" ] || break
+            docker exec app-smoke /app/career-os-api --healthcheck && status=healthy && break
+            sleep 1
+          done
+          docker logs app-smoke
+          [ "$(docker inspect -f '{{.Config.User}}' app-smoke)" = "65532:65532" ]
+          [ "$status" = "healthy" ] || { echo "app container never became healthy"; exit 1; }
+          time docker stop app-smoke
+          [ "$(docker inspect -f '{{.State.ExitCode}}' app-smoke)" = "0" ] || { echo "app did not exit cleanly on SIGTERM"; exit 1; }
       - name: Scan app image with Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -170,9 +182,64 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
+  docker-scanner:
+    name: Container Scanner (hadolint, build, Trivy)
+    needs: [changes, scanner]
+    if: >-
+      !failure() && !cancelled() && (
+        needs.changes.outputs.docker_scanner == 'true' ||
+        needs.changes.outputs.scanner == 'true'
+      )
+    # Native linux/arm64 matches the Mac mini deploy target; amd64 is built in release-images.yml.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Lint scanner.Dockerfile with hadolint
+        run: docker run --rm -i hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d < scanner.Dockerfile
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build scanner image (CI)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: scanner.Dockerfile
+          load: true
+          tags: career-os-scanner:ci
+          cache-from: type=gha,scope=scanner-ci
+          cache-to: type=gha,mode=max,scope=scanner-ci
+      - name: Report scanner image footprint
+        run: |
+          docker image ls career-os-scanner:ci --format "Scanner image size: {{.Size}}"
+      - name: Smoke test scanner container (non-root, read-only rootfs, healthcheck)
+        run: |
+          docker run -d --name scanner-smoke --read-only --tmpfs /tmp --cap-drop ALL \
+            --security-opt no-new-privileges:true career-os-scanner:ci
+          ok=false
+          for _ in $(seq 1 20); do
+            if docker exec scanner-smoke node -e "fetch('http://127.0.0.1:8081/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"; then ok=true; break; fi
+            sleep 1
+          done
+          docker logs scanner-smoke
+          [ "$ok" = "true" ] || { echo "scanner never became healthy"; exit 1; }
+          [ "$(docker inspect -f '{{.Config.User}}' scanner-smoke)" = "10001:10001" ]
+          time docker stop scanner-smoke
+          [ "$(docker inspect -f '{{.State.ExitCode}}' scanner-smoke)" = "0" ] || { echo "scanner did not exit cleanly on SIGTERM"; exit 1; }
+      - name: Scan scanner image with Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: career-os-scanner:ci
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
   security:
     name: Security (gitleaks, actionlint, zizmor)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -196,9 +263,10 @@ jobs:
 
   ci-gate:
     name: CI Gate
-    needs: [changes, rust, web, scanner, docker, security]
+    needs: [changes, rust, web, scanner, docker-app, docker-scanner, security]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Evaluate stack & security checks
         env:
@@ -206,15 +274,16 @@ jobs:
           RUST_RESULT: ${{ needs.rust.result }}
           WEB_RESULT: ${{ needs.web.result }}
           SCANNER_RESULT: ${{ needs.scanner.result }}
-          DOCKER_RESULT: ${{ needs.docker.result }}
+          DOCKER_APP_RESULT: ${{ needs.docker-app.result }}
+          DOCKER_SCANNER_RESULT: ${{ needs.docker-scanner.result }}
           SECURITY_RESULT: ${{ needs.security.result }}
         run: |
-          echo "changes=$CHANGES_RESULT rust=$RUST_RESULT web=$WEB_RESULT scanner=$SCANNER_RESULT docker=$DOCKER_RESULT security=$SECURITY_RESULT"
+          echo "changes=$CHANGES_RESULT rust=$RUST_RESULT web=$WEB_RESULT scanner=$SCANNER_RESULT docker_app=$DOCKER_APP_RESULT docker_scanner=$DOCKER_SCANNER_RESULT security=$SECURITY_RESULT"
           if [ "$CHANGES_RESULT" != "success" ] || [ "$SECURITY_RESULT" != "success" ]; then
             echo "Core gate (changes/security) failed"
             exit 1
           fi
-          for res in "$RUST_RESULT" "$WEB_RESULT" "$SCANNER_RESULT" "$DOCKER_RESULT"; do
+          for res in "$RUST_RESULT" "$WEB_RESULT" "$SCANNER_RESULT" "$DOCKER_APP_RESULT" "$DOCKER_SCANNER_RESULT"; do
             if [ "$res" != "success" ] && [ "$res" != "skipped" ]; then
               echo "Stack job failed with status: $res"
               exit 1

@@ -62,11 +62,12 @@ cp deploy/launchd/com.career-os.ai-bridge.plist.example ~/Library/LaunchAgents/c
 launchctl load -w ~/Library/LaunchAgents/com.career-os.ai-bridge.plist
 ```
 
-### 4. Configure Google OAuth (optional)
+### 4. Configure Google OAuth (Testing Mode) & LA Commute Maps (optional)
 
-1. Create a Web Application OAuth 2.0 client in Google Cloud Console.
+1. In your Google Cloud project (`Career-Ops`), keep the OAuth consent screen intentionally in **Testing mode** (add yourself as a test user; the PWA surfaces a 7-day countdown and `<24h` 1-click reconnect pill).
 2. Add your callback URL (`https://your-mac-mini.your-tailnet.ts.net/api/auth/google/callback` or `http://localhost:8080/api/auth/google/callback` for local dev) to Authorized Redirect URIs.
-3. Populate `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` in `.env`, then restart:
+3. Optionally enable **Places API (New)** and **Routes API** and set `GOOGLE_MAPS_API_KEY`, `HOME_LOCATION_AREA` (neighborhood/city only, e.g. `West Los Angeles, CA`), and `DEFAULT_TRAVEL_MODE` (`drive` or `transit`) in `.env` to compute cached commute estimates for non-remote roles.
+4. Populate `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` in `.env`, then restart:
 
 ```bash
 docker compose up -d
@@ -78,16 +79,16 @@ docker compose up -d
 career-os/
 ├── crates/                 # Rust workspace (Axum API, domain models, SQLite store)
 ├── web/                    # React 19 + TypeScript + Vite PWA
-├── scanner/                # Node.js ATS & job-board scanner service
+├── scanner/                # Node.js 26 ATS & job-board scanner service
 ├── deploy/
 │   └── launchd/            # macOS launchd plist templates for host ai-bridge
 ├── docs/                   # Charter, architecture, glossary, trust model, ADRs
 ├── project/                # Session handoff state and OpenSpec change proposals
 ├── .agents/skills/         # Cross-agent workflow skills (OpenSpec + GSD)
 ├── .claude/skills/         # Symlinks to .agents/skills/ for Claude Code parity
-├── .github/workflows/      # CI checks and multi-arch GHCR image publishing
-├── Dockerfile              # Multi-stage build (web + Rust API + distroless runtime)
-├── scanner.Dockerfile      # Minimal Node.js Alpine image for scanner sidecar
+├── .github/workflows/      # Stack-filtered CI Gate, auto-merge, and GHCR release workflows
+├── Dockerfile              # Multi-stage build (Node 26 web + cargo-chef Trixie + Distroless Debian 13)
+├── scanner.Dockerfile      # Minimal node:26-alpine image for scanner sidecar
 ├── docker-compose.yml      # Local single-user stack (app + scanner)
 └── .env.example            # Documented runtime configuration template
 ```

@@ -14,6 +14,9 @@ pub struct AppConfig {
     pub google_client_id: Option<String>,
     pub google_client_secret: Option<String>,
     pub google_redirect_uri: Option<String>,
+    pub google_maps_api_key: Option<String>,
+    pub home_location_area: Option<String>,
+    pub default_travel_mode: String,
     pub linear_api_key: Option<String>,
     pub linear_team_id: Option<String>,
     pub cors_origin: Option<String>,
@@ -36,6 +39,9 @@ impl Default for AppConfig {
             google_client_id: None,
             google_client_secret: None,
             google_redirect_uri: None,
+            google_maps_api_key: None,
+            home_location_area: None,
+            default_travel_mode: "DRIVE".to_string(),
             linear_api_key: None,
             linear_team_id: None,
             cors_origin: None,
@@ -47,6 +53,11 @@ impl Default for AppConfig {
 
 impl AppConfig {
     pub fn from_env() -> Self {
+        let travel_mode = env_non_empty("DEFAULT_TRAVEL_MODE")
+            .map(|v| v.to_ascii_uppercase())
+            .filter(|v| v == "DRIVE" || v == "TRANSIT")
+            .unwrap_or_else(|| "DRIVE".to_string());
+
         Self {
             bind_addr: env_non_empty("CAREER_OS_BIND")
                 .unwrap_or_else(|| "127.0.0.1:3000".to_string()),
@@ -55,13 +66,17 @@ impl AppConfig {
             static_dir: env_non_empty("STATIC_DIR"),
             allowed_tailscale_user: env_non_empty("ALLOWED_TAILSCALE_USER"),
             exempt_local_google_callback: env_bool("EXEMPT_LOCAL_GOOGLE_CALLBACK", true),
-            token_encryption_key: env_non_empty("CAREER_OS_TOKEN_KEY"),
+            token_encryption_key: env_non_empty("CAREER_OS_TOKEN_KEY")
+                .or_else(|| env_non_empty("TOKEN_ENCRYPTION_KEY")),
             ai_bridge_url: env_non_empty("AI_BRIDGE_URL"),
             ai_bridge_token: env_non_empty("AI_BRIDGE_TOKEN"),
             ai_demo_mode: env_bool("AI_DEMO_MODE", false),
             google_client_id: env_non_empty("GOOGLE_CLIENT_ID"),
             google_client_secret: env_non_empty("GOOGLE_CLIENT_SECRET"),
             google_redirect_uri: env_non_empty("GOOGLE_REDIRECT_URI"),
+            google_maps_api_key: env_non_empty("GOOGLE_MAPS_API_KEY"),
+            home_location_area: env_non_empty("HOME_LOCATION_AREA"),
+            default_travel_mode: travel_mode,
             linear_api_key: env_non_empty("LINEAR_API_KEY"),
             linear_team_id: env_non_empty("LINEAR_TEAM_ID"),
             cors_origin: env_non_empty("CAREER_OS_CORS_ORIGIN"),

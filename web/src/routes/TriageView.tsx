@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { useJobsQuery, useTriageMutation } from '@/api/queries';
 import type { TriageStatus } from '@/api/types';
 import { Badge, Button, Card, SectionHeader } from '@/components/ui';
+import { CommuteBadge } from '@/components/CommuteBadge';
 import { cn } from '@/lib/cn';
 
 type FilterTab = 'inbox' | 'approved' | 'all';
@@ -97,9 +98,12 @@ export function TriageView({
                     >
                       {job.title}
                     </button>
-                    <div className="text-sm text-muted-foreground">
-                      {job.company} • {job.location}
-                      {job.compensation ? ` • ${job.compensation}` : ''}
+                    <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                      <span>
+                        {job.company} • {job.location}
+                        {job.compensation ? ` • ${job.compensation}` : ''}
+                      </span>
+                      <CommuteBadge jobId={job.id} remotePolicy={job.remotePolicy} compact />
                     </div>
                   </div>
 

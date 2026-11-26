@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { careerApi } from './client';
 import type {
   CalendarReminder,
+  CommutePreviewRequest,
   CreateSourceRequest,
   GmailDraft,
   QuickAddJobRequest,
@@ -13,9 +14,11 @@ import type {
 export const queryKeys = {
   healthz: ['healthz'] as const,
   aiUsage: ['ai', 'usage'] as const,
+  googleAuthStatus: ['auth', 'google', 'status'] as const,
   today: ['today'] as const,
   jobs: ['jobs'] as const,
   jobDetail: (id: string) => ['jobs', id] as const,
+  jobCommute: (id: string) => ['jobs', id, 'commute'] as const,
   tracker: ['tracker'] as const,
   sources: ['sources'] as const,
   settings: ['settings'] as const,
@@ -205,8 +208,37 @@ export function useUpdateSettingsMutation() {
   });
 }
 
+export function useGoogleAuthStatusQuery() {
+  return useQuery({
+    queryKey: queryKeys.googleAuthStatus,
+    queryFn: () => careerApi.getGoogleAuthStatus(),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+}
+
 export function useGoogleAuthMutation() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: () => careerApi.startGoogleAuth(),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.googleAuthStatus });
+      void qc.invalidateQueries({ queryKey: queryKeys.settings });
+    },
+  });
+}
+
+export function useJobCommuteQuery(jobId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.jobCommute(jobId ?? 'none'),
+    queryFn: () => careerApi.getJobCommute(jobId as string),
+    enabled: Boolean(jobId) && enabled,
+    staleTime: 300_000,
+  });
+}
+
+export function useCommutePreviewMutation() {
+  return useMutation({
+    mutationFn: (payload: CommutePreviewRequest) => careerApi.previewCommute(payload),
   });
 }

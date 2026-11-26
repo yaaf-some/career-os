@@ -20,7 +20,7 @@ flowchart TB
 
 | Component | Runtime | Responsibility |
 | --- | --- | --- |
-| `career-os-api` | Rust (`crates/`), `gcr.io/distroless/cc-debian12:nonroot` | HTTP API, static PWA serving, SQLite WAL state, Tailscale user verification, OAuth token encryption (`TOKEN_ENCRYPTION_KEY`), scanner & AI bridge orchestration. |
+| `career-os-api` | Rust (`crates/`), `gcr.io/distroless/cc-debian13:nonroot` (digest-pinned, UID 65532, `--healthcheck` probe, SIGTERM-graceful) | HTTP API, static PWA serving, SQLite WAL state, Tailscale user verification, OAuth token encryption (`TOKEN_ENCRYPTION_KEY`), scanner & AI bridge orchestration. |
 | `web` | React 19 + Vite + TypeScript (`web/`) | Compiled into `/app/static` at image build time; mobile-ready PWA for pipeline review, job evaluation, and status tracking. |
 | `scanner` | Node.js 26 LTS (`scanner/`, `node:26-alpine`) | Internal-only sidecar on port `8081` (no host port binding) handling ATS API polling and HTML job-board fetching. |
 | `ai-bridge` | Node.js on macOS host (`launchd`) | Listens on `127.0.0.1:8787`, authenticates requests with `AI_BRIDGE_TOKEN`, and executes `claude -p` or `agy -p` on the host machine. |

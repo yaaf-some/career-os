@@ -20,6 +20,7 @@ import {
   useTriageMutation,
 } from '@/api/queries';
 import { Badge, Button, Card } from '@/components/ui';
+import { CommuteBadge } from '@/components/CommuteBadge';
 import { cn } from '@/lib/cn';
 
 export function RoleDetailDrawer({
@@ -86,6 +87,7 @@ export function RoleDetailDrawer({
                         <span>{job.compensation}</span>
                       </>
                     ) : null}
+                    <CommuteBadge jobId={job.id} remotePolicy={job.remotePolicy} />
                   </>
                 ) : (
                   'Fetching role evaluation & artifacts'
