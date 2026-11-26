@@ -45,6 +45,8 @@ Edit `.env` and set at minimum:
 docker compose up -d
 ```
 
+Published GHCR images are `linux/arm64` only (Apple Silicon / ARM Linux). On an x86_64 host, build locally instead: `docker compose up -d --build`.
+
 Expose the local port privately on your tailnet:
 
 ```bash

@@ -134,7 +134,7 @@ jobs:
         needs.changes.outputs.rust == 'true' ||
         needs.changes.outputs.web == 'true'
       )
-    # Native linux/arm64 matches the Mac mini deploy target; amd64 is built in release-images.yml.
+    # Native linux/arm64 matches the Mac mini deploy target (arm64-only; x86 hosts build locally).
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
     steps:
@@ -190,7 +190,7 @@ jobs:
         needs.changes.outputs.docker_scanner == 'true' ||
         needs.changes.outputs.scanner == 'true'
       )
-    # Native linux/arm64 matches the Mac mini deploy target; amd64 is built in release-images.yml.
+    # Native linux/arm64 matches the Mac mini deploy target (arm64-only; x86 hosts build locally).
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 10
     steps:

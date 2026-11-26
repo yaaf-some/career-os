@@ -5,7 +5,7 @@
 
 ## Current Focus
 
-- **Phase 2 (`JOB-4`) DONE:** PR #4 squash-merged (`0f7d201`); GHCR release green (native amd64 + arm64, Cosign-signed, SLSA-attested).
+- **Phase 2 (`JOB-4`) DONE:** PR #4 squash-merged (`0f7d201`); GHCR release green (native arm64, Cosign-signed, SLSA-attested).
 - **Dependency cleanup:** PR #5 (`chore/rust-deps-major`) = tower-http 0.7, aes-gcm 0.11, base64 0.23, rand 0.10 (`crypto.rs` migrated to `SysRng` + `Nonce::from/try_from`) + jsdom 31, TypeScript 7.0.2, `@hey-api/openapi-ts` pinned `^0.99.0` (was `latest`). Supersedes closed PRs #2/#3 and Dependabot singles #7–#10.
 - **Exact Next Concrete Step:** Merge PR #5 when `CI Gate` is green (Dependabot then auto-closes #7–#10), mark `JOB-4` Done in Linear, then start `JOB-5` via `project-propose`.
 
@@ -16,7 +16,7 @@
 - Runtime: UID 65532, root-owned read-only binary/assets, writable `/var/lib/career-os` (VOLUME, default `DATABASE_URL`), `career-os-api --healthcheck`, SIGTERM graceful shutdown (app + scanner).
 - `scanner`: `node:26.x-alpine3.23`, npm/npx/corepack removed, `USER 10001:10001` (hadolint DL3066 needs numeric), ~188 MB.
 - Compose: `read_only`, tmpfs `/tmp`, `cap_drop: [ALL]`, `no-new-privileges`, healthchecks.
-- PR CI container jobs run on native `ubuntu-24.04-arm` (Mac mini parity): hadolint v2.15.1 + Trivy + smoke tests (non-root, read-only, healthy, exit 0 on SIGTERM).
+- GHCR images are **linux/arm64 only** (M2 Mac mini is the sole target; x86 hosts use `docker compose build`). PR CI container jobs run on native `ubuntu-24.04-arm`: hadolint v2.15.1 + Trivy + smoke tests (non-root, read-only, healthy, exit 0 on SIGTERM).
 
 ## Upcoming High-Priority Changes
 
