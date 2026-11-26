@@ -1,41 +1,45 @@
 # Project State (Elephant Handoff — career-os)
 
-**Last updated:** 2026-11-26
-**Active Linear Team:** `JOB` (`Yaaf-Career`)
+**Last updated:** 2026-11-26 · **Linear:** team `JOB` (`Yaaf-Career`), project Mac Mini Rebuild (v1)
+**Handoff:** paused on the WSL2 dev box; resume on the **M2 Mac mini** (arm64, container runtime **Kiri** 0.2.x beta).
 
 ## Current Focus
 
-- **Phase 2 (`JOB-4`) DONE:** PR #4 squash-merged (`0f7d201`); GHCR release green (native arm64, Cosign-signed, SLSA-attested).
-- **Dependency cleanup:** PR #5 (`chore/rust-deps-major`) = tower-http 0.7, aes-gcm 0.11, base64 0.23, rand 0.10 (`crypto.rs` migrated to `SysRng` + `Nonce::from/try_from`) + jsdom 31, TypeScript 7.0.2, `@hey-api/openapi-ts` pinned `^0.99.0` (was `latest`). Supersedes closed PRs #2/#3 and Dependabot singles #7–#10.
-- **Exact Next Concrete Step:** Merge PR #5 when `CI Gate` is green (Dependabot then auto-closes #7–#10), mark `JOB-4` Done in Linear, then start `JOB-5` via `project-propose`.
+- **`JOB-5` (Phase 3) — PROPOSED, awaiting Yaaf's approval.** Spec + plan: `project/changes/JOB-5-ai-bridge/{spec.md,plan.md}` on branch `feat/job-5a-bridge` (pushed, no PR yet).
+- **Exact Next Concrete Step (on the Mac):**
+  1. `git fetch && git switch feat/job-5a-bridge`; read `spec.md` + `plan.md`; get Yaaf's approval (or edits); set spec `Status: Approved`.
+  2. Run `project-execute` for PR A. Start with task **1.2 [lead]** on the real host: capture `claude -p --output-format json --tools "" --strict-mcp-config --no-session-persistence` and `agy -p --output-format json --sandbox --mode plan` outputs with stdin prompts; confirm agy can run tool-less (else record residual risk for ADR-002).
+  3. Delegate `[haiku]` tasks one per subagent (Goldfish: task + spec + listed files only; subagents never commit/push). Lead reviews each diff and runs Verify.
 
-## Container Baseline (as of PR #4)
+## Done This Session
 
-- `app`: `node:26.x-alpine3.23` (web build) -> `cargo-chef:0.1.78-rust-1.100.0-slim-trixie` -> `gcr.io/distroless/cc-debian13:nonroot`; ~51 MB; all bases tag+digest pinned (Dependabot bumps; patch/minor auto-merge on green CI, e.g. PR #6).
-- Hermetic build: `utoipa-swagger-ui` `vendored` feature (no curl/network in `build.rs`).
-- Runtime: UID 65532, root-owned read-only binary/assets, writable `/var/lib/career-os` (VOLUME, default `DATABASE_URL`), `career-os-api --healthcheck`, SIGTERM graceful shutdown (app + scanner).
-- `scanner`: `node:26.x-alpine3.23`, npm/npx/corepack removed, `USER 10001:10001` (hadolint DL3066 needs numeric), ~188 MB.
-- Compose: `read_only`, tmpfs `/tmp`, `cap_drop: [ALL]`, `no-new-privileges`, healthchecks.
-- GHCR images are **linux/arm64 only** (M2 Mac mini is the sole target; x86 hosts use `docker compose build`). PR CI container jobs run on native `ubuntu-24.04-arm`: hadolint v2.15.1 + Trivy + smoke tests (non-root, read-only, healthy, exit 0 on SIGTERM).
+- JOB-4 merged (PR #4) + container hardening; deps PR #5; Node bump #6 (auto-merge); arm64-only releases (#11). Closed #2, #3, #7–#10. No open PRs. JOB-4 is Done in Linear.
+- JOB-5 research via 3 Haiku agents; findings are in `spec.md` "Problem / Context".
 
-## Upcoming High-Priority Changes
+## Container Baseline
 
-1. **`JOB-5` (Phase 3):** Host `ai-bridge` macOS `launchd` daemon (`claude -p` / `agy -p`), tier routing (`hydrogen`/`neon`), live Usage Bar.
-2. **`JOB-6` (Phase 4):** Live Google Workspace sync (Gmail/Drive/Calendar), Linear ops, Tokio scheduler.
-3. **`JOB-7` (Phase 5):** Mac mini cutover (`docker compose` + `tailscale serve` + `launchd`) & retire `yaaf-some/yaaf-career-ops`.
-4. Optional: shrink scanner image (distroless Node) if size matters.
+- `app`: node:26 alpine (web) → `cargo-chef:0.1.78-rust-1.100.0-slim-trixie` → `distroless/cc-debian13:nonroot`, ~51 MB; `scanner`: node:26 alpine, ~188 MB, `USER 10001:10001`. Bases digest-pinned (Dependabot; patch/minor auto-merge).
+- Hermetic build (Swagger UI vendored), `career-os-api --healthcheck`, SIGTERM graceful (app + scanner), compose `read_only`/`cap_drop: [ALL]`/`no-new-privileges`.
+- GHCR images **linux/arm64 only** (M2 is the sole target; x86 hosts `docker compose up -d --build`). PR CI container jobs on `ubuntu-24.04-arm` with hadolint v2.15.1, Trivy, smoke tests.
+
+## Upcoming
+
+1. JOB-5 PR A (bridge + plist + macOS CI) → PR B (API contract, no silent mock) → PR C (web + docs) → host acceptance AC12 on the M2 under Kiri.
+2. Follow-ups to file: `/api/jobs/{id}/tailor` backend; web demo-fallback hides 404/5xx in live mode.
+3. `JOB-6` Live Google sync + scheduler · `JOB-7` Mac mini cutover (compose + `tailscale serve` + launchd).
 
 ## Recent Decisions
 
-- **ADR-001:** Split-plane `app` + `scanner` + host `ai-bridge`; image hardening recorded there.
-- **GCP `Career-Ops`:** Intentionally in **Testing mode** (7-day OAuth re-sign-in). Maps + Places APIs enabled.
-- **Cloudflare:** All career-ops resources deleted (DNS kept); do NOT touch Cloudflare MCP.
+- ADR-001 split-plane `app` + `scanner` + host `ai-bridge` (Rust crate `crates/ai-bridge`, NOT Node — docs say Node, fix in PR C).
+- Tier routing: Settings choose primary CLI per tier (`claude` | `agy` only, Codex/Gemini dropped) + failover toggle, honored per request.
+- GCP `Career-Ops` stays in Testing mode. Cloudflare: don't touch.
 
 ## Standing Gotchas
 
-- **Never force-push (incl. `--force-with-lease`); always PRs.** To catch a pushed branch up with `main`, *merge* `origin/main` into it (never rebase pushed history); for others' PRs use `gh api -X PUT repos/<owner>/<repo>/pulls/<n>/update-branch`. `Protect main` requires `CI Gate`, squash, up-to-date branch. Never merge without Yaaf's approval.
-- **Dependabot groups:** cargo = patch-only group, web = minor/patch group; 0.x/major bumps arrive as single PRs and need manual migration.
-- **Docker tag pinning:** sort versions numerically (26.13 > 26.9).
-- **Node 26 LTS only** (never Node 20/22). Local Rust: `export PATH=$HOME/.cargo/bin:$PATH`.
-- **Zero PII/secrets** in public `career-os` (`HOME_LOCATION_AREA` is neighborhood/city only).
-- **Keep replies short** (ADHD): answer/action first, clickable links.
+- **Never force-push (incl. `--force-with-lease`), never rebase pushed branches** — merge `origin/main` in instead; others' PRs: `gh api -X PUT repos/<owner>/<repo>/pulls/<n>/update-branch`. Never merge without Yaaf's explicit OK.
+- `gh pr edit` fails (Projects classic GraphQL) → use `gh api -X PATCH repos/<owner>/<repo>/pulls/<n>`.
+- Dependabot: cargo = patch group, web = minor/patch group; 0.x/major bumps arrive singly and need manual migration.
+- Pin Docker tags by numeric version sort (26.13 > 26.9).
+- Node 26 LTS only. Rust: `export PATH=$HOME/.cargo/bin:$PATH` if cargo isn't on PATH.
+- Zero PII/secrets in this public repo (placeholders: `your-user`, `you@example.com`).
+- Keep replies short (ADHD): answer/action first, clickable links.
