@@ -4,7 +4,7 @@
 # bumps both together. Builds run natively per-arch (no QEMU) in CI/release.
 
 # Stage 1: Build React 19 PWA on the build platform (static assets are arch-independent)
-FROM --platform=$BUILDPLATFORM node:26.9.0-alpine3.23@sha256:9dac39bfd053b458593c44a099d2667994c8fa9e1a8c10bc7ff2f3d97b62412d AS web-builder
+FROM --platform=$BUILDPLATFORM node:26.13.1-alpine3.23@sha256:39d8c143e60e99ae98f014bebea1e72fc96d3c9bdf9504bc3a27af5c05bfa39f AS web-builder
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
