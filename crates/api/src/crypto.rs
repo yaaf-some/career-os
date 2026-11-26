@@ -3,7 +3,7 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
 };
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
-use rand::{rngs::OsRng, RngCore};
+use rand::{rngs::SysRng, TryRng};
 use thiserror::Error;
 
 const VERSION_PREFIX: &str = "v1:";
@@ -59,18 +59,22 @@ impl TokenCipher {
 
     pub fn generate_random_key_b64() -> String {
         let mut key = [0u8; KEY_LEN];
-        OsRng.fill_bytes(&mut key);
+        SysRng
+            .try_fill_bytes(&mut key)
+            .expect("OS random number generator unavailable");
         B64.encode(key)
     }
 
     pub fn encrypt(&self, plaintext: &str) -> Result<String, CryptoError> {
         let cipher = Aes256Gcm::new_from_slice(&self.key).map_err(|_| CryptoError::InvalidKey)?;
         let mut nonce_bytes = [0u8; NONCE_LEN];
-        OsRng.fill_bytes(&mut nonce_bytes);
-        let nonce = Nonce::from_slice(&nonce_bytes);
+        SysRng
+            .try_fill_bytes(&mut nonce_bytes)
+            .map_err(|_| CryptoError::EncryptFailed)?;
+        let nonce = Nonce::from(nonce_bytes);
 
         let ciphertext = cipher
-            .encrypt(nonce, plaintext.as_bytes())
+            .encrypt(&nonce, plaintext.as_bytes())
             .map_err(|_| CryptoError::EncryptFailed)?;
 
         let mut payload = Vec::with_capacity(NONCE_LEN + ciphertext.len());
@@ -93,10 +97,10 @@ impl TokenCipher {
 
         let (nonce_bytes, ciphertext) = payload.split_at(NONCE_LEN);
         let cipher = Aes256Gcm::new_from_slice(&self.key).map_err(|_| CryptoError::InvalidKey)?;
-        let nonce = Nonce::from_slice(nonce_bytes);
+        let nonce = Nonce::try_from(nonce_bytes).map_err(|_| CryptoError::InvalidCiphertext)?;
 
         let plaintext = cipher
-            .decrypt(nonce, ciphertext)
+            .decrypt(&nonce, ciphertext)
             .map_err(|_| CryptoError::DecryptFailed)?;
         String::from_utf8(plaintext).map_err(|_| CryptoError::DecryptFailed)
     }
