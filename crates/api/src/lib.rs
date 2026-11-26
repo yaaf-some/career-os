@@ -39,6 +39,14 @@ pub fn build_router(state: AppState) -> Router {
         .route("/healthz", get(routes::health::healthz))
         .route("/api/jobs", get(routes::jobs::list_jobs))
         .route("/api/jobs/{id}", get(routes::jobs::get_job))
+        .route(
+            "/api/jobs/{id}/commute",
+            get(routes::commute::get_job_commute),
+        )
+        .route(
+            "/api/commute/preview",
+            post(routes::commute::preview_commute),
+        )
         .route("/api/jobs/ingest", post(routes::jobs::ingest_jobs))
         .route("/api/triage/{id}", post(routes::triage::triage_job))
         .route("/api/triage/batch", post(routes::triage::triage_batch))
@@ -119,7 +127,7 @@ mod tests {
         config::AppConfig,
         db::init_pool,
         integrations::{
-            calendar::CalendarClient, drive::DriveClient, gmail::GmailClient,
+            calendar::CalendarClient, drive::DriveClient, gmail::GmailClient, maps::MapsClient,
             scanner::ScannerClient,
         },
     };
@@ -141,6 +149,7 @@ mod tests {
             gmail: GmailClient::new(),
             drive: DriveClient::new(),
             calendar: CalendarClient::new(),
+            maps: MapsClient::new(None),
         };
 
         let app = build_router(state);

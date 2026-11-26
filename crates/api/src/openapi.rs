@@ -14,6 +14,7 @@ use crate::{
             GoogleAuthCallbackResponse, GoogleAuthDisconnectResponse, GoogleAuthStatusResponse,
             GoogleAuthUrlResponse,
         },
+        commute::{CommuteInfoResponse, CommutePreviewRequest},
         health::HealthResponse,
         jobs::{
             ApplicationRecord, DriveArtifactRecord, EvaluationRecord, IngestJobInput,
@@ -66,6 +67,8 @@ use crate::{
         crate::routes::auth::google_auth_url,
         crate::routes::auth::google_auth_callback,
         crate::routes::auth::google_auth_disconnect,
+        crate::routes::commute::get_job_commute,
+        crate::routes::commute::preview_commute,
         crate::routes::settings::list_settings,
         crate::routes::settings::upsert_setting,
         crate::routes::settings::list_sync_runs,
@@ -114,6 +117,8 @@ use crate::{
             GoogleAuthUrlResponse,
             GoogleAuthCallbackResponse,
             GoogleAuthDisconnectResponse,
+            CommuteInfoResponse,
+            CommutePreviewRequest,
             SettingRecord,
             ListSettingsResponse,
             UpsertSettingRequest,
@@ -129,6 +134,7 @@ use crate::{
         (name = "sources", description = "ATS and social job sources"),
         (name = "ai", description = "Tiered AI scoring and evaluation"),
         (name = "auth", description = "Google OAuth integration"),
+        (name = "commute", description = "Google Maps & Places LA commute distance"),
         (name = "settings", description = "Settings and sync run logs")
     )
 )]
@@ -157,5 +163,7 @@ mod tests {
         assert!(json.contains("/api/jobs"));
         assert!(json.contains("/api/triage/{id}"));
         assert!(json.contains("/api/ai/evaluate/{job_id}"));
+        assert!(json.contains("/api/jobs/{id}/commute"));
+        assert!(json.contains("/api/commute/preview"));
     }
 }

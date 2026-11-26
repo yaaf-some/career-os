@@ -2,6 +2,7 @@ use axum::{
     extract::{Query, State},
     Json,
 };
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
@@ -9,7 +10,8 @@ use crate::{
     db::now_iso,
     error::AppError,
     integrations::google_auth::{
-        load_google_token_row, store_google_tokens, DEFAULT_GOOGLE_SCOPES, GOOGLE_PROVIDER_NAME,
+        compute_testing_status, load_google_token_row, store_google_tokens, DEFAULT_GOOGLE_SCOPES,
+        GOOGLE_PROVIDER_NAME,
     },
     state::AppState,
 };
@@ -19,7 +21,12 @@ const OAUTH_STATE_CURSOR_KEY: &str = "google_oauth_state";
 #[derive(Debug, Serialize, ToSchema)]
 pub struct GoogleAuthStatusResponse {
     pub connected: bool,
+    pub auth_mode: String,
     pub account_email: Option<String>,
+    pub connected_at: Option<String>,
+    pub testing_expires_at: Option<String>,
+    pub hours_remaining: Option<i64>,
+    pub needs_reconnect: bool,
     pub expires_at: Option<String>,
     pub oauth_configured: bool,
     pub encryption_configured: bool,
@@ -49,7 +56,7 @@ pub struct GoogleAuthCallbackResponse {
     get,
     path = "/api/auth/google/status",
     responses(
-        (status = 200, description = "Google OAuth connection status", body = GoogleAuthStatusResponse)
+        (status = 200, description = "Google OAuth connection status (including 7-day Testing-mode countdown)", body = GoogleAuthStatusResponse)
     ),
     tag = "auth"
 )]
@@ -57,9 +64,22 @@ pub async fn google_auth_status(
     State(state): State<AppState>,
 ) -> Result<Json<GoogleAuthStatusResponse>, AppError> {
     let row = load_google_token_row(&state.pool).await?;
+    let connected = row.is_some();
+    let testing = compute_testing_status(
+        connected,
+        row.as_ref().and_then(|r| r.connected_at.as_deref()),
+        row.as_ref().map(|r| r.updated_at.as_str()),
+        Utc::now(),
+    );
+
     Ok(Json(GoogleAuthStatusResponse {
-        connected: row.is_some(),
+        connected,
+        auth_mode: testing.auth_mode,
         account_email: row.as_ref().and_then(|r| r.account_email.clone()),
+        connected_at: testing.connected_at,
+        testing_expires_at: testing.testing_expires_at,
+        hours_remaining: testing.hours_remaining,
+        needs_reconnect: testing.needs_reconnect,
         expires_at: row.and_then(|r| r.expires_at),
         oauth_configured: state.build_google_oauth_client().is_some(),
         encryption_configured: state.cipher.is_some(),

@@ -6,8 +6,9 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     groups:
-      rust-deps:
+      rust-patch-deps:
         patterns: ["*"]
+        update-types: ["patch"]
 
   - package-ecosystem: npm
     directory: /web
@@ -17,6 +18,7 @@ updates:
     groups:
       web-deps:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: docker
     directory: /

@@ -333,4 +333,15 @@ if (isMainModule(import.meta.url)) {
   server.listen(port, () => {
     console.log(`[scanner] listening on port ${port}`);
   });
+
+  // As container PID 1, Node ignores SIGTERM unless a handler is installed, so `docker stop`
+  // would wait for the kill timeout. Drain in-flight requests, then exit.
+  const shutdown = (signal) => {
+    console.log(`[scanner] ${signal} received, shutting down`);
+    server.close(() => process.exit(0));
+    server.closeIdleConnections?.();
+    setTimeout(() => process.exit(0), 5000).unref();
+  };
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => shutdown('SIGINT'));
 }

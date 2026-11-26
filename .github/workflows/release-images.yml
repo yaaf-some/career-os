@@ -11,6 +11,7 @@ on:
       - "scanner/**"
       - "Dockerfile"
       - "scanner.Dockerfile"
+      - ".dockerignore"
   workflow_dispatch:
 
 permissions:
@@ -18,108 +19,254 @@ permissions:
 
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
-  build-and-publish:
-    name: Build, Sign & Publish Multi-Arch Images
+  changes:
+    name: Detect Release Targets
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      app: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.app == 'true' }}
+      scanner: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.scanner == 'true' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            app:
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'crates/**'
+              - 'web/**'
+              - 'Dockerfile'
+              - '.dockerignore'
+            scanner:
+              - 'scanner/**'
+              - 'scanner.Dockerfile'
+              - '.dockerignore'
+
+  build-app:
+    name: Build career-os-app (${{ matrix.platform }})
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            arch_slug: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch_slug: arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push arch digest (native, no QEMU)
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/career-os-app,push-by-digest=true,name-canonical=true,push=true
+          sbom: true
+          provenance: mode=max
+          cache-from: type=gha,scope=app-release-${{ matrix.arch_slug }}
+          cache-to: type=gha,mode=max,scope=app-release-${{ matrix.arch_slug }}
+      - name: Export arch digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digests-app-${{ matrix.arch_slug }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge-app:
+    name: Publish, Sign & Attest career-os-app
+    needs: build-app
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       packages: write
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          persist-credentials: false
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+          path: /tmp/digests
+          pattern: digests-app-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
-
+      - uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
       - name: Metadata for career-os-app
-        id: meta_app
+        id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/career-os-app
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=sha-
-
-      - name: Build and push career-os-app
-        id: build_app
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          file: Dockerfile
-          platforms: linux/arm64,linux/amd64
-          push: true
-          sbom: true
-          provenance: mode=max
-          tags: ${{ steps.meta_app.outputs.tags }}
-          labels: ${{ steps.meta_app.outputs.labels }}
-          cache-from: type=gha,scope=app-release
-          cache-to: type=gha,mode=max,scope=app-release
-
+      - name: Create multi-arch manifest list
+        id: merge
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/career-os-app
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          mapfile -t tag_args < <(printf '%s\n' "$TAGS" | awk 'NF {print "-t"; print $0}')
+          sources=()
+          for f in /tmp/digests/*; do
+            sources+=("${IMAGE}@sha256:$(basename "$f")")
+          done
+          docker buildx imagetools create "${tag_args[@]}" "${sources[@]}"
+          digest=$(docker buildx imagetools inspect "${IMAGE}:latest" --format '{{json .Manifest.Digest}}' | tr -d '"')
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
       - name: Sign career-os-app with Cosign (OIDC)
         env:
           IMAGE: ghcr.io/${{ github.repository_owner }}/career-os-app
-          DIGEST: ${{ steps.build_app.outputs.digest }}
+          DIGEST: ${{ steps.merge.outputs.digest }}
         run: cosign sign --yes "${IMAGE}@${DIGEST}"
-
       - name: Attest career-os-app SLSA provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/career-os-app
-          subject-digest: ${{ steps.build_app.outputs.digest }}
+          subject-digest: ${{ steps.merge.outputs.digest }}
           push-to-registry: true
 
+  build-scanner:
+    name: Build career-os-scanner (${{ matrix.platform }})
+    needs: changes
+    if: needs.changes.outputs.scanner == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            arch_slug: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch_slug: arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push arch digest (native, no QEMU)
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: scanner.Dockerfile
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/career-os-scanner,push-by-digest=true,name-canonical=true,push=true
+          sbom: true
+          provenance: mode=max
+          cache-from: type=gha,scope=scanner-release-${{ matrix.arch_slug }}
+          cache-to: type=gha,mode=max,scope=scanner-release-${{ matrix.arch_slug }}
+      - name: Export arch digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digests-scanner-${{ matrix.arch_slug }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge-scanner:
+    name: Publish, Sign & Attest career-os-scanner
+    needs: build-scanner
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: /tmp/digests
+          pattern: digests-scanner-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
       - name: Metadata for career-os-scanner
-        id: meta_scanner
+        id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/career-os-scanner
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=sha-
-
-      - name: Build and push career-os-scanner
-        id: build_scanner
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          file: scanner.Dockerfile
-          platforms: linux/arm64,linux/amd64
-          push: true
-          sbom: true
-          provenance: mode=max
-          tags: ${{ steps.meta_scanner.outputs.tags }}
-          labels: ${{ steps.meta_scanner.outputs.labels }}
-          cache-from: type=gha,scope=scanner-release
-          cache-to: type=gha,mode=max,scope=scanner-release
-
+      - name: Create multi-arch manifest list
+        id: merge
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/career-os-scanner
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          mapfile -t tag_args < <(printf '%s\n' "$TAGS" | awk 'NF {print "-t"; print $0}')
+          sources=()
+          for f in /tmp/digests/*; do
+            sources+=("${IMAGE}@sha256:$(basename "$f")")
+          done
+          docker buildx imagetools create "${tag_args[@]}" "${sources[@]}"
+          digest=$(docker buildx imagetools inspect "${IMAGE}:latest" --format '{{json .Manifest.Digest}}' | tr -d '"')
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
       - name: Sign career-os-scanner with Cosign (OIDC)
         env:
           IMAGE: ghcr.io/${{ github.repository_owner }}/career-os-scanner
-          DIGEST: ${{ steps.build_scanner.outputs.digest }}
+          DIGEST: ${{ steps.merge.outputs.digest }}
         run: cosign sign --yes "${IMAGE}@${DIGEST}"
-
       - name: Attest career-os-scanner SLSA provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/career-os-scanner
-          subject-digest: ${{ steps.build_scanner.outputs.digest }}
+          subject-digest: ${{ steps.merge.outputs.digest }}
           push-to-registry: true

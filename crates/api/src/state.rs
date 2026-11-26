@@ -16,6 +16,7 @@ use crate::{
         drive::DriveClient,
         gmail::GmailClient,
         google_auth::{get_valid_google_access_token, GoogleOAuthClient},
+        maps::MapsClient,
         scanner::ScannedJob,
     },
 };
@@ -30,6 +31,7 @@ pub struct AppState {
     pub gmail: GmailClient,
     pub drive: DriveClient,
     pub calendar: CalendarClient,
+    pub maps: MapsClient,
 }
 
 pub type ScannerClientRef = crate::integrations::scanner::ScannerClient;

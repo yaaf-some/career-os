@@ -24,12 +24,27 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:8080/api/auth/google/callback}
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+      HOME_LOCATION_AREA: ${HOME_LOCATION_AREA:-West Los Angeles, CA}
+      DEFAULT_TRAVEL_MODE: ${DEFAULT_TRAVEL_MODE:-DRIVE}
       LINEAR_API_KEY: ${LINEAR_API_KEY:-}
       ALLOWED_TAILSCALE_USER: ${ALLOWED_TAILSCALE_USER:-you@example.com}
       STATIC_DIR: /app/static
     volumes:
       - career_os_db:/var/lib/career-os
       - ${DATA_DIR:-./example-data}:/data:ro
+    healthcheck:
+      test: ["CMD", "/app/career-os-api", "--healthcheck"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 15s
     restart: unless-stopped
 
   scanner:
@@ -51,6 +66,12 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 10s
     restart: unless-stopped
 
 volumes:
