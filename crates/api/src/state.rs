@@ -35,6 +35,8 @@ pub struct AppState {
     pub maps: MapsClient,
     /// Held while a Google sync runs so scheduled and manual syncs never overlap.
     pub sync_lock: Arc<tokio::sync::Mutex<()>>,
+    /// Set when `LINEAR_API_KEY` and `LINEAR_TEAM_ID` are configured (JOB-6 PR C).
+    pub linear: Option<crate::integrations::linear::LinearClient>,
 }
 
 pub type ScannerClientRef = crate::integrations::scanner::ScannerClient;

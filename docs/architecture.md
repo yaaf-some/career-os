@@ -42,6 +42,7 @@ flowchart TB
   - `GET /api/tracker` and `PATCH /api/tracker`.
   - `GET /api/jobs/{id}` now includes `gmail_threads`, `calendar_events` and `email_draft`.
   - **Writes:** `POST /api/jobs/{id}/email-draft` saves the draft locally and, when confirmed, to Gmail Drafts (never sent, [ADR-003](adr/ADR-003-gmail-drafts-never-send.md)). `POST /api/jobs/{id}/calendar-reminder` creates a 30-minute Calendar event linked to the application and, for follow-ups, sets its follow-up date. Without Google, both return 409 `GOOGLE_NOT_CONNECTED`; after a revoked or expired grant, they return 409 `GOOGLE_RECONNECT_REQUIRED`.
+  - **Linear (optional):** with `LINEAR_API_KEY` and `LINEAR_TEAM_ID` set, `PATCH /api/tracker` moving a job to `applied` creates exactly one Linear issue. `applications.linear_issue_id` is claimed atomically; on failure the claim is released and the stage change still saves.
   - The API uses the DB's stage names (`shortlisted/recruiter/interviewing/closed`); `web/src/api/jobs.ts` converts them to and from the UI's names (`saved/screen/interview/archived`).
 
 - **Persistence:** Application state resides in the named Docker volume `career_os_db` (`/var/lib/career-os`) using SQLite WAL mode. Candidate source files are mounted read-only at `/data`.

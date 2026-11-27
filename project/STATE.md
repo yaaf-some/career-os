@@ -7,7 +7,7 @@
 
 - **`JOB-5` Verified + archived 2026-11-27** (`project/changes/archive/JOB-5-ai-bridge/`). #12/#13/#14 merged. AC12 passed on the M2 under Docker Desktop. statusLine hook installed (Usage Bar live).
 - **`JOB-6` in progress** (`project/changes/JOB-6-live-google-sync/`, approved 2026-11-27: Q1 `gmail.compose` yes, Q2 Linear yes, Google sync every 12 h). PR A `feat/job-6a-read`: linking, Today, Tracker, quick-add, job comms, Sync now, web read side.
-- **Exact Next Concrete Step:** merge PR A (#17, green), then PR B `feat/job-6b-write` (stacked on A: Gmail drafts never sent [ADR-003], Calendar reminders, `gmail.compose` re-consent), then PR C (Linear), then AC11 live with Yaaf's Google sign-in.
+- **Exact Next Concrete Step:** merge PR B (#18) then PR C `feat/job-6c-linear` (stacked on B); then AC11 live with Yaaf: reconnect Google (adds `gmail.compose`), Sync now, link check, real draft + reminder, then verify-archive JOB-6.
 
 ## Done This Session
 

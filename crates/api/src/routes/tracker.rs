@@ -405,7 +405,204 @@ pub async fn patch_tracker(
     .await?;
     tx.commit().await?;
 
+    if req.stage.as_deref() == Some("applied") {
+        // Best effort: the stage change stands even if Linear is down.
+        if let Err(err) = create_linear_issue_once(&state, &req.job_id).await {
+            tracing::warn!(error = %err, job_id = %req.job_id, "linear issue creation failed");
+        }
+    }
+
     Ok(Json(TrackerResponse {
         entries: list_tracker_entries(&state.pool).await?,
     }))
+}
+
+/// Placeholder written while the issue is being created, so a double submit
+/// can't create two issues.
+const LINEAR_CLAIM: &str = "creating";
+
+/// Creates one Linear issue for the job's application (JOB-6 PR C), only when
+/// Linear is configured and the application has none yet. Returns the issue
+/// identifier when one was created.
+pub async fn create_linear_issue_once(
+    state: &AppState,
+    job_id: &str,
+) -> Result<Option<String>, AppError> {
+    let (Some(linear), Some(team_id)) = (&state.linear, &state.config.linear_team_id) else {
+        return Ok(None);
+    };
+    let claimed = sqlx::query(
+        "UPDATE applications SET linear_issue_id = ?1 WHERE job_id = ?2 AND linear_issue_id IS NULL",
+    )
+    .bind(LINEAR_CLAIM)
+    .bind(job_id)
+    .execute(&state.pool)
+    .await?
+    .rows_affected();
+    if claimed == 0 {
+        return Ok(None);
+    }
+
+    let (title, company, url): (String, String, String) =
+        sqlx::query_as("SELECT title, company, url FROM jobs WHERE id = ?1")
+            .bind(job_id)
+            .fetch_one(&state.pool)
+            .await?;
+    let description = format!(
+        "Applied to **{title}** at **{company}**.\n\nPosting: {url}\n\n_Created by Career OS when the application was marked applied._"
+    );
+    match linear
+        .create_issue(
+            team_id,
+            &format!("Applied: {title} @ {company}"),
+            &description,
+        )
+        .await
+    {
+        Ok(issue) => {
+            sqlx::query("UPDATE applications SET linear_issue_id = ?1 WHERE job_id = ?2")
+                .bind(&issue.identifier)
+                .bind(job_id)
+                .execute(&state.pool)
+                .await?;
+            Ok(Some(issue.identifier))
+        }
+        Err(err) => {
+            sqlx::query(
+                "UPDATE applications SET linear_issue_id = NULL WHERE job_id = ?1 AND linear_issue_id = ?2",
+            )
+            .bind(job_id)
+            .bind(LINEAR_CLAIM)
+            .execute(&state.pool)
+            .await?;
+            Err(err)
+        }
+    }
+}
+
+#[cfg(test)]
+mod linear_tests {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+
+    use axum::{response::IntoResponse, routing::post, Router};
+    use tokio::net::TcpListener;
+
+    use super::*;
+    use crate::{
+        ai::MockAiProvider,
+        config::AppConfig,
+        db::init_pool,
+        integrations::{
+            calendar::CalendarClient, drive::DriveClient, gmail::GmailClient, linear::LinearClient,
+            maps::MapsClient, scanner::ScannerClient,
+        },
+    };
+
+    async fn fake_linear(fail: bool) -> (String, Arc<AtomicUsize>) {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let c = calls.clone();
+        let app = Router::new().route(
+            "/graphql",
+            post(move || {
+                let c = c.clone();
+                async move {
+                    c.fetch_add(1, Ordering::SeqCst);
+                    if fail {
+                        return (axum::http::StatusCode::BAD_GATEWAY, "down").into_response();
+                    }
+                    Json(serde_json::json!({"data": {"issueCreate": {"success": true, "issue": {
+                        "id": "uuid-1", "identifier": "JOB-99", "title": "t", "url": "https://linear.example.com/JOB-99"
+                    }}}}))
+                    .into_response()
+                }
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (format!("http://{addr}/graphql"), calls)
+    }
+
+    async fn state(linear_url: Option<String>) -> AppState {
+        let pool = init_pool("sqlite::memory:").await.unwrap();
+        sqlx::query("INSERT INTO jobs (id, canonical_key, url, company, title, source_type) VALUES ('job-1','k1','https://jobs.example.com/1','Example Co','Engineer','manual')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        AppState {
+            pool,
+            config: Arc::new(AppConfig {
+                scheduler_enabled: false,
+                linear_team_id: linear_url.as_ref().map(|_| "team-uuid".to_string()),
+                ..AppConfig::default()
+            }),
+            ai: Arc::new(MockAiProvider),
+            cipher: None,
+            scanner: ScannerClient::new(),
+            gmail: GmailClient::new(),
+            drive: DriveClient::new(),
+            calendar: CalendarClient::new(),
+            maps: MapsClient::new(None),
+            sync_lock: Default::default(),
+            linear: linear_url.map(|u| LinearClient::new("test-key".into()).with_url(u)),
+        }
+    }
+
+    fn patch(stage: &str) -> Json<UpdateTrackerRequest> {
+        Json(UpdateTrackerRequest {
+            job_id: "job-1".into(),
+            stage: Some(stage.into()),
+            next_follow_up_at: None,
+            notes: None,
+        })
+    }
+
+    async fn issue_id(st: &AppState) -> Option<String> {
+        sqlx::query_scalar("SELECT linear_issue_id FROM applications WHERE job_id = 'job-1'")
+            .fetch_one(&st.pool)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn applied_creates_exactly_one_linear_issue() {
+        let (url, calls) = fake_linear(false).await;
+        let st = state(Some(url)).await;
+        let _ = patch_tracker(State(st.clone()), patch("recruiter"))
+            .await
+            .unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        let _ = patch_tracker(State(st.clone()), patch("applied"))
+            .await
+            .unwrap();
+        let _ = patch_tracker(State(st.clone()), patch("applied"))
+            .await
+            .unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(issue_id(&st).await.as_deref(), Some("JOB-99"));
+    }
+
+    #[tokio::test]
+    async fn linear_failure_keeps_stage_and_allows_retry() {
+        let (url, calls) = fake_linear(true).await;
+        let st = state(Some(url)).await;
+        let res = patch_tracker(State(st.clone()), patch("applied"))
+            .await
+            .unwrap();
+        assert_eq!(res.0.entries[0].stage, "applied");
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(issue_id(&st).await, None); // claim released
+    }
+
+    #[tokio::test]
+    async fn no_linear_config_does_nothing() {
+        let st = state(None).await;
+        let _ = patch_tracker(State(st.clone()), patch("applied"))
+            .await
+            .unwrap();
+        assert_eq!(issue_id(&st).await, None);
+    }
 }
