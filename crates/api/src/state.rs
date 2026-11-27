@@ -5,7 +5,8 @@ use sqlx::SqlitePool;
 use crate::{
     ai::{
         build_hydrogen_triage_batch_prompt, parse_hydrogen_batch_response, AiProvider, AiRequest,
-        AiTier, HydrogenJobInput, HydrogenScoreItem,
+        AiResponse, AiRouting, AiTier, HydrogenJobInput, HydrogenScoreItem, AI_DISABLED_MESSAGE,
+        AI_ROUTING_KEY,
     },
     config::AppConfig,
     crypto::TokenCipher,
@@ -40,6 +41,61 @@ pub type ScannerClientRef = crate::integrations::scanner::ScannerClient;
 pub struct IngestOutcome {
     pub ingested: i64,
     pub duplicates: i64,
+}
+
+/// One row of `ai_usage_events`.
+#[derive(Debug, Clone)]
+pub struct AiUsageRecord<'a> {
+    pub tier: AiTier,
+    pub provider: &'a str,
+    pub model: &'a str,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
+    pub cost_usd: Option<f64>,
+    pub latency_ms: i64,
+    pub success: bool,
+    pub error_message: Option<&'a str>,
+    pub job_id: Option<&'a str>,
+}
+
+impl<'a> AiUsageRecord<'a> {
+    pub fn success(tier: AiTier, resp: &'a AiResponse, job_id: Option<&'a str>) -> Self {
+        Self {
+            tier,
+            provider: &resp.provider,
+            model: &resp.model,
+            prompt_tokens: resp.prompt_tokens.map(i64::from),
+            completion_tokens: resp.completion_tokens.map(i64::from),
+            cost_usd: resp.cost_usd,
+            latency_ms: resp.latency_ms as i64,
+            success: true,
+            error_message: None,
+            job_id,
+        }
+    }
+
+    /// The provider that failed isn't known here (the bridge tried one or two CLIs),
+    /// so failures are recorded under the API-side provider name.
+    pub fn failure(
+        tier: AiTier,
+        provider: &'a str,
+        latency_ms: i64,
+        error_message: &'a str,
+        job_id: Option<&'a str>,
+    ) -> Self {
+        Self {
+            tier,
+            provider,
+            model: "unknown",
+            prompt_tokens: None,
+            completion_tokens: None,
+            cost_usd: None,
+            latency_ms,
+            success: false,
+            error_message: Some(error_message),
+            job_id,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -122,6 +178,11 @@ impl AppState {
             jd_text: Option<String>,
         }
 
+        if !self.ai.is_enabled() {
+            return Err(AppError::ServiceUnavailable(
+                AI_DISABLED_MESSAGE.to_string(),
+            ));
+        }
         let clamped_limit = limit.clamp(1, 25);
         let rows = sqlx::query_as::<_, PendingJobRow>(
             r#"
@@ -164,6 +225,7 @@ impl AppState {
             .unwrap_or("Senior systems/backend engineer evaluating role fit.");
         let (system_prompt, prompt) = build_hydrogen_triage_batch_prompt(profile_summary, &inputs);
 
+        let routing = self.ai_routing().await;
         let started = Instant::now();
         let req = AiRequest {
             tier: AiTier::Hydrogen,
@@ -173,40 +235,29 @@ impl AppState {
             temperature: Some(0.1),
             json_mode: true,
             timeout_secs: Some(90),
+            primary: Some(routing.primary_for(AiTier::Hydrogen)),
+            allow_failover: routing.auto_failover,
         };
 
         let resp = match self.ai.complete(req).await {
             Ok(r) => r,
             Err(err) => {
+                let msg = err.to_string();
                 let _ = self
-                    .record_ai_usage(
+                    .record_ai_usage(AiUsageRecord::failure(
                         AiTier::Hydrogen,
                         self.ai.name(),
-                        "unknown",
-                        None,
-                        None,
                         started.elapsed().as_millis() as i64,
-                        false,
-                        Some(&err.to_string()),
+                        &msg,
                         None,
-                    )
+                    ))
                     .await;
                 return Err(err);
             }
         };
 
         let _ = self
-            .record_ai_usage(
-                AiTier::Hydrogen,
-                &resp.provider,
-                &resp.model,
-                resp.prompt_tokens.map(i64::from),
-                resp.completion_tokens.map(i64::from),
-                resp.latency_ms as i64,
-                true,
-                None,
-                None,
-            )
+            .record_ai_usage(AiUsageRecord::success(AiTier::Hydrogen, &resp, None))
             .await;
 
         let items = parse_hydrogen_batch_response(&resp.content)?;
@@ -253,42 +304,55 @@ impl AppState {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub async fn record_ai_usage(
-        &self,
-        tier: AiTier,
-        provider: &str,
-        model: &str,
-        prompt_tokens: Option<i64>,
-        completion_tokens: Option<i64>,
-        latency_ms: i64,
-        success: bool,
-        error_message: Option<&str>,
-        job_id: Option<&str>,
-    ) -> Result<(), AppError> {
+    pub async fn record_ai_usage(&self, rec: AiUsageRecord<'_>) -> Result<(), AppError> {
         sqlx::query(
             r#"
             INSERT INTO ai_usage_events (
-                id, tier, provider, model, prompt_tokens, completion_tokens,
+                id, tier, provider, model, prompt_tokens, completion_tokens, cost_usd,
                 latency_ms, success, error_message, job_id, created_at
             )
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
             "#,
         )
         .bind(new_id())
-        .bind(tier.as_str())
-        .bind(provider)
-        .bind(model)
-        .bind(prompt_tokens)
-        .bind(completion_tokens)
-        .bind(latency_ms)
-        .bind(if success { 1_i64 } else { 0_i64 })
-        .bind(error_message)
-        .bind(job_id)
+        .bind(rec.tier.as_str())
+        .bind(rec.provider)
+        .bind(rec.model)
+        .bind(rec.prompt_tokens)
+        .bind(rec.completion_tokens)
+        .bind(rec.cost_usd)
+        .bind(rec.latency_ms)
+        .bind(if rec.success { 1_i64 } else { 0_i64 })
+        .bind(rec.error_message)
+        .bind(rec.job_id)
         .bind(now_iso())
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    /// Routing from Settings. A missing or unreadable value falls back to defaults: a bad
+    /// settings row must never make AI routes fail.
+    pub async fn ai_routing(&self) -> AiRouting {
+        let raw: Option<String> =
+            match sqlx::query_scalar("SELECT value_json FROM settings WHERE key = ?1")
+                .bind(AI_ROUTING_KEY)
+                .fetch_optional(&self.pool)
+                .await
+            {
+                Ok(v) => v,
+                Err(err) => {
+                    tracing::warn!(error = %err, "cannot read ai_routing; using defaults");
+                    None
+                }
+            };
+        match raw {
+            None => AiRouting::default(),
+            Some(raw) => serde_json::from_str(&raw).unwrap_or_else(|err| {
+                tracing::warn!(error = %err, "invalid ai_routing setting; using defaults");
+                AiRouting::default()
+            }),
+        }
     }
 
     pub async fn sync_google_workspace(&self) -> Result<(i64, i64), AppError> {

@@ -251,4 +251,245 @@ mod tests {
             .unwrap();
         assert_eq!(stats_res["by_application_stage"][0]["count"], 1);
     }
+
+    async fn serve_with(
+        ai: Arc<dyn crate::ai::AiProvider>,
+    ) -> (String, sqlx::SqlitePool, AppState) {
+        let pool = init_pool("sqlite::memory:").await.unwrap();
+        let state = AppState {
+            pool: pool.clone(),
+            config: Arc::new(AppConfig {
+                scheduler_enabled: false,
+                ..AppConfig::default()
+            }),
+            ai,
+            cipher: None,
+            scanner: ScannerClient::new(),
+            gmail: GmailClient::new(),
+            drive: DriveClient::new(),
+            calendar: CalendarClient::new(),
+            maps: MapsClient::new(None),
+        };
+        let app = build_router(state.clone());
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            .unwrap();
+        });
+        (format!("http://{addr}"), pool, state)
+    }
+
+    async fn ingest_one(client: &reqwest::Client, base: &str) -> String {
+        let res: serde_json::Value = client
+            .post(format!("{base}/api/jobs/ingest"))
+            .json(&serde_json::json!({ "jobs": [{
+                "url": "https://example.com/jobs/202",
+                "company": "Example Corp",
+                "title": "Platform Engineer",
+                "jd_text": "Run Rust services."
+            }]}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(res["ingested"], 1);
+        let list: serde_json::Value = client
+            .get(format!("{base}/api/jobs"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        list["jobs"][0]["id"].as_str().unwrap().to_string()
+    }
+
+    async fn count(pool: &sqlx::SqlitePool, sql: &'static str) -> i64 {
+        sqlx::query_scalar(sql).fetch_one(pool).await.unwrap()
+    }
+
+    /// AC6: no bridge configured ⇒ AI routes 503, nothing written, scheduler skips scoring.
+    #[tokio::test]
+    async fn disabled_ai_returns_503_and_writes_nothing() {
+        let (base, pool, state) = serve_with(Arc::new(crate::ai::DisabledAiProvider)).await;
+        let client = reqwest::Client::new();
+        let job_id = ingest_one(&client, &base).await;
+
+        for (path, body) in [
+            (
+                "/api/ai/score-pending".to_string(),
+                serde_json::json!({"limit": 5}),
+            ),
+            (
+                format!("/api/ai/evaluate/{job_id}"),
+                serde_json::json!({"tier": "neon"}),
+            ),
+        ] {
+            let resp = client
+                .post(format!("{base}{path}"))
+                .json(&body)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(
+                resp.status(),
+                reqwest::StatusCode::SERVICE_UNAVAILABLE,
+                "{path}"
+            );
+            let json: serde_json::Value = resp.json().await.unwrap();
+            assert_eq!(json["code"], "SERVICE_UNAVAILABLE");
+        }
+
+        crate::scheduler::run_hourly_cycle(&state).await.unwrap();
+
+        assert_eq!(
+            count(&pool, "SELECT COUNT(*) FROM ai_usage_events").await,
+            0
+        );
+        assert_eq!(count(&pool, "SELECT COUNT(*) FROM evaluations").await, 0);
+        assert_eq!(
+            count(
+                &pool,
+                "SELECT COUNT(*) FROM jobs WHERE triage_status = 'pending_scoring'"
+            )
+            .await,
+            1
+        );
+        assert_eq!(
+            count(
+                &pool,
+                "SELECT COUNT(*) FROM sync_runs WHERE run_type = 'tier1_score'"
+            )
+            .await,
+            0
+        );
+
+        let usage: serde_json::Value = client
+            .get(format!("{base}/api/ai/usage"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(usage["configured"], false);
+        assert_eq!(usage["claudeStale"], true);
+    }
+
+    /// AC7 + AC10 + routing passthrough, through the real HostBridgeProvider.
+    #[tokio::test]
+    async fn bridge_routing_cost_and_error_passthrough() {
+        use crate::ai::fake_bridge::{self, Mode};
+
+        let (bridge_url, fake) = fake_bridge::start(Mode::Ok).await;
+        let provider = Arc::new(crate::ai::HostBridgeProvider::new(
+            bridge_url,
+            fake_bridge::TOKEN.into(),
+        ));
+        let (base, pool, _) = serve_with(provider).await;
+        let client = reqwest::Client::new();
+        let job_id = ingest_one(&client, &base).await;
+
+        // Invalid routing is rejected; valid routing is used by both tiers.
+        let bad = client
+            .put(format!("{base}/api/settings/ai_routing"))
+            .json(&serde_json::json!({"value": {"hydrogenPrimary": "codex", "neonPrimary": "claude", "autoFailover": true}}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(bad.status(), reqwest::StatusCode::BAD_REQUEST);
+        let ok = client
+            .put(format!("{base}/api/settings/ai_routing"))
+            .json(&serde_json::json!({"value": {"hydrogenPrimary": "agy", "neonPrimary": "claude", "autoFailover": false}}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(ok.status(), reqwest::StatusCode::OK);
+
+        let score: serde_json::Value = client
+            .post(format!("{base}/api/ai/score-pending"))
+            .json(&serde_json::json!({"limit": 5}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(score["scored"], 1);
+        let eval = client
+            .post(format!("{base}/api/ai/evaluate/{job_id}"))
+            .json(&serde_json::json!({"tier": "neon"}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(eval.status(), reqwest::StatusCode::OK);
+
+        {
+            let reqs = fake.requests.lock().unwrap();
+            assert_eq!(reqs.len(), 2);
+            assert_eq!(
+                (reqs[0]["tier"].as_str(), reqs[0]["primary"].as_str()),
+                (Some("hydrogen"), Some("agy"))
+            );
+            assert_eq!(
+                (reqs[1]["tier"].as_str(), reqs[1]["primary"].as_str()),
+                (Some("neon"), Some("claude"))
+            );
+            assert!(reqs.iter().all(|r| r["allow_failover"] == false));
+        }
+
+        // AC10: tokens + cost + provider persisted.
+        let (pt, ct, cost): (Option<i64>, Option<i64>, Option<f64>) = sqlx::query_as(
+            "SELECT prompt_tokens, completion_tokens, cost_usd FROM ai_usage_events WHERE tier = 'neon'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!((pt, ct, cost), (Some(120), Some(45), Some(0.0123)));
+        let eval_provider: Option<String> = sqlx::query_scalar("SELECT provider FROM evaluations")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(eval_provider.as_deref(), Some("claude"));
+
+        // agy 24 h count comes from recorded rows.
+        let usage: serde_json::Value = client
+            .get(format!("{base}/api/ai/usage"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(usage["configured"], true);
+        assert_eq!(usage["bridgeReachable"], true);
+        assert_eq!(usage["antigravity"]["callsUsed"], 1);
+        assert_eq!(usage["claude5h"]["percentUsed"], 10.0);
+
+        // AC7: bridge 429 / 504 surface as API 429 / 504.
+        for (status, code, expect) in [
+            (
+                429u16,
+                "RATE_LIMITED",
+                reqwest::StatusCode::TOO_MANY_REQUESTS,
+            ),
+            (504, "TIMED_OUT", reqwest::StatusCode::GATEWAY_TIMEOUT),
+        ] {
+            *fake.mode.lock().unwrap() = Mode::Fail(status, code);
+            let resp = client
+                .post(format!("{base}/api/ai/evaluate/{job_id}"))
+                .json(&serde_json::json!({"tier": "neon"}))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), expect);
+        }
+    }
 }

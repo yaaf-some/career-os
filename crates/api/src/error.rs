@@ -32,6 +32,15 @@ pub enum AppError {
     #[error("upstream service error: {0}")]
     Upstream(String),
 
+    #[error("service unavailable: {0}")]
+    ServiceUnavailable(String),
+
+    #[error("rate limited: {0}")]
+    RateLimited(String),
+
+    #[error("upstream timed out: {0}")]
+    GatewayTimeout(String),
+
     #[error("configuration error: {0}")]
     Config(String),
 
@@ -51,6 +60,9 @@ impl AppError {
             Self::NotFound(_) => (StatusCode::NOT_FOUND, "NOT_FOUND"),
             Self::Conflict(_) => (StatusCode::CONFLICT, "CONFLICT"),
             Self::Upstream(_) => (StatusCode::BAD_GATEWAY, "UPSTREAM_ERROR"),
+            Self::ServiceUnavailable(_) => (StatusCode::SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE"),
+            Self::RateLimited(_) => (StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED"),
+            Self::GatewayTimeout(_) => (StatusCode::GATEWAY_TIMEOUT, "GATEWAY_TIMEOUT"),
             Self::Config(_) => (StatusCode::INTERNAL_SERVER_ERROR, "CONFIG_ERROR"),
             Self::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "DATABASE_ERROR"),
             Self::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR"),
