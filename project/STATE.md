@@ -6,7 +6,7 @@
 ## Current Focus
 
 - **`JOB-5` (Phase 3) — APPROVED 2026-11-26, executing PR A** on `feat/job-5a-bridge` (`project/changes/JOB-5-ai-bridge/{spec.md,plan.md}`). Task 1.2 done (CLI contracts + fixtures; agy lockdown = custom agent + PreToolUse deny hook + deny settings + watchdog — see plan Execution Notes).
-- **Exact Next Concrete Step:** `project-execute` task **1.1** (config hardening), then 1.3–1.7, 1.8 opens PR A. Delegate `[haiku]` tasks one per subagent (Goldfish; subagents never commit/push).
+- **Exact Next Concrete Step:** task **1.3** (isolated invocation + agy lockdown), then 1.4–1.7; 1.8 opens PR A. The lead session does every task itself (no subagent delegation).
 
 ## Done This Session
 
