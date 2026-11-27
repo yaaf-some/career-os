@@ -45,6 +45,7 @@ describe('GoogleAuthPill (Testing-mode 7d countdown)', () => {
       expiresAt: null,
       oauthConfigured: true,
       encryptionConfigured: true,
+      missingScopes: [],
     };
 
     renderWithRouter(<GoogleAuthPill status={status} />);
@@ -66,6 +67,7 @@ describe('GoogleAuthPill (Testing-mode 7d countdown)', () => {
       expiresAt: null,
       oauthConfigured: true,
       encryptionConfigured: true,
+      missingScopes: [],
     };
 
     renderWithRouter(<GoogleAuthPill status={status} onReconnect={onReconnect} />);
@@ -87,6 +89,7 @@ describe('GoogleAuthPill (Testing-mode 7d countdown)', () => {
       expiresAt: null,
       oauthConfigured: true,
       encryptionConfigured: true,
+      missingScopes: [],
     };
 
     renderWithRouter(<GoogleAuthPill status={status} onReconnect={() => undefined} />);

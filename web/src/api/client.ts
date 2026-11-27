@@ -68,6 +68,23 @@ export class ApiError extends Error {
   }
 }
 
+/** One-line message for a failed Google call (sync, draft, reminder). */
+export function describeGoogleError(err: unknown): string {
+  if (err instanceof ApiError) {
+    switch (err.code) {
+      case 'GOOGLE_NOT_CONNECTED':
+        return 'Connect Google in Settings first.';
+      case 'GOOGLE_RECONNECT_REQUIRED':
+        return 'Reconnect Google in Settings to allow Gmail drafts and Calendar events.';
+      case 'SYNC_IN_PROGRESS':
+        return 'A sync is already running.';
+      default:
+        return err.message;
+    }
+  }
+  return err instanceof Error ? err.message : 'Google request failed';
+}
+
 /** One-line message for a failed AI call, e.g. when the bridge is disabled or busy. */
 export function describeAiError(err: unknown): string {
   if (err instanceof ApiError) {
@@ -284,26 +301,40 @@ export const careerApi = {
     );
   },
 
-  saveEmailDraft(
+  /** Saves the draft; with `confirmed` it also goes to Gmail Drafts. Never sends. */
+  async saveEmailDraft(
     id: string,
     payload: Pick<GmailDraft, 'to' | 'subject' | 'body' | 'confirmed'>,
   ): Promise<JobDetail> {
-    return requestWithFallback(
+    let fellBack = false;
+    const res = await requestWithFallback<unknown>(
       `/api/jobs/${encodeURIComponent(id)}/email-draft`,
       { method: 'POST', body: JSON.stringify(payload) },
-      () => demoStore.saveEmailDraft(id, payload),
+      () => {
+        fellBack = true;
+        return demoStore.saveEmailDraft(id, payload);
+      },
+      LIVE_ONLY,
     );
+    return fellBack ? (res as JobDetail) : jobDetailFromApi(res as ApiJobDetailResponse);
   },
 
-  addCalendarReminder(
+  /** Creates a Google Calendar event (30 min) linked to the job. */
+  async addCalendarReminder(
     id: string,
     payload: Pick<CalendarReminder, 'title' | 'startsAt' | 'notes'>,
   ): Promise<JobDetail> {
-    return requestWithFallback(
+    let fellBack = false;
+    const res = await requestWithFallback<unknown>(
       `/api/jobs/${encodeURIComponent(id)}/calendar-reminder`,
       { method: 'POST', body: JSON.stringify(payload) },
-      () => demoStore.addCalendarReminder(id, payload),
+      () => {
+        fellBack = true;
+        return demoStore.addCalendarReminder(id, payload);
+      },
+      LIVE_ONLY,
     );
+    return fellBack ? (res as JobDetail) : jobDetailFromApi(res as ApiJobDetailResponse);
   },
 
   async getTracker(): Promise<TrackerResponse> {
@@ -441,6 +472,11 @@ export const careerApi = {
       encryptionConfigured: Boolean(
         raw.encryption_configured ?? raw.encryptionConfigured ?? false,
       ),
+      missingScopes: Array.isArray(raw.missing_scopes ?? raw.missingScopes)
+        ? ((raw.missing_scopes ?? raw.missingScopes) as unknown[]).filter(
+            (s): s is string => typeof s === 'string',
+          )
+        : [],
     };
   },
 

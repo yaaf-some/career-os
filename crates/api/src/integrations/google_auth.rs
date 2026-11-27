@@ -16,10 +16,26 @@ pub const TESTING_RECONNECT_WARN_HOURS: i64 = 24;
 
 pub const DEFAULT_GOOGLE_SCOPES: &[&str] = &[
     "https://www.googleapis.com/auth/gmail.readonly",
+    // Drafts only: the API calls drafts.create / drafts.update and never sends (JOB-6).
+    "https://www.googleapis.com/auth/gmail.compose",
     "https://www.googleapis.com/auth/drive.file",
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/userinfo.email",
 ];
+
+/// Default scopes the stored grant lacks (e.g. `gmail.compose` after JOB-6 until
+/// the user reconnects). Unknown grant (`None`) reports nothing missing.
+pub fn missing_scopes(granted: Option<&str>) -> Vec<String> {
+    let Some(granted) = granted else {
+        return Vec::new();
+    };
+    let have: Vec<&str> = granted.split_whitespace().collect();
+    DEFAULT_GOOGLE_SCOPES
+        .iter()
+        .filter(|s| !have.contains(s) && !(**s).ends_with("userinfo.email"))
+        .map(|s| s.to_string())
+        .collect()
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct GoogleTokenResponse {
@@ -420,5 +436,22 @@ mod tests {
         let expired = compute_testing_status(true, Some("2026-11-18T00:00:00Z"), None, now);
         assert_eq!(expired.hours_remaining, Some(0));
         assert!(expired.needs_reconnect);
+    }
+}
+
+#[cfg(test)]
+mod scope_tests {
+    use super::*;
+
+    #[test]
+    fn reports_scopes_missing_from_the_grant() {
+        let old = "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/calendar.events openid email";
+        assert_eq!(
+            missing_scopes(Some(old)),
+            vec!["https://www.googleapis.com/auth/gmail.compose".to_string()]
+        );
+        let all = DEFAULT_GOOGLE_SCOPES.join(" ");
+        assert!(missing_scopes(Some(&all)).is_empty());
+        assert!(missing_scopes(None).is_empty());
     }
 }

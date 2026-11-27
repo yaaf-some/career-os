@@ -64,6 +64,14 @@ pub fn build_router(state: AppState) -> Router {
             "/api/tracker",
             get(routes::tracker::get_tracker).patch(routes::tracker::patch_tracker),
         )
+        .route(
+            "/api/jobs/{id}/email-draft",
+            post(routes::comms::save_email_draft),
+        )
+        .route(
+            "/api/jobs/{id}/calendar-reminder",
+            post(routes::comms::create_calendar_reminder),
+        )
         .route("/api/today", get(routes::workspace::get_today))
         .route("/api/sync/google", post(routes::workspace::sync_google_now))
         .route(

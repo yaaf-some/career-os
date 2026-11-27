@@ -46,19 +46,19 @@ Branch per PR off `main`. Merge `origin/main` into a branch to catch up; never r
 
 ## PR B — Write side: Gmail drafts + Calendar reminders (`feat/job-6b-write`)
 
-- [ ] **2.1 Scope** — add `gmail.compose` to `DEFAULT_GOOGLE_SCOPES`; `/api/auth/google/status` reports `missingScopes`; Settings shows a reconnect prompt; README notes the re-consent.
+- [x] **2.1 Scope** — add `gmail.compose` to `DEFAULT_GOOGLE_SCOPES`; `/api/auth/google/status` reports `missingScopes`; Settings shows a reconnect prompt; README notes the re-consent.
 
   Verify: `cargo test -p career-os-api auth`
-- [ ] **2.2 Gmail drafts client** — `integrations/gmail.rs`: `create_draft` and `update_draft` (RFC 2822, base64url `raw`). No send method exists. The wiremock test asserts there is no `/send` request.
+- [x] **2.2 Gmail drafts client** — `integrations/gmail.rs`: `create_draft` and `update_draft` (RFC 2822, base64url `raw`). No send method exists. The wiremock test asserts there is no `/send` request.
 
   Verify: `cargo test -p career-os-api gmail`
-- [ ] **2.3 `POST /api/jobs/{id}/email-draft`** — upserts `email_drafts`; with `confirmed` it creates or updates the Gmail draft; returns 409 when Google isn't connected (AC5).
+- [x] **2.3 `POST /api/jobs/{id}/email-draft`** — upserts `email_drafts`; with `confirmed` it creates or updates the Gmail draft; returns 409 when Google isn't connected (AC5).
 
   Verify: `cargo test -p career-os-api email_draft`
-- [ ] **2.4 `POST /api/jobs/{id}/calendar-reminder`** — creates the event, stores the linked row, sets the follow-up date (AC6).
+- [x] **2.4 `POST /api/jobs/{id}/calendar-reminder`** — creates the event, stores the linked row, sets the follow-up date (AC6).
 
   Verify: `cargo test -p career-os-api calendar_reminder`
-- [ ] **2.5 Web write side** — map the draft and reminder responses; button text "Save to Gmail Drafts (you send it)"; show 409 errors with a reconnect hint.
+- [x] **2.5 Web write side** — map the draft and reminder responses; button text "Save to Gmail Drafts (you send it)"; show 409 errors with a reconnect hint.
 
   Verify: web checks.
 - [ ] **2.6 Docs + PR B** — `trust.md` (drafts only, never send; scopes), README, ADR-003 if needed, STATE; full checks; PR; CI; ask Yaaf.
@@ -80,7 +80,9 @@ Branch per PR off `main`. Merge `origin/main` into a branch to catch up; never r
 - 1.2: linking also matches the company's own sender domain (`r@examplecorp.com` for "Example Corp"), since job URLs often point at an ATS rather than the company's domain.
 - 1.4: the API keeps the DB stage names; translation to and from the web's names lives in `web/src/api/jobs.ts` (`stageFromApi`, `trackerPatchToApi`), the same as job list/detail.
 - 1.3: `GET /api/today` returns `date` (UTC `YYYY-MM-DD`) and the web formats `dateLabel`. `topMatches` uses the API job shape and the web maps it with `jobSummaryFromApi`.
-- 1.7: until PR B, the email-draft and calendar-reminder buttons still fall back to demo behavior in live mode, because those routes don't exist yet.
+- 1.7: until PR B, the email-draft and calendar-reminder buttons still fall back to demo behavior in live mode, because those routes don't exist yet (fixed in 2.5).
+- 2.4: `startsAt` with an offset is normalized to UTC before storing; a test caught that it was stored as `-08:00`.
+- 2.6: ADR-003 added, because `gmail.compose` can technically send, so the never-send rule is enforced by code and tests rather than by the scope.
 - Live check (throwaway compose stack, 2026-11-27):
   - Scheduler logged `google_sync_hours=12`.
   - Quick-add from the UI showed "Added … (hydrogen unscored)".

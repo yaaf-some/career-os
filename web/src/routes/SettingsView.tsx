@@ -185,6 +185,17 @@ export function SettingsView() {
               </div>
             ) : null}
 
+            {googleStatus?.connected && googleStatus.missingScopes.length > 0 ? (
+              <p
+                role="status"
+                className="rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
+              >
+                Reconnect Google to grant new access:{' '}
+                {googleStatus.missingScopes.map((s) => s.split('/').pop()).join(', ')} (Gmail drafts
+                are saved for you to send; Career OS never sends mail).
+              </p>
+            ) : null}
+
             <GoogleSyncPanel connected={Boolean(googleStatus?.connected)} />
 
             <div className="flex flex-wrap gap-1.5">

@@ -10,8 +10,8 @@ use crate::{
     db::now_iso,
     error::AppError,
     integrations::google_auth::{
-        compute_testing_status, load_google_token_row, store_google_tokens, DEFAULT_GOOGLE_SCOPES,
-        GOOGLE_PROVIDER_NAME,
+        compute_testing_status, load_google_token_row, missing_scopes, store_google_tokens,
+        DEFAULT_GOOGLE_SCOPES, GOOGLE_PROVIDER_NAME,
     },
     state::AppState,
 };
@@ -30,6 +30,8 @@ pub struct GoogleAuthStatusResponse {
     pub expires_at: Option<String>,
     pub oauth_configured: bool,
     pub encryption_configured: bool,
+    /// Default scopes the current grant lacks; reconnect to grant them.
+    pub missing_scopes: Vec<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -65,6 +67,7 @@ pub async fn google_auth_status(
 ) -> Result<Json<GoogleAuthStatusResponse>, AppError> {
     let row = load_google_token_row(&state.pool).await?;
     let connected = row.is_some();
+    let missing_scopes = missing_scopes(row.as_ref().and_then(|r| r.scope.as_deref()));
     let testing = compute_testing_status(
         connected,
         row.as_ref().and_then(|r| r.connected_at.as_deref()),
@@ -83,6 +86,7 @@ pub async fn google_auth_status(
         expires_at: row.and_then(|r| r.expires_at),
         oauth_configured: state.build_google_oauth_client().is_some(),
         encryption_configured: state.cipher.is_some(),
+        missing_scopes,
     }))
 }
 

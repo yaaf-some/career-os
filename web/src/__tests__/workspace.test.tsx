@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { careerApi } from '@/api/client';
+import { careerApi, describeGoogleError } from '@/api/client';
 import {
   formatDateLabel,
   todayFromApi,
@@ -15,6 +15,7 @@ import { GoogleSyncPanel } from '@/components/GoogleSyncPanel';
 import { TodayView } from '@/routes/TodayView';
 import { TrackerView } from '@/routes/TrackerView';
 // Written by the API's `workspace_fixtures_match_web` test.
+import jobFixture from './fixtures/jobs.json';
 import todayFixture from './fixtures/today.json';
 import trackerFixture from './fixtures/tracker.json';
 
@@ -196,5 +197,47 @@ describe('live Today / Tracker / quick-add / sync', () => {
     expect(screen.getByText('failed')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /Sync now/ }));
     await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('A sync is already running.'));
+  });
+
+  it('drafts and reminders post to the real routes and map the job back', async () => {
+    const calls = mockFetch((url) =>
+      url.endsWith('/email-draft') || url.endsWith('/calendar-reminder')
+        ? json(jobFixture.detail)
+        : json({ error: 'not found', code: 'NOT_FOUND' }, 404),
+    );
+    const d = await careerApi.saveEmailDraft('job-1', {
+      to: 'recruiting@example.com',
+      subject: 'Re: next steps',
+      body: 'Tuesday works.',
+      confirmed: true,
+    });
+    expect(calls[0]).toEqual({
+      url: '/api/jobs/job-1/email-draft',
+      method: 'POST',
+      body: { to: 'recruiting@example.com', subject: 'Re: next steps', body: 'Tuesday works.', confirmed: true },
+    });
+    expect(d.gmailDraft?.to).toBe('recruiting@example.com');
+    const r = await careerApi.addCalendarReminder('job-1', {
+      title: 'Follow up',
+      startsAt: '2026-12-01T17:00:00.000Z',
+      notes: '',
+    });
+    expect(calls[1]).toMatchObject({ url: '/api/jobs/job-1/calendar-reminder', method: 'POST' });
+    expect(r.calendarReminders).toHaveLength(1);
+  });
+
+  it('Google 409s become actionable messages, not demo data', async () => {
+    mockFetch(() => json({ error: 'reconnect', code: 'GOOGLE_RECONNECT_REQUIRED' }, 409));
+    const err = await careerApi
+      .saveEmailDraft('job-1', { to: 'a@example.com', subject: 's', body: 'b', confirmed: true })
+      .catch((e: unknown) => e);
+    expect(describeGoogleError(err)).toBe(
+      'Reconnect Google in Settings to allow Gmail drafts and Calendar events.',
+    );
+    mockFetch(() => json({ error: 'no google', code: 'GOOGLE_NOT_CONNECTED' }, 409));
+    const err2 = await careerApi
+      .addCalendarReminder('job-1', { title: 't', startsAt: '2026-12-01T17:00:00Z', notes: '' })
+      .catch((e: unknown) => e);
+    expect(describeGoogleError(err2)).toBe('Connect Google in Settings first.');
   });
 });

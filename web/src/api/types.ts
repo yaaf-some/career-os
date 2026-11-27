@@ -330,6 +330,8 @@ export interface GoogleAuthStatusResponse {
   expiresAt: string | null;
   oauthConfigured: boolean;
   encryptionConfigured: boolean;
+  /** Scopes the current grant lacks (e.g. gmail.compose); reconnect to grant them. */
+  missingScopes: string[];
 }
 
 export interface CommuteInfo {
