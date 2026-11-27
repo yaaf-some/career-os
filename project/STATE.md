@@ -5,8 +5,8 @@
 
 ## Current Focus
 
-- **`JOB-5` (Phase 3) — APPROVED 2026-11-26, executing PR A** on `feat/job-5a-bridge` (`project/changes/JOB-5-ai-bridge/{spec.md,plan.md}`). Tasks 1.1–1.4 done (config hardening; CLI contracts + fixtures; routing/failover/concurrency/error codes; isolated tool-less runner — agy lockdown = custom agent + PreToolUse deny hook + deny settings + watchdog — see plan Execution Notes).
-- **Exact Next Concrete Step:** task **1.5** (typed `/v1/usage` + `/healthz` providers), then 1.6–1.7; 1.8 opens PR A. Lead does every task itself.
+- **`JOB-5` (Phase 3) — APPROVED 2026-11-26, executing PR A** on `feat/job-5a-bridge` (`project/changes/JOB-5-ai-bridge/{spec.md,plan.md}`). Tasks 1.1–1.5 done (config hardening; CLI contracts + fixtures; routing/failover/concurrency/error codes; typed usage + healthz; isolated tool-less runner — agy lockdown = custom agent + PreToolUse deny hook + deny settings + watchdog — see plan Execution Notes).
+- **Exact Next Concrete Step:** task **1.6** (plist + README + env), then 1.7; 1.8 opens PR A. Lead does every task itself.
 
 ## Done This Session
 

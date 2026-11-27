@@ -17,8 +17,9 @@ use tower_http::trace::TraceLayer;
 
 use crate::{
     auth::{bearer_auth_middleware, BearerAuthPolicy},
+    config::CliProviderKind,
     runner::{BridgeRouter, CompleteRequest},
-    usage::read_statusline_file,
+    usage::{cli_available, read_claude_usage},
 };
 
 #[derive(Clone)]
@@ -41,11 +42,24 @@ pub fn build_bridge_app(state: BridgeState) -> Router {
         .with_state(state)
 }
 
+/// Unauthenticated: reports only booleans, never resolved paths (they contain the username).
 async fn healthz(State(state): State<BridgeState>) -> Json<serde_json::Value> {
+    let cfg = &state.router.config;
+    let path = std::env::var("PATH").ok();
+    let claude = cli_available(&cfg.claude_bin, path.as_deref());
+    let agy = cli_available(&cfg.agy_bin, path.as_deref());
+    let primary_ok = match cfg.primary_provider {
+        CliProviderKind::Claude => claude,
+        CliProviderKind::Agy => agy,
+    };
     Json(serde_json::json!({
-        "status": "ok",
+        "status": if primary_ok { "ok" } else { "degraded" },
         "service": "career-os-ai-bridge",
-        "primary_provider": state.router.config.primary_provider.as_str()
+        "primary_provider": cfg.primary_provider.as_str(),
+        "providers": {
+            "claude": { "available": claude },
+            "agy": { "available": agy }
+        }
     }))
 }
 
@@ -78,15 +92,15 @@ fn error_response(status: StatusCode, code: &str, message: &str) -> Response {
 }
 
 async fn v1_usage(State(state): State<BridgeState>) -> Json<serde_json::Value> {
-    let statusline = match &state.router.config.claude_statusline_path {
-        Some(path) => read_statusline_file(path).await,
+    let cfg = &state.router.config;
+    let claude = match &cfg.claude_statusline_path {
+        Some(path) => Some(read_claude_usage(path, cfg.statusline_max_age_secs).await),
         None => None,
     };
-
     let stats = state.router.metrics.lock().await.snapshot(Instant::now());
     Json(serde_json::json!({
-        "primary_provider": state.router.config.primary_provider.as_str(),
-        "statusline": statusline,
+        "primary_provider": cfg.primary_provider.as_str(),
+        "claude": claude,
         "metrics": stats
     }))
 }
@@ -238,5 +252,66 @@ mod tests {
         assert_eq!(resp.status(), reqwest::StatusCode::UNAUTHORIZED);
         let json: serde_json::Value = resp.json().await.unwrap();
         assert_eq!(json["code"], "UNAUTHORIZED");
+    }
+
+    #[tokio::test]
+    async fn healthz_reports_provider_availability_without_paths() {
+        let base = serve(Arc::new(OkRunner)).await;
+        let json: serde_json::Value = reqwest::get(format!("{base}/healthz"))
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert!(json["providers"]["claude"]["available"].is_boolean());
+        assert!(json["providers"]["agy"]["available"].is_boolean());
+        assert!(!json.to_string().contains('/'), "{json}");
+    }
+
+    #[tokio::test]
+    async fn usage_returns_typed_claude_windows() {
+        let dir = std::env::temp_dir().join(format!("career-os-usage-http-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("statusline.json");
+        std::fs::write(&p, include_str!("../tests/fixtures/claude_statusline.json")).unwrap();
+        let cfg = BridgeConfig {
+            bearer_token: Some("test-bridge-secret".to_string()),
+            claude_statusline_path: Some(p),
+            ..BridgeConfig::default()
+        };
+        let app = build_bridge_app(BridgeState {
+            router: Arc::new(BridgeRouter::new(cfg, Arc::new(OkRunner))),
+        });
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let json: serde_json::Value = reqwest::Client::new()
+            .get(format!("http://{addr}/v1/usage"))
+            .bearer_auth("test-bridge-secret")
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(json["claude"]["five_hour"]["used_percentage"], 23.5);
+        assert_eq!(json["claude"]["seven_day"]["resets_at"], 1_790_400_000);
+        assert_eq!(json["claude"]["stale"], false);
+        assert!(json["metrics"]["providers"]["agy"].is_object());
+        assert!(!json.to_string().contains("your-user"));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // Unconfigured statusline => claude: null.
+        let base = serve(Arc::new(OkRunner)).await;
+        let json: serde_json::Value = reqwest::Client::new()
+            .get(format!("{base}/v1/usage"))
+            .bearer_auth("test-bridge-secret")
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert!(json["claude"].is_null());
     }
 }
