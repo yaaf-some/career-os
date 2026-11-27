@@ -20,7 +20,7 @@ Rust verify: `export PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH` (
   Verify: `plutil -lint` in CI (1.7); `grep -rn "change-me" deploy README.md .env.example docker-compose.yml` empty.
 - [x] **1.7 macOS CI job** — `.github/workflows/ci.yml`: `ai-bridge` path filter, job `ai-bridge-macos` on `macos-15` (pinned actions as in file), build/test/`plutil -lint`, add to `ci-gate` needs/env/loop.
   Verify: actionlint passes in CI; job green on PR.
-- [ ] **1.8 Full checks + PR A** — fmt/clippy/test; PII grep; open PR, CI green, ask Yaaf to merge.
+- [x] **1.8 Full checks + PR A** ([#12](https://github.com/yaaf-some/career-os/pull/12)) — fmt/clippy/test; PII grep; open PR, CI green, ask Yaaf to merge.
 
 ## PR B — API contract (`feat/job-5b-api`)
 
