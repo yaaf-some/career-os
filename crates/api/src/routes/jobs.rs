@@ -103,6 +103,52 @@ pub struct JobDetailResponse {
     pub evaluations: Vec<EvaluationRecord>,
     pub application: Option<ApplicationRecord>,
     pub drive_artifacts: Vec<DriveArtifactRecord>,
+    /// Gmail threads linked to the application (newest first).
+    pub gmail_threads: Vec<GmailThreadRecord>,
+    /// Calendar events linked to the application (soonest first).
+    pub calendar_events: Vec<CalendarEventRecord>,
+    pub email_draft: Option<EmailDraftRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+pub struct GmailThreadRecord {
+    pub id: String,
+    pub thread_id: String,
+    pub subject: Option<String>,
+    pub from_email: Option<String>,
+    pub snippet: Option<String>,
+    pub needs_reply: bool,
+    pub last_message_at: Option<String>,
+    pub link_source: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+pub struct CalendarEventRecord {
+    pub id: String,
+    pub kind: String,
+    pub title: String,
+    pub starts_at: String,
+    pub ends_at: String,
+    pub html_link: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+pub struct EmailDraftRecord {
+    pub id: String,
+    pub to_email: String,
+    pub subject: String,
+    pub body: String,
+    pub confirmed: bool,
+    pub gmail_draft_id: Option<String>,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct QuickAddJobRequest {
+    pub url: String,
+    pub title: Option<String>,
+    pub company: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -261,12 +307,162 @@ pub async fn get_job(
     .fetch_all(&state.pool)
     .await?;
 
+    let (gmail_threads, calendar_events, email_draft) = match &application {
+        Some(app) => (
+            sqlx::query_as::<_, GmailThreadRecord>(
+                r#"
+                SELECT id, thread_id, subject, from_email, snippet, needs_reply,
+                       last_message_at, link_source
+                FROM gmail_threads
+                WHERE application_id = ?1
+                ORDER BY last_message_at DESC
+                "#,
+            )
+            .bind(&app.id)
+            .fetch_all(&state.pool)
+            .await?,
+            sqlx::query_as::<_, CalendarEventRecord>(
+                r#"
+                SELECT id, kind, title, starts_at, ends_at, html_link, notes
+                FROM calendar_events
+                WHERE application_id = ?1
+                ORDER BY starts_at ASC
+                "#,
+            )
+            .bind(&app.id)
+            .fetch_all(&state.pool)
+            .await?,
+            sqlx::query_as::<_, EmailDraftRecord>(
+                r#"
+                SELECT id, to_email, subject, body, confirmed, gmail_draft_id, updated_at
+                FROM email_drafts
+                WHERE application_id = ?1
+                "#,
+            )
+            .bind(&app.id)
+            .fetch_optional(&state.pool)
+            .await?,
+        ),
+        None => (Vec::new(), Vec::new(), None),
+    };
+
     Ok(Json(JobDetailResponse {
         job,
         evaluations,
         application,
         drive_artifacts,
+        gmail_threads,
+        calendar_events,
+        email_draft,
     }))
+}
+
+/// Title-cased first label of the URL host (`jobs.example-co.com` → `Example Co`).
+fn company_from_url(url: &str) -> String {
+    let rest = url.split_once("://").map(|(_, r)| r).unwrap_or(url);
+    let host = rest.split(['/', '?', '#', ':']).next().unwrap_or("");
+    let labels: Vec<&str> = host
+        .split('.')
+        .filter(|l| !matches!(*l, "www" | "jobs" | "careers" | "boards" | "apply"))
+        .collect();
+    let name = if labels.len() >= 2 {
+        labels[labels.len() - 2]
+    } else {
+        labels.first().copied().unwrap_or("")
+    };
+    let words: Vec<String> = name
+        .split(['-', '_'])
+        .filter(|w| !w.is_empty())
+        .map(|w| {
+            let mut c = w.chars();
+            c.next()
+                .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
+                .unwrap_or_default()
+        })
+        .collect();
+    if words.is_empty() {
+        "Unknown company".into()
+    } else {
+        words.join(" ")
+    }
+}
+
+/// Last meaningful path segment as a title (`/jobs/staff-platform-engineer` → `Staff Platform Engineer`).
+fn title_from_url(url: &str) -> String {
+    let rest = url.split_once("://").map(|(_, r)| r).unwrap_or(url);
+    let path = rest.split(['?', '#']).next().unwrap_or("");
+    let segment = path
+        .split('/')
+        .skip(1)
+        .filter(|s| !s.is_empty() && !s.chars().all(|c| c.is_ascii_digit()))
+        .last()
+        .unwrap_or("");
+    let words: Vec<String> = segment
+        .split(['-', '_', '+'])
+        .filter(|w| !w.is_empty() && !w.chars().all(|c| c.is_ascii_digit()))
+        .map(|w| {
+            let mut c = w.chars();
+            c.next()
+                .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
+                .unwrap_or_default()
+        })
+        .collect();
+    if words.is_empty() {
+        "Untitled role".into()
+    } else {
+        words.join(" ")
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/jobs",
+    request_body = QuickAddJobRequest,
+    responses(
+        (status = 200, description = "Add one job by URL (manual, pending scoring); returns the existing job for a duplicate URL", body = JobRecord),
+        (status = 400, description = "Missing or invalid URL", body = crate::error::ErrorResponse)
+    ),
+    tag = "jobs"
+)]
+pub async fn quick_add_job(
+    State(state): State<AppState>,
+    Json(req): Json<QuickAddJobRequest>,
+) -> Result<Json<JobRecord>, AppError> {
+    let url = req.url.trim().to_string();
+    if !(url.starts_with("https://") || url.starts_with("http://")) || url.len() > 2048 {
+        return Err(AppError::BadRequest(
+            "url must be an http(s) URL".to_string(),
+        ));
+    }
+    let non_empty = |v: Option<String>| v.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let canonical_key = canonicalize_url_key(&url);
+    let scanned = ScannedJob {
+        canonical_key: canonical_key.clone(),
+        company: non_empty(req.company).unwrap_or_else(|| company_from_url(&url)),
+        title: non_empty(req.title).unwrap_or_else(|| title_from_url(&url)),
+        url,
+        location: None,
+        workplace_type: None,
+        posted_at: None,
+        source_type: "manual".to_string(),
+        jd_text: None,
+    };
+    state.ingest_scanned_jobs(&[scanned], None).await?;
+
+    let job = sqlx::query_as::<_, JobRecord>(
+        r#"
+        SELECT id, canonical_key, url, company, title, location, workplace_type,
+               yoe_min, yoe_max, yoe_label, salary_min, salary_max, salary_currency,
+               posted_at, source_type, source_id, jd_text, guard_flags_json,
+               triage_status, tier1_score, tier1_json, created_at, updated_at
+        FROM jobs
+        WHERE canonical_key = ?1
+        "#,
+    )
+    .bind(&canonical_key)
+    .fetch_one(&state.pool)
+    .await?;
+    Ok(Json(job))
 }
 
 #[utoipa::path(
@@ -419,6 +615,34 @@ mod tests {
                 title: "Resume — Example Co".into(),
                 created_at: "2026-11-22T12:00:00Z".into(),
             }],
+            gmail_threads: vec![GmailThreadRecord {
+                id: "thr-1".into(),
+                thread_id: "gmail-thread-1".into(),
+                subject: Some("Example Co: next steps".into()),
+                from_email: Some("Recruiter <recruiting@example.com>".into()),
+                snippet: Some("Thanks for applying to Example Co. Are you free Tuesday?".into()),
+                needs_reply: true,
+                last_message_at: Some("2026-11-24T15:00:00Z".into()),
+                link_source: "auto".into(),
+            }],
+            calendar_events: vec![CalendarEventRecord {
+                id: "evt-1".into(),
+                kind: "interview".into(),
+                title: "Example Co interview".into(),
+                starts_at: "2026-11-26T17:00:00Z".into(),
+                ends_at: "2026-11-26T18:00:00Z".into(),
+                html_link: Some("https://calendar.example.com/event/1".into()),
+                notes: None,
+            }],
+            email_draft: Some(EmailDraftRecord {
+                id: "draft-1".into(),
+                to_email: "recruiting@example.com".into(),
+                subject: "Re: Example Co: next steps".into(),
+                body: "Tuesday works for me.".into(),
+                confirmed: false,
+                gmail_draft_id: None,
+                updated_at: "2026-11-24T16:00:00Z".into(),
+            }),
         }
     }
 

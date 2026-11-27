@@ -7,3 +7,4 @@ pub mod settings;
 pub mod sources;
 pub mod tracker;
 pub mod triage;
+pub mod workspace;

@@ -256,3 +256,156 @@ pub async fn tracker_stats(
         pending_followups,
     }))
 }
+
+// ---- JOB-6: web Tracker view (`GET` / `PATCH /api/tracker`) ----
+
+/// One tracker row: an application with its job and latest linked thread.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackerEntry {
+    pub application_id: String,
+    pub job_id: String,
+    pub company: String,
+    pub title: String,
+    /// DB stage (`shortlisted|applied|recruiter|interviewing|offer|closed`).
+    pub stage: String,
+    pub hydrogen_score: Option<f64>,
+    pub thread_subject: Option<String>,
+    pub thread_count: i64,
+    pub threads_need_reply: bool,
+    pub last_activity_at: String,
+    pub next_follow_up_at: Option<String>,
+    pub notes: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackerResponse {
+    pub entries: Vec<TrackerEntry>,
+}
+
+/// `nextFollowUpAt`: absent = unchanged, `null` = clear, string = set.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateTrackerRequest {
+    pub job_id: String,
+    pub stage: Option<String>,
+    #[serde(default, deserialize_with = "double_option")]
+    #[schema(value_type = Option<String>)]
+    pub next_follow_up_at: Option<Option<String>>,
+    pub notes: Option<String>,
+}
+
+fn double_option<'de, D>(de: D) -> Result<Option<Option<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<String>::deserialize(de).map(Some)
+}
+
+pub async fn list_tracker_entries(pool: &sqlx::SqlitePool) -> Result<Vec<TrackerEntry>, AppError> {
+    Ok(sqlx::query_as::<_, TrackerEntry>(
+        r#"
+        SELECT a.id AS application_id, j.id AS job_id, j.company, j.title, a.stage,
+               j.tier1_score AS hydrogen_score,
+               (SELECT t.subject FROM gmail_threads t WHERE t.application_id = a.id
+                ORDER BY t.last_message_at DESC LIMIT 1) AS thread_subject,
+               (SELECT COUNT(*) FROM gmail_threads t WHERE t.application_id = a.id) AS thread_count,
+               EXISTS (SELECT 1 FROM gmail_threads t
+                       WHERE t.application_id = a.id AND t.needs_reply = 1) AS threads_need_reply,
+               MAX(a.updated_at, COALESCE((SELECT MAX(t.last_message_at) FROM gmail_threads t
+                                           WHERE t.application_id = a.id), '')) AS last_activity_at,
+               a.next_followup_at AS next_follow_up_at,
+               COALESCE(a.notes, '') AS notes
+        FROM applications a JOIN jobs j ON j.id = a.job_id
+        ORDER BY last_activity_at DESC
+        "#,
+    )
+    .fetch_all(pool)
+    .await?)
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/tracker",
+    responses((status = 200, description = "Applications with job and Gmail activity", body = TrackerResponse)),
+    tag = "tracker"
+)]
+pub async fn get_tracker(State(state): State<AppState>) -> Result<Json<TrackerResponse>, AppError> {
+    Ok(Json(TrackerResponse {
+        entries: list_tracker_entries(&state.pool).await?,
+    }))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/tracker",
+    request_body = UpdateTrackerRequest,
+    responses(
+        (status = 200, description = "Updated (creates the application if missing); full tracker list", body = TrackerResponse),
+        (status = 400, description = "Invalid stage", body = crate::error::ErrorResponse),
+        (status = 404, description = "Job not found", body = crate::error::ErrorResponse)
+    ),
+    tag = "tracker"
+)]
+pub async fn patch_tracker(
+    State(state): State<AppState>,
+    Json(req): Json<UpdateTrackerRequest>,
+) -> Result<Json<TrackerResponse>, AppError> {
+    if let Some(stage) = &req.stage {
+        if !VALID_STAGES.contains(&stage.as_str()) {
+            return Err(AppError::BadRequest(format!("invalid stage: {stage}")));
+        }
+    }
+    let job: Option<String> = sqlx::query_scalar("SELECT id FROM jobs WHERE id = ?1")
+        .bind(&req.job_id)
+        .fetch_optional(&state.pool)
+        .await?;
+    if job.is_none() {
+        return Err(AppError::NotFound(format!("job {} not found", req.job_id)));
+    }
+
+    let now = now_iso();
+    let mut tx = state.pool.begin().await?;
+    sqlx::query(
+        r#"
+        INSERT INTO applications (id, job_id, stage, updated_at)
+        VALUES (?1, ?2, 'shortlisted', ?3)
+        ON CONFLICT(job_id) DO NOTHING
+        "#,
+    )
+    .bind(crate::db::new_id())
+    .bind(&req.job_id)
+    .bind(&now)
+    .execute(&mut *tx)
+    .await?;
+
+    let (set_follow_up, follow_up) = match &req.next_follow_up_at {
+        None => (0_i64, None),
+        Some(v) => (1_i64, v.clone()),
+    };
+    sqlx::query(
+        r#"
+        UPDATE applications
+        SET stage = COALESCE(?1, stage),
+            applied_at = CASE WHEN ?1 = 'applied' AND applied_at IS NULL THEN ?5 ELSE applied_at END,
+            next_followup_at = CASE WHEN ?2 = 1 THEN ?3 ELSE next_followup_at END,
+            notes = COALESCE(?4, notes),
+            updated_at = ?5
+        WHERE job_id = ?6
+        "#,
+    )
+    .bind(&req.stage)
+    .bind(set_follow_up)
+    .bind(follow_up)
+    .bind(&req.notes)
+    .bind(&now)
+    .bind(&req.job_id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    Ok(Json(TrackerResponse {
+        entries: list_tracker_entries(&state.pool).await?,
+    }))
+}
