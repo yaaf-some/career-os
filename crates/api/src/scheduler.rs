@@ -9,7 +9,7 @@ use tokio::{
 use crate::{
     db::{new_id, now_iso},
     error::AppError,
-    routes::sources::run_ats_scan,
+    routes::{settings::SyncRunRecord, sources::run_ats_scan},
     state::AppState,
 };
 
@@ -29,9 +29,38 @@ pub fn spawn_scheduler(state: AppState, shutdown_rx: watch::Receiver<bool>) {
         return;
     }
 
-    tracing::info!("spawning background scheduler (hourly gmail/scoring, daily reddit, 3-day ATS)");
+    let sync_secs = state.config.google_sync_interval_hours * 3600;
+    tracing::info!(
+        google_sync_hours = state.config.google_sync_interval_hours,
+        "spawning background scheduler (google sync, hourly scoring, daily reddit, 3-day ATS)"
+    );
 
-    // Hourly: Gmail/Calendar sync + batched hydrogen scoring
+    // Every GOOGLE_SYNC_INTERVAL_HOURS (default 12): Gmail/Calendar sync + linking
+    {
+        let st = state.clone();
+        let mut rx = shutdown_rx.clone();
+        tokio::spawn(async move {
+            let mut ticker = interval(Duration::from_secs(sync_secs));
+            ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+            ticker.tick().await; // skip immediate t=0 tick
+            loop {
+                tokio::select! {
+                    _ = ticker.tick() => {
+                        if let Err(err) = run_google_sync(&st).await {
+                            tracing::warn!(error = %err, "scheduled google sync failed");
+                        }
+                    }
+                    _ = rx.changed() => {
+                        if *rx.borrow() {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Hourly: batched hydrogen scoring
     {
         let st = state.clone();
         let mut rx = shutdown_rx.clone();
@@ -42,8 +71,8 @@ pub fn spawn_scheduler(state: AppState, shutdown_rx: watch::Receiver<bool>) {
             loop {
                 tokio::select! {
                     _ = ticker.tick() => {
-                        if let Err(err) = run_hourly_cycle(&st).await {
-                            tracing::error!(error = %err, "hourly scheduler cycle failed");
+                        if let Err(err) = run_hourly_scoring(&st).await {
+                            tracing::error!(error = %err, "hourly scoring failed");
                         }
                     }
                     _ = rx.changed() => {
@@ -107,12 +136,21 @@ pub fn spawn_scheduler(state: AppState, shutdown_rx: watch::Receiver<bool>) {
     }
 }
 
-pub async fn run_hourly_cycle(state: &AppState) -> Result<(), AppError> {
-    let gmail_run_id = new_id();
+/// Runs one Google sync (Gmail + Calendar + linking) and records it in
+/// `sync_runs`. Returns 409 `SYNC_IN_PROGRESS` if another sync holds the lock.
+pub async fn run_google_sync(state: &AppState) -> Result<SyncRunRecord, AppError> {
+    let Ok(_guard) = state.sync_lock.try_lock() else {
+        return Err(AppError::ConflictCode(
+            "SYNC_IN_PROGRESS",
+            "a Google sync is already running".into(),
+        ));
+    };
+
+    let run_id = new_id();
     sqlx::query(
         "INSERT INTO sync_runs (id, run_type, status, started_at) VALUES (?1, 'gmail_sync', 'running', ?2)",
     )
-    .bind(&gmail_run_id)
+    .bind(&run_id)
     .bind(now_iso())
     .execute(&state.pool)
     .await?;
@@ -130,7 +168,7 @@ pub async fn run_hourly_cycle(state: &AppState) -> Result<(), AppError> {
             .bind(gmail_count + cal_count)
             .bind(meta)
             .bind(now_iso())
-            .bind(&gmail_run_id)
+            .bind(&run_id)
             .execute(&state.pool)
             .await?;
         }
@@ -140,13 +178,28 @@ pub async fn run_hourly_cycle(state: &AppState) -> Result<(), AppError> {
             )
             .bind(err.to_string())
             .bind(now_iso())
-            .bind(&gmail_run_id)
+            .bind(&run_id)
             .execute(&state.pool)
             .await?;
-            tracing::warn!(error = %err, "google workspace sync failed during hourly cycle");
+            tracing::warn!(error = %err, "google workspace sync failed");
         }
     }
 
+    let run = sqlx::query_as::<_, SyncRunRecord>(
+        r#"
+        SELECT id, run_type, status, items_fetched, items_ingested, items_filtered,
+               items_errored, meta_json, error_message, started_at, finished_at
+        FROM sync_runs WHERE id = ?1
+        "#,
+    )
+    .bind(&run_id)
+    .fetch_one(&state.pool)
+    .await?;
+    Ok(run)
+}
+
+/// Hourly hydrogen scoring of pending jobs (skipped when AI is disabled).
+pub async fn run_hourly_scoring(state: &AppState) -> Result<(), AppError> {
     if !state.ai.is_enabled() {
         tracing::warn!("AI bridge not configured; skipping hourly tier-1 scoring");
         return Ok(());

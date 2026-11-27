@@ -57,6 +57,7 @@ async fn main() -> anyhow::Result<()> {
         drive: DriveClient::new(),
         calendar: CalendarClient::new(),
         maps: MapsClient::new(config.google_maps_api_key.clone()),
+        sync_lock: Default::default(),
     };
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);

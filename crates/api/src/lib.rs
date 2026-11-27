@@ -9,6 +9,7 @@ pub mod openapi;
 pub mod routes;
 pub mod scheduler;
 pub mod state;
+pub mod sync;
 
 use axum::{
     http::HeaderValue,
@@ -150,6 +151,7 @@ mod tests {
             drive: DriveClient::new(),
             calendar: CalendarClient::new(),
             maps: MapsClient::new(None),
+            sync_lock: Default::default(),
         };
 
         let app = build_router(state);
@@ -269,6 +271,7 @@ mod tests {
             drive: DriveClient::new(),
             calendar: CalendarClient::new(),
             maps: MapsClient::new(None),
+            sync_lock: Default::default(),
         };
         let app = build_router(state.clone());
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -347,7 +350,7 @@ mod tests {
             assert_eq!(json["code"], "SERVICE_UNAVAILABLE");
         }
 
-        crate::scheduler::run_hourly_cycle(&state).await.unwrap();
+        crate::scheduler::run_hourly_scoring(&state).await.unwrap();
 
         assert_eq!(
             count(&pool, "SELECT COUNT(*) FROM ai_usage_events").await,

@@ -444,6 +444,7 @@ mod tests {
                 format!("http://{addr}/places"),
                 format!("http://{addr}/routes"),
             ),
+            sync_lock: Default::default(),
         };
 
         let remote_res = get_job_commute(State(state.clone()), Path("j-rem".to_string()))

@@ -33,6 +33,8 @@ pub struct AppState {
     pub drive: DriveClient,
     pub calendar: CalendarClient,
     pub maps: MapsClient,
+    /// Held while a Google sync runs so scheduled and manual syncs never overlap.
+    pub sync_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 pub type ScannerClientRef = crate::integrations::scanner::ScannerClient;
@@ -469,6 +471,8 @@ impl AppState {
             .await?;
             cal_count += 1;
         }
+
+        crate::sync::link::relink_all(&self.pool).await?;
 
         Ok((gmail_count, cal_count))
     }
