@@ -27,6 +27,11 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    career_os_ai_bridge::cli::prepare_workdir(&config.workdir).map_err(|e| {
+        tracing::error!(error = %e, workdir = %config.workdir.display(), "cannot prepare ai-bridge workdir");
+        anyhow::anyhow!("cannot prepare workdir {}: {e}", config.workdir.display())
+    })?;
+
     let bind_addr = config.bind_addr.clone();
     let runner = Arc::new(SystemCliRunner::from_config(&config));
     let state = BridgeState {

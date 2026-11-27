@@ -63,6 +63,8 @@ pub struct BridgeConfig {
     pub workdir: PathBuf,
     pub max_concurrency: usize,
     pub statusline_max_age_secs: u64,
+    /// agy persists every conversation under `<root>/<conversation_id>`; the runner deletes it after each run.
+    pub agy_brain_root: Option<PathBuf>,
 }
 
 impl Default for BridgeConfig {
@@ -76,15 +78,16 @@ impl Default for BridgeConfig {
             claude_hydrogen_model: "haiku".to_string(),
             claude_neon_model: "sonnet".to_string(),
             claude_carbon_model: "opus".to_string(),
-            agy_hydrogen_model: "gemini-2.5-flash-lite".to_string(),
-            agy_neon_model: "gemini-2.5-pro".to_string(),
-            agy_carbon_model: "gemini-2.5-pro".to_string(),
+            agy_hydrogen_model: "gemini-4-hydrogen-medium".to_string(),
+            agy_neon_model: "gemini-4-neon-medium".to_string(),
+            agy_carbon_model: "gemini-4-carbon-medium".to_string(),
             default_timeout_secs: 90,
             cooldown_secs: 300,
             claude_statusline_path: None,
             workdir: PathBuf::from("career-os-ai-bridge-work"),
             max_concurrency: 2,
             statusline_max_age_secs: 900,
+            agy_brain_root: None,
         }
     }
 }
@@ -155,6 +158,13 @@ impl BridgeConfig {
                 None => return Err(ConfigError::WorkdirUnresolvable),
             },
         };
+
+        cfg.agy_brain_root = env_non_empty("AI_BRIDGE_AGY_BRAIN_DIR")
+            .map(PathBuf::from)
+            .or_else(|| {
+                env_non_empty("HOME")
+                    .map(|h| PathBuf::from(h).join(".gemini/antigravity-cli/brain"))
+            });
 
         if let Some(raw) = env_non_empty("AI_BRIDGE_MAX_CONCURRENCY") {
             cfg.max_concurrency = match parse_var::<usize>(&raw, "AI_BRIDGE_MAX_CONCURRENCY")? {
@@ -277,6 +287,10 @@ mod tests {
         let cfg = cfg(&[]).unwrap();
         assert_eq!(cfg.max_concurrency, 2);
         assert_eq!(cfg.statusline_max_age_secs, 900);
+        assert_eq!(
+            cfg.agy_brain_root,
+            Some(PathBuf::from("/Users/test/.gemini/antigravity-cli/brain"))
+        );
         assert_eq!(
             cfg.workdir,
             PathBuf::from("/Users/test/Library/Application Support/career-os-ai-bridge/work")

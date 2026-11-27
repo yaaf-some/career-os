@@ -10,7 +10,7 @@ Rust verify: `export PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH` (
   Verify: `cargo test -p career-os-ai-bridge config`
 - [x] **1.2 Pin CLI contracts** — run `claude -p --output-format json --tools "" …` and `agy -p --output-format json --sandbox --mode plan …` with stdin on the dev box; save sanitized sample outputs as `crates/ai-bridge/tests/fixtures/{claude_print.json,agy_stream_ok.jsonl,agy_stream_tool_denied.jsonl}`; record exact flags in `Execution Notes`.
   Verify: fixtures committed, flags noted.
-- [ ] **1.3 Isolated invocation** — `src/runner.rs` `SystemCliRunner`: stdin prompt, flags from 1.2, `--system-prompt` for claude, `env_clear` + allowlist, `current_dir(workdir)` (create 0700), agy per spec (stream-json stdin line, `--agent career-os-bridge`, deny `--settings`; write agent + `hooks.json` into workdir at startup; watchdog kills on a tool `step_update` ⇒ `ProviderError::ToolUseAttempted`; delete `~/.gemini/antigravity-cli/brain/<conversation_id>` after each run); parse JSON outputs (content, tokens, cost) using fixtures; `CliOutput` gains `prompt_tokens`, `completion_tokens`, `cost_usd`. Add `ProviderError::Unavailable` for spawn/not-found. Tests: argv/stdin/env/cwd via a `CommandSpec` builder unit-tested without spawning; fixture parsing.
+- [x] **1.3 Isolated invocation** — `src/runner.rs` `SystemCliRunner`: stdin prompt, flags from 1.2, `--system-prompt` for claude, `env_clear` + allowlist, `current_dir(workdir)` (create 0700), agy per spec (stream-json stdin line, `--agent career-os-bridge`, deny `--settings`; write agent + `hooks.json` into workdir at startup; watchdog kills on a tool `step_update` ⇒ `ProviderError::ToolUseAttempted`; delete `~/.gemini/antigravity-cli/brain/<conversation_id>` after each run); parse JSON outputs (content, tokens, cost) using fixtures; `CliOutput` gains `prompt_tokens`, `completion_tokens`, `cost_usd`. Add `ProviderError::Unavailable` for spawn/not-found. Tests: argv/stdin/env/cwd via a `CommandSpec` builder unit-tested without spawning; fixture parsing.
   Verify: `cargo test -p career-os-ai-bridge runner`
 - [ ] **1.4 Routing, failover policy, concurrency, errors** — `src/runner.rs`, `src/lib.rs`: request `primary` + `allow_failover`; failover only on RateLimited/TimedOut/Unavailable; `Semaphore` with wait counted in timeout ⇒ `Busy`; error codes/status per spec; JSON 400 for bad bodies. Tests for each (extend `ScriptedRunner`).
   Verify: `cargo test -p career-os-ai-bridge`
@@ -57,3 +57,14 @@ Rust verify: `export PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH` (
   - agy always persists conversations to `~/.gemini/antigravity-cli/brain/<id>`; no flag/setting (agy docs: cli/headless.md, settings schema) — bridge deletes after run.
   - Spec approved with this agy design (agy may be a tier primary; claude stays default).
 - **1.6 reminder:** 1.1 makes the bridge exit non-zero on a bad/placeholder token; the plist uses `KeepAlive` true, so 1.6 must add `ThrottleInterval` (e.g. 30) or `KeepAlive`→`{SuccessfulExit: false}` + throttle to avoid a tight respawn loop.
+- **2026-11-27 · 1.3 (minor deviations, no re-approval):**
+  - claude also gets `--setting-sources ""` (no user hooks/settings) and `--disable-slash-commands`; system prompt goes via `--system-prompt-file` (0600 temp file in `<workdir>/tmp`, deleted after the run) so neither prompt is in `ps`. `--bare` rejected: it skips keychain reads (breaks subscription auth).
+  - Default system prompt (text-only, untrusted-data notice) is always sent when the caller omits one, so no CLI loads its tool-describing default.
+  - Both CLIs verified working under `env -i` with only `PATH HOME USER LANG TMPDIR`.
+  - agy `--agent` resolves by frontmatter `name:`, not filename. agy init event carries `conversation_id` at top level.
+  - agy model defaults → `gemini-4-{hydrogen,neon,carbon}-medium` (`gemini-2.5-*` no longer listed by `agy models`).
+  - New code lives in `src/cli.rs` (pure spec/parse/workdir) + `SystemCliRunner` in `runner.rs`. Error enum kept as `CliInvokeError` (+ `Unavailable`, `ToolUseAttempted`); provisional HTTP 503/502 until 1.4.
+  - `prompt_tokens` = input + cache-creation + cache-read tokens (claude) / input + cache_read (agy).
+  - `json_mode` → agy `--json-schema` deferred to 1.4 (needs a schema per call site).
+  - Residual (for ADR-002): killing agy doesn't kill its process group; a client disconnect drops the future before brain cleanup; agy likely keeps a row in `conversation_summaries.db`.
+  - Real-CLI smoke test `tests/cli_smoke.rs` (ignored) passed on the M2: both CLIs refused an injection prompt with zero tool steps; brain dir count unchanged.

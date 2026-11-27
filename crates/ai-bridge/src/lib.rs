@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod cli;
 pub mod config;
 pub mod runner;
 pub mod usage;
@@ -58,7 +59,10 @@ async fn v1_complete(
             let status = match err {
                 CliInvokeError::RateLimited(_) => StatusCode::TOO_MANY_REQUESTS,
                 CliInvokeError::TimedOut(_) => StatusCode::GATEWAY_TIMEOUT,
-                CliInvokeError::ExecutionFailed(_) => StatusCode::BAD_GATEWAY,
+                CliInvokeError::ExecutionFailed(_) | CliInvokeError::ToolUseAttempted(_) => {
+                    StatusCode::BAD_GATEWAY
+                }
+                CliInvokeError::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             };
             (
                 status,
@@ -90,26 +94,25 @@ async fn v1_usage(State(state): State<BridgeState>) -> Json<serde_json::Value> {
 mod tests {
     use super::*;
     use crate::{
-        config::{BridgeConfig, CliProviderKind},
-        runner::{BoxFuture, CliInvokeOutput, CliRunner},
+        config::BridgeConfig,
+        runner::{BoxFuture, CliInvokeOutput, CliRunner, InvokeRequest},
     };
-    use std::time::Duration;
     use tokio::net::TcpListener;
 
     struct OkRunner;
     impl CliRunner for OkRunner {
         fn invoke<'a>(
             &'a self,
-            _provider: CliProviderKind,
-            model: &'a str,
-            _prompt: &'a str,
-            _timeout: Duration,
+            req: InvokeRequest<'a>,
         ) -> BoxFuture<'a, Result<CliInvokeOutput, CliInvokeError>> {
             Box::pin(async move {
                 Ok(CliInvokeOutput {
                     content: "ok".to_string(),
-                    model: model.to_string(),
+                    model: req.model.to_string(),
                     latency_ms: 5,
+                    prompt_tokens: None,
+                    completion_tokens: None,
+                    cost_usd: None,
                 })
             })
         }
