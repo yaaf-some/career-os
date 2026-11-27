@@ -76,8 +76,10 @@ export interface JobSummary {
   url: string;
   triageStatus: TriageStatus;
   stage: PipelineStage;
-  hydrogenScore: number;
-  scoreBreakdown: ScoreBreakdown;
+  /** 0–100; null until the hydrogen tier has scored the job. */
+  hydrogenScore: number | null;
+  /** Null when the source gives a single score only (the live API). */
+  scoreBreakdown: ScoreBreakdown | null;
   hydrogenSummary: string;
   hasNeonEval: boolean;
   gmailStatus: GmailThreadStatus;
@@ -129,8 +131,11 @@ export interface JobDetail extends JobSummary {
   requirements: string[];
   neonEval: {
     overallVerdict: string;
-    confidence: string;
+    confidence: string | null;
     evaluatedAt: string;
+    /** Host CLI and model that ran the evaluation (live API only). */
+    provider?: string | null;
+    model?: string;
     blocks: EvalBlock[];
   } | null;
   tailor: TailorArtifacts;
@@ -199,7 +204,7 @@ export interface TrackerEntry {
   company: string;
   title: string;
   stage: PipelineStage;
-  hydrogenScore: number;
+  hydrogenScore: number | null;
   gmailStatus: GmailThreadStatus;
   threadSubject: string | null;
   lastActivityAt: string;

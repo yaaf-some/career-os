@@ -1,5 +1,6 @@
 import { CalendarClock, Mail } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { formatHydrogenScore } from '@/api/jobs';
 import { useTrackerQuery, useUpdateTrackerMutation } from '@/api/queries';
 import type { GmailThreadStatus, PipelineStage } from '@/api/types';
 import { Badge, Button, Card, SectionHeader } from '@/components/ui';
@@ -116,7 +117,7 @@ export function TrackerView({
                       >
                         {entry.company} — {entry.title}
                       </button>
-                      <Badge variant="brand">{entry.hydrogenScore}/100</Badge>
+                      <Badge variant="brand">{formatHydrogenScore(entry.hydrogenScore)}</Badge>
                       <Badge variant={gmailMeta.variant}>
                         <Mail className="h-3 w-3" />
                         <span>{gmailMeta.label}</span>

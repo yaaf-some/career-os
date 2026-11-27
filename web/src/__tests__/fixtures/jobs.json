@@ -1,0 +1,135 @@
+{
+  "detail": {
+    "application": {
+      "applied_at": "2026-11-23T00:00:00Z",
+      "followup_count": 1,
+      "gmail_thread_id": null,
+      "id": "app-1",
+      "job_id": "job-1",
+      "linear_issue_id": null,
+      "next_followup_at": "2026-11-30T00:00:00Z",
+      "notes": null,
+      "stage": "interviewing",
+      "updated_at": "2026-11-23T00:00:00Z"
+    },
+    "drive_artifacts": [
+      {
+        "created_at": "2026-11-22T12:00:00Z",
+        "drive_file_id": "drive-file-1",
+        "drive_url": "https://docs.example.com/resume-1",
+        "id": "art-1",
+        "job_id": "job-1",
+        "kind": "resume_doc",
+        "title": "Resume — Example Co"
+      }
+    ],
+    "evaluations": [
+      {
+        "archetype": "Staff Platform Engineer",
+        "blocks_json": "{\"A\":\"Older evaluation.\"}",
+        "created_at": "2026-11-21T10:00:00Z",
+        "id": "eval-old",
+        "job_id": "job-1",
+        "model": "sonnet",
+        "overall_score": 4.1,
+        "provider": "claude",
+        "report_md": "## Summary\n\nGood fit.",
+        "rubric_score": null,
+        "tier": "neon"
+      },
+      {
+        "archetype": "Staff Platform Engineer",
+        "blocks_json": "{\"A\":\"Strong fit on platform work.\",\"B\":{\"summary\":\"No Kubernetes operator experience.\",\"rating\":\"minor\",\"highlights\":[\"Learnable in weeks\"]},\"G\":{\"verdict\":\"Posting looks genuine.\"}}",
+        "created_at": "2026-11-22T10:00:00Z",
+        "id": "eval-new",
+        "job_id": "job-1",
+        "model": "sonnet",
+        "overall_score": 4.1,
+        "provider": "claude",
+        "report_md": "## Summary\n\nGood fit.",
+        "rubric_score": null,
+        "tier": "neon"
+      }
+    ],
+    "job": {
+      "canonical_key": "example-co|staff-platform-engineer",
+      "company": "Example Co",
+      "created_at": "2026-11-21T09:00:00Z",
+      "guard_flags_json": null,
+      "id": "job-1",
+      "jd_text": "Build the platform.\nOwn reliability.",
+      "location": "Remote (US)",
+      "posted_at": "2026-11-20T00:00:00Z",
+      "salary_currency": "USD",
+      "salary_max": 260000,
+      "salary_min": 210000,
+      "source_id": "greenhouse-example",
+      "source_type": "ats_board",
+      "tier1_json": "{\"job_id\":\"job-1\",\"score\":87.5,\"recommended_status\":\"pending_triage\",\"rationale\":\"Strong platform match.\",\"archetype\":\"Platform\"}",
+      "tier1_score": 87.5,
+      "title": "Staff Platform Engineer",
+      "triage_status": "pending_triage",
+      "updated_at": "2026-11-21T09:05:00Z",
+      "url": "https://jobs.example.com/staff-platform-engineer",
+      "workplace_type": "remote",
+      "yoe_label": "8+ years",
+      "yoe_max": null,
+      "yoe_min": 8
+    }
+  },
+  "list": {
+    "jobs": [
+      {
+        "canonical_key": "example-co|staff-platform-engineer",
+        "company": "Example Co",
+        "created_at": "2026-11-21T09:00:00Z",
+        "guard_flags_json": null,
+        "id": "job-1",
+        "jd_text": "Build the platform.\nOwn reliability.",
+        "location": "Remote (US)",
+        "posted_at": "2026-11-20T00:00:00Z",
+        "salary_currency": "USD",
+        "salary_max": 260000,
+        "salary_min": 210000,
+        "source_id": "greenhouse-example",
+        "source_type": "ats_board",
+        "tier1_json": "{\"job_id\":\"job-1\",\"score\":87.5,\"recommended_status\":\"pending_triage\",\"rationale\":\"Strong platform match.\",\"archetype\":\"Platform\"}",
+        "tier1_score": 87.5,
+        "title": "Staff Platform Engineer",
+        "triage_status": "pending_triage",
+        "updated_at": "2026-11-21T09:05:00Z",
+        "url": "https://jobs.example.com/staff-platform-engineer",
+        "workplace_type": "remote",
+        "yoe_label": "8+ years",
+        "yoe_max": null,
+        "yoe_min": 8
+      },
+      {
+        "canonical_key": "other-co|backend-engineer",
+        "company": "Other Co",
+        "created_at": "2026-11-21T09:00:00Z",
+        "guard_flags_json": null,
+        "id": "job-2",
+        "jd_text": null,
+        "location": null,
+        "posted_at": "2026-11-20T00:00:00Z",
+        "salary_currency": null,
+        "salary_max": null,
+        "salary_min": null,
+        "source_id": "greenhouse-example",
+        "source_type": "ats_board",
+        "tier1_json": null,
+        "tier1_score": null,
+        "title": "Backend Engineer",
+        "triage_status": "pending_scoring",
+        "updated_at": "2026-11-21T09:05:00Z",
+        "url": "https://jobs.example.com/backend-engineer",
+        "workplace_type": null,
+        "yoe_label": "8+ years",
+        "yoe_max": null,
+        "yoe_min": 8
+      }
+    ],
+    "total": 2
+  }
+}

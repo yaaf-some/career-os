@@ -6,6 +6,7 @@ import { UsageBar } from '@/components/UsageBar';
 import { formatAntigravityStatus, formatUsagePercent } from '@/lib/usage';
 // Written by the API's `ai_usage_fixture_matches_web` test (AC8).
 import apiUsage from './fixtures/ai-usage.json';
+import jobFixture from './fixtures/jobs.json';
 
 afterEach(() => {
   cleanup();
@@ -120,7 +121,7 @@ describe('client hits the real API routes (AC9)', () => {
 
   it('evaluate posts neon to /api/ai/evaluate/{id} then reads the job', async () => {
     const calls = mockFetch((url) =>
-      url.startsWith('/api/ai/') ? json({ evaluation_id: 'e1' }) : json({ id: 'job 1' }),
+      url.startsWith('/api/ai/') ? json({ evaluation_id: 'e1' }) : json(jobFixture.detail),
     );
     await careerApi.evaluateJob('job 1');
     expect(calls[0]).toEqual({
@@ -146,7 +147,7 @@ describe('client hits the real API routes (AC9)', () => {
     const calls = mockFetch((url) =>
       url.startsWith('/api/triage/')
         ? json({ job_id: 'j1', triage_status: 'blacklisted', application_id: null })
-        : json({ id: 'j1' }),
+        : json(jobFixture.detail),
     );
     await careerApi.triageJob('j1', { action: 'reject' });
     expect(calls[0]).toEqual({ url: '/api/triage/j1', method: 'POST', body: { action: 'blacklist' } });

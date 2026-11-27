@@ -20,6 +20,7 @@ import {
   useTriageMutation,
 } from '@/api/queries';
 import { describeAiError } from '@/api/client';
+import { formatHydrogenScore } from '@/api/jobs';
 import { Badge, Button, Card } from '@/components/ui';
 import { CommuteBadge } from '@/components/CommuteBadge';
 import { cn } from '@/lib/cn';
@@ -112,7 +113,7 @@ export function RoleDetailDrawer({
               {/* Quick Action Bar */}
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-card/40 px-5 py-2.5">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge variant="brand">hydrogen {job.hydrogenScore}/100</Badge>
+                  <Badge variant="brand">hydrogen {formatHydrogenScore(job.hydrogenScore)}</Badge>
                   <Badge variant={job.triageStatus === 'approved' ? 'success' : 'neutral'}>
                     {job.triageStatus}
                   </Badge>
@@ -165,30 +166,40 @@ export function RoleDetailDrawer({
                       <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         Hydrogen Triage Summary
                       </div>
-                      <p className="mt-1.5 text-sm">{job.hydrogenSummary}</p>
-                      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                        {Object.entries(job.scoreBreakdown).map(([k, val]) => (
-                          <div key={k} className="rounded-lg bg-secondary/70 p-2">
-                            <div className="text-[11px] uppercase text-muted-foreground">{k}</div>
-                            <div className="text-sm font-semibold tabular-nums">{val}/100</div>
-                          </div>
-                        ))}
-                      </div>
+                      <p className="mt-1.5 text-sm">
+                        {job.hydrogenSummary || (
+                          <span className="text-muted-foreground">Not scored yet.</span>
+                        )}
+                      </p>
+                      {job.scoreBreakdown ? (
+                        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                          {Object.entries(job.scoreBreakdown).map(([k, val]) => (
+                            <div key={k} className="rounded-lg bg-secondary/70 p-2">
+                              <div className="text-[11px] uppercase text-muted-foreground">{k}</div>
+                              <div className="text-sm font-semibold tabular-nums">{val}/100</div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                     </Card>
 
                     <Card className="p-4">
                       <h3 className="text-sm font-semibold">Job Description</h3>
                       <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
-                        {job.descriptionText}
+                        {job.descriptionText || 'No description captured for this posting.'}
                       </p>
-                      <h4 className="mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Key Requirements
-                      </h4>
-                      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
-                        {job.requirements.map((req) => (
-                          <li key={req}>{req}</li>
-                        ))}
-                      </ul>
+                      {job.requirements.length > 0 ? (
+                        <>
+                          <h4 className="mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Key Requirements
+                          </h4>
+                          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+                            {job.requirements.map((req) => (
+                              <li key={req}>{req}</li>
+                            ))}
+                          </ul>
+                        </>
+                      ) : null}
                     </Card>
                   </Tabs.Panel>
 
@@ -231,7 +242,17 @@ export function RoleDetailDrawer({
                         <Card className="border-accent-brand/40 bg-accent-brand/5 p-3.5">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <span className="text-sm font-semibold">{job.neonEval.overallVerdict}</span>
-                            <Badge variant="brand">Confidence: {job.neonEval.confidence}</Badge>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {job.neonEval.confidence ? (
+                                <Badge variant="brand">Confidence: {job.neonEval.confidence}</Badge>
+                              ) : null}
+                              {job.neonEval.provider ? (
+                                <Badge variant="neutral">
+                                  {job.neonEval.provider}
+                                  {job.neonEval.model ? ` · ${job.neonEval.model}` : ''}
+                                </Badge>
+                              ) : null}
+                            </div>
                           </div>
                         </Card>
                         {job.neonEval.blocks.map((block) => (
@@ -240,11 +261,11 @@ export function RoleDetailDrawer({
                               <div className="text-sm font-semibold">
                                 Block {block.block}: {block.title}
                               </div>
-                              <Badge
-                                variant={block.block === 'G' ? 'success' : 'neutral'}
-                              >
-                                {block.rating}
-                              </Badge>
+                              {block.rating ? (
+                                <Badge variant={block.block === 'G' ? 'success' : 'neutral'}>
+                                  {block.rating}
+                                </Badge>
+                              ) : null}
                             </div>
                             <p className="mt-1.5 text-sm text-muted-foreground">{block.summary}</p>
                             {block.highlights.length > 0 ? (

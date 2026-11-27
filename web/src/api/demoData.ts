@@ -501,7 +501,7 @@ class DemoStore {
 
     const topMatches = this.jobs
       .filter((j) => j.triageStatus === 'pending' || j.triageStatus === 'shortlisted')
-      .sort((a, b) => b.hydrogenScore - a.hydrogenScore)
+      .sort((a, b) => (b.hydrogenScore ?? -1) - (a.hydrogenScore ?? -1))
       .slice(0, 4)
       .map((j) => this.toSummary(j));
 
@@ -601,28 +601,28 @@ class DemoStore {
         {
           block: 'A',
           title: 'Role & Archetype Fit',
-          rating: `${job.scoreBreakdown.domain}/100`,
+          rating: `${job.scoreBreakdown?.domain ?? '–'}/100`,
           summary: `Strong alignment with target systems/platform engineering scope at ${job.company}.`,
           highlights: ['Core IC technical ownership', 'Clear architectural mandate'],
         },
         {
           block: 'B',
           title: 'Technical Stack Match',
-          rating: `${job.scoreBreakdown.skills}/100`,
+          rating: `${job.scoreBreakdown?.skills ?? '–'}/100`,
           summary: 'Verified overlap with Experience List.md capabilities without unbacked claims.',
           highlights: ['Typed APIs & Rust/TS runtime', 'Automated testing & telemetry'],
         },
         {
           block: 'C',
           title: 'Scope & Leveling',
-          rating: `${job.scoreBreakdown.level}/100`,
+          rating: `${job.scoreBreakdown?.level ?? '–'}/100`,
           summary: 'Appropriate senior/staff autonomy and cross-functional impact.',
           highlights: ['Architecture ownership', 'Zero inflated leadership claims'],
         },
         {
           block: 'D',
           title: 'Compensation & Logistics',
-          rating: `${job.scoreBreakdown.logistics}/100`,
+          rating: `${job.scoreBreakdown?.logistics ?? '–'}/100`,
           summary: `Remote policy: ${job.remotePolicy}.`,
           highlights: [job.compensation ?? 'Compensation band pending confirmation'],
         },
