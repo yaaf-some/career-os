@@ -147,6 +147,11 @@ pub async fn run_hourly_cycle(state: &AppState) -> Result<(), AppError> {
         }
     }
 
+    if !state.ai.is_enabled() {
+        tracing::warn!("AI bridge not configured; skipping hourly tier-1 scoring");
+        return Ok(());
+    }
+
     let score_run_id = new_id();
     sqlx::query(
         "INSERT INTO sync_runs (id, run_type, status, started_at) VALUES (?1, 'tier1_score', 'running', ?2)",

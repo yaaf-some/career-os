@@ -6,7 +6,12 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use utoipa::ToSchema;
 
-use crate::{db::now_iso, error::AppError, state::AppState};
+use crate::{
+    ai::{AiRouting, AI_ROUTING_KEY},
+    db::now_iso,
+    error::AppError,
+    state::AppState,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct SettingRecord {
@@ -73,7 +78,8 @@ pub async fn list_settings(
     ),
     request_body = UpsertSettingRequest,
     responses(
-        (status = 200, description = "Setting saved", body = SettingRecord)
+        (status = 200, description = "Setting saved", body = SettingRecord),
+        (status = 400, description = "Value invalid for a validated key (e.g. ai_routing)", body = crate::error::ErrorResponse)
     ),
     tag = "settings"
 )]
@@ -82,6 +88,7 @@ pub async fn upsert_setting(
     Path(key): Path<String>,
     Json(req): Json<UpsertSettingRequest>,
 ) -> Result<Json<SettingRecord>, AppError> {
+    validate_setting(&key, &req.value)?;
     let value_json = serde_json::to_string(&req.value)
         .map_err(|e| AppError::BadRequest(format!("invalid JSON value: {e}")))?;
     let now = now_iso();
@@ -108,6 +115,18 @@ pub async fn upsert_setting(
     }))
 }
 
+/// Keys with a known shape are validated so a bad write can't break their readers.
+fn validate_setting(key: &str, value: &serde_json::Value) -> Result<(), AppError> {
+    if key == AI_ROUTING_KEY {
+        serde_json::from_value::<AiRouting>(value.clone()).map_err(|e| {
+            AppError::BadRequest(format!(
+                "ai_routing must be {{hydrogenPrimary: claude|agy, neonPrimary: claude|agy, autoFailover: bool}}: {e}"
+            ))
+        })?;
+    }
+    Ok(())
+}
+
 #[utoipa::path(
     get,
     path = "/api/sync-runs",
@@ -132,4 +151,33 @@ pub async fn list_sync_runs(
     .await?;
 
     Ok(Json(ListSyncRunsResponse { runs }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn ai_routing_validation() {
+        let ok = json!({"hydrogenPrimary": "agy", "neonPrimary": "claude", "autoFailover": false});
+        assert!(validate_setting(AI_ROUTING_KEY, &ok).is_ok());
+        for bad in [
+            json!({"hydrogenPrimary": "codex", "neonPrimary": "claude", "autoFailover": true}),
+            json!({"hydrogenPrimary": "claude", "neonPrimary": "claude"}),
+            json!({"hydrogenPrimary": "claude", "neonPrimary": "claude", "autoFailover": "yes"}),
+            json!({"hydrogenPrimary": "claude", "neonPrimary": "claude", "autoFailover": true, "x": 1}),
+            json!("claude"),
+        ] {
+            assert!(
+                matches!(
+                    validate_setting(AI_ROUTING_KEY, &bad),
+                    Err(AppError::BadRequest(_))
+                ),
+                "{bad}"
+            );
+        }
+        // Other keys are free-form.
+        assert!(validate_setting("anything", &json!([1, 2])).is_ok());
+    }
 }

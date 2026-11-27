@@ -4,7 +4,7 @@ use tokio::{net::TcpListener, sync::watch};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use career_os_api::{
-    ai::{AiProvider, HostBridgeProvider, MockAiProvider},
+    ai::select_ai_provider,
     build_router,
     config::AppConfig,
     crypto::TokenCipher,
@@ -41,16 +41,11 @@ async fn main() -> anyhow::Result<()> {
         None => None,
     };
 
-    let ai: Arc<dyn AiProvider> = match (&config.ai_bridge_url, config.ai_demo_mode) {
-        (Some(url), false) => Arc::new(HostBridgeProvider::new(
-            url.clone(),
-            config.ai_bridge_token.clone().unwrap_or_default(),
-        )),
-        _ => {
-            tracing::info!("using MockAiProvider (AI_BRIDGE_URL unset or AI_DEMO_MODE=true)");
-            Arc::new(MockAiProvider)
-        }
-    };
+    let ai = select_ai_provider(
+        config.ai_bridge_url.as_deref(),
+        config.ai_bridge_token.as_deref(),
+        config.ai_demo_mode,
+    );
 
     let state = AppState {
         pool,

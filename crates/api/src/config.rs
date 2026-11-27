@@ -22,6 +22,8 @@ pub struct AppConfig {
     pub cors_origin: Option<String>,
     pub scheduler_enabled: bool,
     pub profile_summary: Option<String>,
+    /// Optional daily agy call budget shown in the Usage Bar.
+    pub ai_agy_daily_call_limit: Option<i64>,
 }
 
 impl Default for AppConfig {
@@ -47,6 +49,7 @@ impl Default for AppConfig {
             cors_origin: None,
             scheduler_enabled: true,
             profile_summary: None,
+            ai_agy_daily_call_limit: None,
         }
     }
 }
@@ -82,6 +85,9 @@ impl AppConfig {
             cors_origin: env_non_empty("CAREER_OS_CORS_ORIGIN"),
             scheduler_enabled: env_bool("CAREER_OS_SCHEDULER_ENABLED", true),
             profile_summary: env_non_empty("CAREER_OS_PROFILE_SUMMARY"),
+            ai_agy_daily_call_limit: env_non_empty("AI_AGY_DAILY_CALL_LIMIT")
+                .and_then(|v| v.parse::<i64>().ok())
+                .filter(|v| *v > 0),
         }
     }
 }

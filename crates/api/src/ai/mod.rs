@@ -1,4 +1,9 @@
-use std::{future::Future, pin::Pin, time::Instant};
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -25,6 +30,15 @@ impl AiTier {
     }
 }
 
+/// Which host CLI the bridge should try first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum CliKind {
+    Claude,
+    Agy,
+}
+
+/// Body of the bridge's `POST /v1/complete` (field names are the bridge contract).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiRequest {
     pub tier: AiTier,
@@ -34,6 +48,15 @@ pub struct AiRequest {
     pub temperature: Option<f32>,
     pub json_mode: bool,
     pub timeout_secs: Option<u64>,
+    /// `None` = bridge default (`AI_BRIDGE_PRIMARY`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primary: Option<CliKind>,
+    #[serde(default = "default_true")]
+    pub allow_failover: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,23 +66,154 @@ pub struct AiResponse {
     pub model: String,
     pub prompt_tokens: Option<u32>,
     pub completion_tokens: Option<u32>,
+    #[serde(default)]
+    pub cost_usd: Option<f64>,
     pub latency_ms: u64,
     #[serde(default)]
     pub failover_used: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+/// One Claude subscription window as reported by the bridge (unix seconds).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BridgeRateWindow {
+    pub used_percentage: Option<f64>,
+    pub resets_at: Option<i64>,
+}
+
+/// `claude` object of the bridge's `GET /v1/usage`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BridgeClaudeUsage {
+    pub five_hour: Option<BridgeRateWindow>,
+    pub seven_day: Option<BridgeRateWindow>,
+    pub statusline_updated_at: Option<i64>,
+    #[serde(default = "default_true")]
+    pub stale: bool,
+}
+
+/// What the AI provider knows about quota; the route adds DB stats.
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct AiUsageReport {
+    /// False when AI is disabled (no bridge URL + token) or in demo mode.
+    pub configured: bool,
     pub bridge_reachable: bool,
-    pub active_provider: String,
-    pub statusline: Option<serde_json::Value>,
-    pub bridge_stats: Option<serde_json::Value>,
+    /// `None` when the bridge has no statusline path configured or is unreachable.
+    pub claude: Option<BridgeClaudeUsage>,
+    pub agy_cooldown_remaining_secs: Option<u64>,
 }
 
 pub trait AiProvider: Send + Sync {
     fn name(&self) -> &'static str;
+    /// False for `DisabledAiProvider`: callers must not start AI work or write usage rows.
+    fn is_enabled(&self) -> bool {
+        true
+    }
     fn complete<'a>(&'a self, req: AiRequest) -> BoxFuture<'a, Result<AiResponse, AppError>>;
     fn usage<'a>(&'a self) -> BoxFuture<'a, Result<AiUsageReport, AppError>>;
+}
+
+pub const AI_DISABLED_MESSAGE: &str =
+    "AI bridge not configured (set AI_BRIDGE_URL and AI_BRIDGE_TOKEN, or AI_DEMO_MODE=true)";
+
+/// Used when no bridge is configured outside demo mode: no silent mock answers.
+#[derive(Debug, Default, Clone)]
+pub struct DisabledAiProvider;
+
+impl AiProvider for DisabledAiProvider {
+    fn name(&self) -> &'static str {
+        "disabled"
+    }
+
+    fn is_enabled(&self) -> bool {
+        false
+    }
+
+    fn complete<'a>(&'a self, _req: AiRequest) -> BoxFuture<'a, Result<AiResponse, AppError>> {
+        Box::pin(async {
+            Err(AppError::ServiceUnavailable(
+                AI_DISABLED_MESSAGE.to_string(),
+            ))
+        })
+    }
+
+    fn usage<'a>(&'a self) -> BoxFuture<'a, Result<AiUsageReport, AppError>> {
+        Box::pin(async { Ok(AiUsageReport::default()) })
+    }
+}
+
+/// Which provider the API runs with.
+pub fn select_ai_provider(
+    bridge_url: Option<&str>,
+    bridge_token: Option<&str>,
+    demo_mode: bool,
+) -> Arc<dyn AiProvider> {
+    if demo_mode {
+        tracing::info!("AI_DEMO_MODE=true: using MockAiProvider");
+        return Arc::new(MockAiProvider);
+    }
+    match (bridge_url, bridge_token) {
+        (Some(url), Some(token)) => {
+            Arc::new(HostBridgeProvider::new(url.to_string(), token.to_string()))
+        }
+        (Some(_), None) => {
+            tracing::warn!("AI_BRIDGE_URL is set but AI_BRIDGE_TOKEN is empty: AI disabled");
+            Arc::new(DisabledAiProvider)
+        }
+        _ => {
+            tracing::info!("AI bridge not configured: AI routes return 503");
+            Arc::new(DisabledAiProvider)
+        }
+    }
+}
+
+/// Seconds the bridge will actually allow one attempt (it clamps to 5–300, default 90).
+const BRIDGE_DEFAULT_TIMEOUT_SECS: u64 = 90;
+/// Slack for the bridge's queueing, process start and HTTP overhead.
+const BRIDGE_TIMEOUT_SLACK_SECS: u64 = 15;
+
+/// Client-side timeout for one `/v1/complete` call: a failover attempt gets a full budget.
+pub fn bridge_request_timeout(req: &AiRequest) -> Duration {
+    let per_attempt = req
+        .timeout_secs
+        .unwrap_or(BRIDGE_DEFAULT_TIMEOUT_SECS)
+        .clamp(5, 300);
+    let attempts = if req.allow_failover { 2 } else { 1 };
+    Duration::from_secs(per_attempt * attempts + BRIDGE_TIMEOUT_SLACK_SECS)
+}
+
+/// Maps a bridge error status to an API error. Bridge 401/400 are API-side bugs or a
+/// token mismatch: surfacing them as 401/400 would look like the user's own auth failing.
+pub fn map_bridge_error(status: u16, body: &str) -> AppError {
+    let parsed: Option<serde_json::Value> = serde_json::from_str(body).ok();
+    let code = parsed
+        .as_ref()
+        .and_then(|v| v.get("code"))
+        .and_then(|c| c.as_str())
+        .unwrap_or("UNKNOWN");
+    let message: String = parsed
+        .as_ref()
+        .and_then(|v| v.get("error"))
+        .and_then(|e| e.as_str())
+        .unwrap_or(body)
+        .chars()
+        .take(300)
+        .collect();
+    let detail = format!("ai-bridge {status} {code}: {message}");
+    match status {
+        429 => AppError::RateLimited(detail),
+        504 => AppError::GatewayTimeout(detail),
+        503 => AppError::ServiceUnavailable(detail),
+        _ => AppError::Upstream(detail),
+    }
+}
+
+fn map_transport_error(err: reqwest::Error) -> AppError {
+    if err.is_timeout() {
+        AppError::GatewayTimeout(format!("ai-bridge did not answer in time: {err}"))
+    } else if err.is_connect() {
+        AppError::ServiceUnavailable(format!("ai-bridge unreachable: {err}"))
+    } else {
+        AppError::Upstream(format!("ai-bridge request failed: {err}"))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -71,8 +225,9 @@ pub struct HostBridgeProvider {
 
 impl HostBridgeProvider {
     pub fn new(base_url: String, bearer_token: String) -> Self {
+        // No overall client timeout: each request sets its own (see `bridge_request_timeout`).
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(120))
+            .connect_timeout(Duration::from_secs(5))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
         Self {
@@ -88,27 +243,28 @@ impl AiProvider for HostBridgeProvider {
         "host-bridge"
     }
 
-    fn complete<'a>(&'a self, req: AiRequest) -> BoxFuture<'a, Result<AiResponse, AppError>> {
+    fn complete<'a>(&'a self, mut req: AiRequest) -> BoxFuture<'a, Result<AiResponse, AppError>> {
         Box::pin(async move {
-            let url = format!("{}/v1/complete", self.base_url);
-            let mut builder = self.client.post(url.as_str()).json(&req);
-            if !self.bearer_token.is_empty() {
-                builder = builder.bearer_auth(&self.bearer_token);
-            }
-
-            let resp = builder
+            req.timeout_secs = Some(
+                req.timeout_secs
+                    .unwrap_or(BRIDGE_DEFAULT_TIMEOUT_SECS)
+                    .clamp(5, 300),
+            );
+            let resp = self
+                .client
+                .post(format!("{}/v1/complete", self.base_url))
+                .bearer_auth(&self.bearer_token)
+                .timeout(bridge_request_timeout(&req))
+                .json(&req)
                 .send()
                 .await
-                .map_err(|e| AppError::Upstream(format!("ai-bridge request failed: {e}")))?;
+                .map_err(map_transport_error)?;
 
-            if !resp.status().is_success() {
-                let status = resp.status();
+            let status = resp.status();
+            if !status.is_success() {
                 let body = resp.text().await.unwrap_or_default();
-                return Err(AppError::Upstream(format!(
-                    "ai-bridge returned {status}: {body}"
-                )));
+                return Err(map_bridge_error(status.as_u16(), &body));
             }
-
             resp.json::<AiResponse>()
                 .await
                 .map_err(|e| AppError::Upstream(format!("invalid ai-bridge response JSON: {e}")))
@@ -117,39 +273,82 @@ impl AiProvider for HostBridgeProvider {
 
     fn usage<'a>(&'a self) -> BoxFuture<'a, Result<AiUsageReport, AppError>> {
         Box::pin(async move {
-            let url = format!("{}/v1/usage", self.base_url);
-            let mut builder = self.client.get(url.as_str());
-            if !self.bearer_token.is_empty() {
-                builder = builder.bearer_auth(&self.bearer_token);
-            }
-
-            match builder.send().await {
-                Ok(resp) if resp.status().is_success() => {
-                    let body: serde_json::Value = resp.json().await.map_err(|e| {
-                        AppError::Upstream(format!("invalid ai-bridge usage JSON: {e}"))
-                    })?;
-                    Ok(AiUsageReport {
-                        bridge_reachable: true,
-                        active_provider: "host-bridge".to_string(),
-                        statusline: body.get("statusline").cloned(),
-                        bridge_stats: Some(body),
-                    })
+            let sent = self
+                .client
+                .get(format!("{}/v1/usage", self.base_url))
+                .bearer_auth(&self.bearer_token)
+                .timeout(Duration::from_secs(5))
+                .send()
+                .await;
+            let unreachable = AiUsageReport {
+                configured: true,
+                ..AiUsageReport::default()
+            };
+            let resp = match sent {
+                Ok(r) if r.status().is_success() => r,
+                Ok(r) => {
+                    tracing::warn!(status = %r.status(), "ai-bridge /v1/usage failed");
+                    return Ok(unreachable);
                 }
-                Ok(resp) => Err(AppError::Upstream(format!(
-                    "ai-bridge /v1/usage returned {}",
-                    resp.status()
-                ))),
                 Err(err) => {
                     tracing::warn!(error = %err, "ai-bridge unreachable for /v1/usage");
-                    Ok(AiUsageReport {
-                        bridge_reachable: false,
-                        active_provider: "host-bridge".to_string(),
-                        statusline: None,
-                        bridge_stats: None,
-                    })
+                    return Ok(unreachable);
                 }
-            }
+            };
+            let body: serde_json::Value = resp
+                .json()
+                .await
+                .map_err(|e| AppError::Upstream(format!("invalid ai-bridge usage JSON: {e}")))?;
+            Ok(parse_bridge_usage(&body))
         })
+    }
+}
+
+/// Pure: bridge `/v1/usage` body → report. Tolerates missing/odd fields.
+pub fn parse_bridge_usage(body: &serde_json::Value) -> AiUsageReport {
+    let claude = body
+        .get("claude")
+        .filter(|c| !c.is_null())
+        .and_then(|c| serde_json::from_value::<BridgeClaudeUsage>(c.clone()).ok());
+    let agy_cooldown_remaining_secs = body
+        .pointer("/metrics/providers/agy/cooldown_remaining_secs")
+        .and_then(|v| v.as_u64());
+    AiUsageReport {
+        configured: true,
+        bridge_reachable: true,
+        claude,
+        agy_cooldown_remaining_secs,
+    }
+}
+
+/// Settings key holding [`AiRouting`].
+pub const AI_ROUTING_KEY: &str = "ai_routing";
+
+/// Per-tier CLI choice from Settings (`PUT /api/settings/ai_routing`). Carbon follows neon.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AiRouting {
+    pub hydrogen_primary: CliKind,
+    pub neon_primary: CliKind,
+    pub auto_failover: bool,
+}
+
+impl Default for AiRouting {
+    fn default() -> Self {
+        Self {
+            hydrogen_primary: CliKind::Claude,
+            neon_primary: CliKind::Claude,
+            auto_failover: true,
+        }
+    }
+}
+
+impl AiRouting {
+    pub fn primary_for(&self, tier: AiTier) -> CliKind {
+        match tier {
+            AiTier::Hydrogen => self.hydrogen_primary,
+            AiTier::Neon | AiTier::Carbon => self.neon_primary,
+        }
     }
 }
 
@@ -208,6 +407,7 @@ impl AiProvider for MockAiProvider {
                 model: format!("mock-{}", req.tier.as_str()),
                 prompt_tokens: Some(prompt_tokens),
                 completion_tokens: Some(completion_tokens),
+                cost_usd: None,
                 latency_ms: start.elapsed().as_millis() as u64,
                 failover_used: false,
             })
@@ -215,17 +415,8 @@ impl AiProvider for MockAiProvider {
     }
 
     fn usage<'a>(&'a self) -> BoxFuture<'a, Result<AiUsageReport, AppError>> {
-        Box::pin(async move {
-            Ok(AiUsageReport {
-                bridge_reachable: false,
-                active_provider: "mock".to_string(),
-                statusline: None,
-                bridge_stats: Some(serde_json::json!({
-                    "mode": "mock-demo",
-                    "total_requests": 0
-                })),
-            })
-        })
+        // Demo mode: no real quota to report.
+        Box::pin(async { Ok(AiUsageReport::default()) })
     }
 }
 
@@ -351,6 +542,118 @@ pub fn parse_neon_evaluation_response(raw: &str) -> Result<NeonEvaluationResult,
         .map_err(|e| AppError::Upstream(format!("failed to parse neon evaluation JSON: {e}")))
 }
 
+/// In-process stand-in for the host bridge (tests only).
+#[cfg(test)]
+pub(crate) mod fake_bridge {
+    use std::sync::{Arc, Mutex};
+
+    use axum::{
+        extract::State,
+        http::{HeaderMap, StatusCode},
+        response::{IntoResponse, Response},
+        routing::{get, post},
+        Json, Router,
+    };
+
+    pub const TOKEN: &str = "fake-bridge-token-0123456789abcdef";
+
+    #[derive(Clone, Debug)]
+    pub enum Mode {
+        /// 200 with a body that parses for the request's tier.
+        Ok,
+        /// Error status with the bridge's `{error, code}` body.
+        Fail(u16, &'static str),
+    }
+
+    #[derive(Clone)]
+    pub struct Fake {
+        pub mode: Arc<Mutex<Mode>>,
+        pub requests: Arc<Mutex<Vec<serde_json::Value>>>,
+    }
+
+    async fn complete(
+        State(f): State<Fake>,
+        headers: HeaderMap,
+        Json(body): Json<serde_json::Value>,
+    ) -> Response {
+        if headers.get("authorization").and_then(|v| v.to_str().ok())
+            != Some(&format!("Bearer {TOKEN}"))
+        {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"error": "missing or invalid bearer token", "code": "UNAUTHORIZED"})),
+            )
+                .into_response();
+        }
+        f.requests.lock().unwrap().push(body.clone());
+        let mode = f.mode.lock().unwrap().clone();
+        match mode {
+            Mode::Fail(status, code) => (
+                StatusCode::from_u16(status).unwrap(),
+                Json(serde_json::json!({"error": format!("fake {code}"), "code": code})),
+            )
+                .into_response(),
+            Mode::Ok => {
+                let prompt = body["prompt"].as_str().unwrap_or_default();
+                let content = if body["tier"] == "hydrogen" {
+                    let items: Vec<serde_json::Value> = super::extract_job_ids_from_prompt(prompt)
+                        .into_iter()
+                        .map(|id| {
+                            serde_json::json!({"job_id": id, "score": 81.0,
+                                "recommended_status": "pending_triage", "rationale": "fake"})
+                        })
+                        .collect();
+                    serde_json::to_string(&items).unwrap()
+                } else {
+                    serde_json::json!({"overall_score": 3.9, "archetype": "Platform",
+                        "blocks": {"A": "fit"}, "report_md": "## Fake"})
+                    .to_string()
+                };
+                Json(serde_json::json!({
+                    "content": content,
+                    "provider": body["primary"].as_str().unwrap_or("claude"),
+                    "model": "fake-model",
+                    "prompt_tokens": 120,
+                    "completion_tokens": 45,
+                    "cost_usd": 0.0123,
+                    "latency_ms": 7,
+                    "failover_used": false
+                }))
+                .into_response()
+            }
+        }
+    }
+
+    async fn usage() -> Json<serde_json::Value> {
+        Json(serde_json::json!({
+            "primary_provider": "claude",
+            "claude": {
+                "five_hour": {"used_percentage": 10.0, "resets_at": 1_790_000_000},
+                "seven_day": null,
+                "statusline_updated_at": 1_789_999_000,
+                "stale": true
+            },
+            "metrics": {"providers": {"agy": {"cooldown_remaining_secs": 0}}}
+        }))
+    }
+
+    /// Starts the fake; returns its base URL and handles.
+    pub async fn start(mode: Mode) -> (String, Fake) {
+        let fake = Fake {
+            mode: Arc::new(Mutex::new(mode)),
+            requests: Arc::new(Mutex::new(Vec::new())),
+        };
+        let app = Router::new()
+            .route("/v1/complete", post(complete))
+            .route("/v1/usage", get(usage))
+            .with_state(fake.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (format!("http://{addr}"), fake)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -399,6 +702,8 @@ mod tests {
             temperature: Some(0.1),
             json_mode: true,
             timeout_secs: Some(30),
+            primary: None,
+            allow_failover: true,
         };
         let resp = mock.complete(req).await.expect("mock hydrogen");
         let parsed = parse_hydrogen_batch_response(&resp.content).expect("valid hydrogen output");
@@ -413,9 +718,161 @@ mod tests {
             temperature: Some(0.2),
             json_mode: true,
             timeout_secs: Some(60),
+            primary: None,
+            allow_failover: true,
         };
         let neon_resp = mock.complete(neon_req).await.expect("mock neon");
         let neon_parsed = parse_neon_evaluation_response(&neon_resp.content).expect("valid neon");
         assert!(neon_parsed.overall_score > 0.0);
+    }
+
+    fn neon_req(primary: Option<CliKind>, allow_failover: bool) -> AiRequest {
+        AiRequest {
+            tier: AiTier::Neon,
+            system_prompt: Some("sys".into()),
+            prompt: "Evaluate".into(),
+            max_tokens: None,
+            temperature: None,
+            json_mode: true,
+            timeout_secs: Some(120),
+            primary,
+            allow_failover,
+        }
+    }
+
+    #[tokio::test]
+    async fn bridge_provider_success_carries_tokens_cost_and_routing() {
+        let (url, fake) = fake_bridge::start(fake_bridge::Mode::Ok).await;
+        let p = HostBridgeProvider::new(url, fake_bridge::TOKEN.into());
+        let resp = p
+            .complete(neon_req(Some(CliKind::Agy), false))
+            .await
+            .unwrap();
+        assert_eq!(resp.provider, "agy");
+        assert_eq!(
+            (resp.prompt_tokens, resp.completion_tokens),
+            (Some(120), Some(45))
+        );
+        assert_eq!(resp.cost_usd, Some(0.0123));
+        let sent = fake.requests.lock().unwrap()[0].clone();
+        assert_eq!(sent["primary"], "agy");
+        assert_eq!(sent["allow_failover"], false);
+        assert_eq!(sent["timeout_secs"], 120);
+    }
+
+    #[tokio::test]
+    async fn bridge_provider_maps_error_statuses() {
+        for (status, code, check) in [
+            (
+                429u16,
+                "RATE_LIMITED",
+                (|e: &AppError| matches!(e, AppError::RateLimited(_))) as fn(&AppError) -> bool,
+            ),
+            (504, "TIMED_OUT", |e| {
+                matches!(e, AppError::GatewayTimeout(_))
+            }),
+            (
+                503,
+                "BRIDGE_BUSY",
+                |e| matches!(e, AppError::ServiceUnavailable(m) if m.contains("BRIDGE_BUSY")),
+            ),
+            (502, "UPSTREAM_FAILED", |e| {
+                matches!(e, AppError::Upstream(_))
+            }),
+            (400, "BAD_REQUEST", |e| matches!(e, AppError::Upstream(_))),
+        ] {
+            let (url, _) = fake_bridge::start(fake_bridge::Mode::Fail(status, code)).await;
+            let p = HostBridgeProvider::new(url, fake_bridge::TOKEN.into());
+            let err = p.complete(neon_req(None, true)).await.unwrap_err();
+            assert!(check(&err), "{status}: {err:?}");
+            assert!(err.to_string().contains(code), "{err}");
+        }
+    }
+
+    #[tokio::test]
+    async fn bridge_401_is_502_not_401() {
+        let (url, _) = fake_bridge::start(fake_bridge::Mode::Ok).await;
+        let p = HostBridgeProvider::new(url, "wrong-token".into());
+        let err = p.complete(neon_req(None, true)).await.unwrap_err();
+        assert!(
+            matches!(err, AppError::Upstream(ref m) if m.contains("UNAUTHORIZED")),
+            "{err:?}"
+        );
+        assert_eq!(err.status_and_code().0.as_u16(), 502);
+    }
+
+    #[tokio::test]
+    async fn unreachable_bridge_is_503_and_usage_reports_unreachable() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        drop(listener);
+        let p = HostBridgeProvider::new(url, fake_bridge::TOKEN.into());
+        let err = p.complete(neon_req(None, true)).await.unwrap_err();
+        assert!(matches!(err, AppError::ServiceUnavailable(_)), "{err:?}");
+        let u = p.usage().await.unwrap();
+        assert!(u.configured && !u.bridge_reachable && u.claude.is_none());
+    }
+
+    #[tokio::test]
+    async fn bridge_usage_is_parsed() {
+        let (url, _) = fake_bridge::start(fake_bridge::Mode::Ok).await;
+        let u = HostBridgeProvider::new(url, fake_bridge::TOKEN.into())
+            .usage()
+            .await
+            .unwrap();
+        assert!(u.configured && u.bridge_reachable);
+        let c = u.claude.unwrap();
+        assert_eq!(c.five_hour.unwrap().used_percentage, Some(10.0));
+        assert_eq!(c.seven_day, None);
+        assert!(c.stale);
+        assert_eq!(u.agy_cooldown_remaining_secs, Some(0));
+    }
+
+    #[test]
+    fn request_timeout_formula() {
+        let mut r = neon_req(None, true);
+        assert_eq!(
+            bridge_request_timeout(&r),
+            Duration::from_secs(120 * 2 + 15)
+        );
+        r.allow_failover = false;
+        assert_eq!(bridge_request_timeout(&r), Duration::from_secs(135));
+        r.timeout_secs = None;
+        assert_eq!(bridge_request_timeout(&r), Duration::from_secs(90 + 15));
+        r.timeout_secs = Some(1_000);
+        assert_eq!(bridge_request_timeout(&r), Duration::from_secs(300 + 15));
+    }
+
+    #[test]
+    fn provider_selection() {
+        assert_eq!(select_ai_provider(None, None, true).name(), "mock");
+        assert_eq!(
+            select_ai_provider(Some("http://x"), Some("t"), true).name(),
+            "mock"
+        );
+        assert_eq!(
+            select_ai_provider(Some("http://x"), Some("t"), false).name(),
+            "host-bridge"
+        );
+        let d = select_ai_provider(Some("http://x"), None, false);
+        assert_eq!(d.name(), "disabled");
+        assert!(!d.is_enabled());
+        assert_eq!(select_ai_provider(None, None, false).name(), "disabled");
+    }
+
+    #[test]
+    fn routing_defaults_and_carbon_follows_neon() {
+        let r = AiRouting {
+            hydrogen_primary: CliKind::Agy,
+            neon_primary: CliKind::Claude,
+            auto_failover: false,
+        };
+        assert_eq!(r.primary_for(AiTier::Hydrogen), CliKind::Agy);
+        assert_eq!(r.primary_for(AiTier::Carbon), CliKind::Claude);
+        assert_eq!(
+            AiRouting::default().primary_for(AiTier::Neon),
+            CliKind::Claude
+        );
+        assert!(AiRouting::default().auto_failover);
     }
 }

@@ -3,12 +3,13 @@ use std::path::Path;
 use utoipa::OpenApi;
 
 use crate::{
-    ai::{AiTier, AiUsageReport, HydrogenScoreItem, NeonEvaluationResult},
+    ai::{AiRouting, AiTier, CliKind, HydrogenScoreItem, NeonEvaluationResult},
     error::ErrorResponse,
     routes::{
         ai::{
-            AiUsageSummaryResponse, AiUsageTierStat, EvaluateJobRequest, EvaluateJobResponse,
-            ScorePendingRequest, ScorePendingResponse,
+            AiUsageResponse, AiUsageTierStat, AntigravityStatus, AntigravityUsage,
+            ClaudeUsageWindow, EvaluateJobRequest, EvaluateJobResponse, ScorePendingRequest,
+            ScorePendingResponse,
         },
         auth::{
             GoogleAuthCallbackResponse, GoogleAuthDisconnectResponse, GoogleAuthStatusResponse,
@@ -104,7 +105,8 @@ use crate::{
             TriggerScanRequest,
             TriggerScanResponse,
             AiTier,
-            AiUsageReport,
+            CliKind,
+            AiRouting,
             HydrogenScoreItem,
             NeonEvaluationResult,
             ScorePendingRequest,
@@ -112,7 +114,10 @@ use crate::{
             EvaluateJobRequest,
             EvaluateJobResponse,
             AiUsageTierStat,
-            AiUsageSummaryResponse,
+            AiUsageResponse,
+            ClaudeUsageWindow,
+            AntigravityUsage,
+            AntigravityStatus,
             GoogleAuthStatusResponse,
             GoogleAuthUrlResponse,
             GoogleAuthCallbackResponse,
@@ -165,5 +170,6 @@ mod tests {
         assert!(json.contains("/api/ai/evaluate/{job_id}"));
         assert!(json.contains("/api/jobs/{id}/commute"));
         assert!(json.contains("/api/commute/preview"));
+        assert!(json.contains("AiUsageResponse") && json.contains("AiRouting"));
     }
 }

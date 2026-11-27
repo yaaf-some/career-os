@@ -1,0 +1,34 @@
+{
+  "configured": true,
+  "bridgeReachable": true,
+  "updatedAt": "2026-09-21T13:06:40Z",
+  "claude5h": {
+    "percentUsed": 23.5,
+    "resetAt": "2026-09-21T14:13:20Z"
+  },
+  "claude7d": {
+    "percentUsed": 61.0,
+    "resetAt": "2026-09-26T05:20:00Z"
+  },
+  "claudeStale": false,
+  "antigravity": {
+    "callsUsed": 7,
+    "callsLimit": 50,
+    "cooldownUntil": "2026-09-21T13:15:20Z",
+    "status": "cooldown"
+  },
+  "dbStatsByTier": [
+    {
+      "tier": "hydrogen",
+      "totalCalls": 12,
+      "successfulCalls": 11,
+      "avgLatencyMs": 8400.0
+    },
+    {
+      "tier": "neon",
+      "totalCalls": 3,
+      "successfulCalls": 3,
+      "avgLatencyMs": 41000.0
+    }
+  ]
+}
