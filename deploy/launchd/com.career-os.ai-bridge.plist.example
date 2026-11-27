@@ -13,7 +13,7 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/your-user/.cargo/bin/career-os-ai-bridge</string>
+    <string>/Users/your-user/.local/bin/career-os-ai-bridge</string>
   </array>
 
   <key>EnvironmentVariables</key>

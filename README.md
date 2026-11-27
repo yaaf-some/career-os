@@ -62,8 +62,8 @@ The bridge is a small Rust service on the host. It runs your logged-in `claude` 
 Prerequisites: Rust (`rustup`), and `claude` and/or `agy` installed and logged in (default location `~/.local/bin`).
 
 ```bash
-# 1. Build and install the binary to ~/.cargo/bin/career-os-ai-bridge
-cargo install --path crates/ai-bridge --locked
+# 1. Build and install the binary to ~/.local/bin/career-os-ai-bridge
+cargo install --path crates/ai-bridge --locked --root ~/.local
 
 # 2. Create a shared token (put the same value in .env as AI_BRIDGE_TOKEN)
 openssl rand -hex 32
@@ -77,7 +77,9 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.career-os.ai-bridge.
 curl -s http://127.0.0.1:8787/healthz
 ```
 
-`/healthz` shows `"status":"ok"` and which CLIs the bridge can find. If it isn't running, check `~/Library/Logs/career-os-ai-bridge.err.log`: the bridge refuses to start with a missing, short (< 32 chars), or placeholder token. After rebuilding, restart it with `launchctl kickstart -k gui/$(id -u)/com.career-os.ai-bridge`. After upgrading `claude` or `agy`, re-run the tool-isolation smoke test: `cargo test -p career-os-ai-bridge --test cli_smoke -- --ignored --nocapture`.
+`/healthz` shows `"status":"ok"` and which CLIs the bridge can find. If it isn't running, check `~/Library/Logs/career-os-ai-bridge.err.log`: the bridge refuses to start with a missing, short (< 32 chars), or placeholder token. After rebuilding, restart it with `launchctl kickstart -k gui/$(id -u)/com.career-os.ai-bridge`; to remove it, `launchctl bootout gui/$(id -u)/com.career-os.ai-bridge`. After upgrading `claude` or `agy`, re-run the tool-isolation smoke test: `cargo test -p career-os-ai-bridge --test cli_smoke -- --ignored --nocapture`.
+
+**Container runtime.** The bridge listens on host loopback only; the app container reaches it at `host.docker.internal:8787` (`extra_hosts: host-gateway` in `docker-compose.yml`). Docker Desktop and OrbStack forward that to host loopback. Kiri documents the same but is beta, so check from a container (the app image is distroless, so use a throwaway one): `docker run --rm --add-host=host.docker.internal:host-gateway alpine wget -qO- http://host.docker.internal:8787/healthz`.
 
 Bridge settings (plist `EnvironmentVariables`):
 
