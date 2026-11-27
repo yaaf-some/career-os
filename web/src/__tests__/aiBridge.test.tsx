@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { careerApi, settingsFromApi, toTriageRequest } from '@/api/client';
+import { ApiError, careerApi, describeAiError, settingsFromApi, toTriageRequest } from '@/api/client';
 import type { AiUsageResponse } from '@/api/types';
 import { UsageBar } from '@/components/UsageBar';
 import { formatAntigravityStatus, formatUsagePercent } from '@/lib/usage';
@@ -182,3 +182,22 @@ describe('client hits the real API routes (AC9)', () => {
     expect(bad.neonPrimaryCli).toBe('claude');
   });
 });
+
+describe('AI error messages', () => {
+  it('explains a disabled bridge and keeps other codes', () => {
+    expect(
+      describeAiError(new ApiError('service unavailable: AI bridge not configured (set ...)', 503, 'SERVICE_UNAVAILABLE')),
+    ).toMatch(/not configured/);
+    expect(describeAiError(new ApiError('rate limited: ai-bridge 429', 429, 'RATE_LIMITED'))).toBe(
+      'rate limited: ai-bridge 429 (RATE_LIMITED)',
+    );
+    expect(describeAiError(new Error('boom'))).toBe('boom');
+  });
+
+  it('usage does not fall back to demo numbers on a server error', async () => {
+    vi.stubEnv('VITE_DEMO_MODE', 'false');
+    mockFetch(() => json({ error: 'db down', code: 'DATABASE_ERROR' }, 500));
+    await expect(careerApi.getAiUsage()).rejects.toMatchObject({ status: 500 });
+  });
+});
+

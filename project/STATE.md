@@ -32,6 +32,7 @@
 - GCP `Career-Ops` stays in Testing mode. Cloudflare: don't touch.
 
 ## Standing Gotchas
+- **JOB-5 stacked PRs + squash merges:** after #12 squash-merges, `git merge origin/main` into B (then C) will conflict where later branches re-edited A's lines (STATE.md, plan.md, `.env.example`, `docker-compose.yml`, README). Keep the branch side, re-run full checks, push, then mark ready. Never rebase.
 
 - **Never force-push (incl. `--force-with-lease`), never rebase pushed branches** — merge `origin/main` in instead; others' PRs: `gh api -X PUT repos/<owner>/<repo>/pulls/<n>/update-branch`. Never merge without Yaaf's explicit OK.
 - `gh pr edit` fails (Projects classic GraphQL) → use `gh api -X PATCH repos/<owner>/<repo>/pulls/<n>`.

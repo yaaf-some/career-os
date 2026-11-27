@@ -52,6 +52,17 @@ export class ApiError extends Error {
   }
 }
 
+/** One-line message for a failed AI call, e.g. when the bridge is disabled or busy. */
+export function describeAiError(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.code === 'SERVICE_UNAVAILABLE' && /not configured/i.test(err.message)) {
+      return 'AI is not configured: set up the host ai-bridge (README §3).';
+    }
+    return err.code ? `${err.message} (${err.code})` : err.message;
+  }
+  return err instanceof Error ? err.message : 'AI request failed';
+}
+
 async function toApiError(res: Response): Promise<ApiError> {
   const text = await res.text();
   try {
@@ -115,7 +126,10 @@ export const careerApi = {
   },
 
   getAiUsage(): Promise<AiUsageResponse> {
-    return requestWithFallback('/api/ai/usage', { method: 'GET' }, () => demoStore.getUsage());
+    // No demo numbers on a live API error: the bar renders nothing instead.
+    return requestWithFallback('/api/ai/usage', { method: 'GET' }, () => demoStore.getUsage(), {
+      fallbackOnServerError: false,
+    });
   },
 
   getToday(): Promise<TodayResponse> {
