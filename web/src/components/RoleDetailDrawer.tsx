@@ -19,7 +19,7 @@ import {
   useTailorJobMutation,
   useTriageMutation,
 } from '@/api/queries';
-import { describeAiError } from '@/api/client';
+import { describeAiError, describeGoogleError } from '@/api/client';
 import { formatHydrogenScore } from '@/api/jobs';
 import { Badge, Button, Card } from '@/components/ui';
 import { CommuteBadge } from '@/components/CommuteBadge';
@@ -428,7 +428,7 @@ export function RoleDetailDrawer({
                           <span>Gmail Draft & Confirmation Gate</span>
                         </div>
                         <Badge variant={job.gmailDraft?.confirmed ? 'success' : 'warning'}>
-                          {job.gmailDraft?.confirmed ? 'Confirmed' : 'Draft Only'}
+                          {job.gmailDraft?.confirmed ? 'In Gmail Drafts' : 'Draft here only'}
                         </Badge>
                       </div>
 
@@ -467,7 +467,8 @@ export function RoleDetailDrawer({
                             onChange={(e) => setConfirmReady(e.target.checked)}
                           />
                           <span>
-                            I have reviewed recipient, subject, and claims (required before Gmail send).
+                            I have reviewed the recipient, subject and claims. Career OS only saves
+                            it to Gmail Drafts; you send it from Gmail.
                           </span>
                         </label>
                       </div>
@@ -489,7 +490,7 @@ export function RoleDetailDrawer({
                             })
                           }
                         >
-                          Save Gmail Draft
+                          Save draft here
                         </Button>
                         <Button
                           size="sm"
@@ -508,9 +509,15 @@ export function RoleDetailDrawer({
                           }
                         >
                           <CheckCircle2 className="h-3.5 w-3.5" />
-                          <span>Confirm & Queue Send</span>
+                          <span>Save to Gmail Drafts (you send it)</span>
                         </Button>
                       </div>
+                      {saveDraftMutation.isError ? (
+                        <p role="alert" className="text-xs text-destructive">
+                          {describeGoogleError(saveDraftMutation.error)} Your draft text is saved
+                          here.
+                        </p>
+                      ) : null}
                     </Card>
 
                     <Card className="p-4 space-y-3">
@@ -557,6 +564,11 @@ export function RoleDetailDrawer({
                       >
                         Add Calendar Reminder
                       </Button>
+                      {calendarMutation.isError ? (
+                        <p role="alert" className="text-xs text-destructive">
+                          {describeGoogleError(calendarMutation.error)}
+                        </p>
+                      ) : null}
 
                       {job.calendarReminders.length > 0 ? (
                         <div className="space-y-1.5 pt-2">

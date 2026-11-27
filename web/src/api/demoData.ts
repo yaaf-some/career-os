@@ -808,6 +808,7 @@ class DemoStore {
       expiresAt: hoursFromNowIso(1),
       oauthConfigured: true,
       encryptionConfigured: true,
+      missingScopes: [],
     };
   }
 

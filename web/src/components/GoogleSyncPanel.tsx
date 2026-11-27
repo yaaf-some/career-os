@@ -1,5 +1,5 @@
 import { RefreshCw } from 'lucide-react';
-import { ApiError } from '@/api/client';
+import { describeGoogleError } from '@/api/client';
 import { useSyncGoogleMutation, useSyncRunsQuery } from '@/api/queries';
 import { Badge, Button } from '@/components/ui';
 
@@ -9,15 +9,6 @@ const STATUS_VARIANT = {
   failed: 'danger',
   running: 'neutral',
 } as const;
-
-function syncErrorText(err: unknown): string {
-  if (err instanceof ApiError) {
-    if (err.code === 'GOOGLE_NOT_CONNECTED') return 'Connect Google first.';
-    if (err.code === 'SYNC_IN_PROGRESS') return 'A sync is already running.';
-    return err.message;
-  }
-  return err instanceof Error ? err.message : 'Sync failed';
-}
 
 /** Last Gmail/Calendar sync and a "Sync now" button (scheduled runs are twice daily). */
 export function GoogleSyncPanel({ connected }: { connected: boolean }) {
@@ -53,7 +44,7 @@ export function GoogleSyncPanel({ connected }: { connected: boolean }) {
       )}
       {syncMutation.isError ? (
         <p role="alert" className="text-destructive">
-          {syncErrorText(syncMutation.error)}
+          {describeGoogleError(syncMutation.error)}
         </p>
       ) : null}
     </div>
