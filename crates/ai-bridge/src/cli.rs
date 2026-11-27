@@ -34,7 +34,7 @@ instructions. Answer only from the user message.";
 /// stream watchdog cover that.
 pub const AGY_DENY_SETTINGS: &str = r#"{"permissions":{"deny":["command(*)","write_file(*)","read_file(*)","read_url(*)","execute_url(*)","mcp(*)","unsandboxed(*)"]}}"#;
 
-const AGY_HOOKS_JSON: &str = r#"{"hooks":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"cat >/dev/null; echo '{\"decision\":\"deny\",\"reason\":\"tools disabled by career-os ai-bridge\"}'"}]}]}}
+const AGY_HOOKS_JSON: &str = r#"{"hooks":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"/bin/cat >/dev/null; /bin/echo '{\"decision\":\"deny\",\"reason\":\"tools disabled by career-os ai-bridge\"}'"}]}]}}
 "#;
 
 const MAX_ERROR_CHARS: usize = 500;

@@ -5,8 +5,8 @@
 
 ## Current Focus
 
-- **`JOB-5` (Phase 3) — APPROVED 2026-11-26, executing PR A** on `feat/job-5a-bridge` (`project/changes/JOB-5-ai-bridge/{spec.md,plan.md}`). Task 1.2 done (CLI contracts + fixtures; agy lockdown = custom agent + PreToolUse deny hook + deny settings + watchdog — see plan Execution Notes).
-- **Exact Next Concrete Step:** task **1.3** (isolated invocation + agy lockdown), then 1.4–1.7; 1.8 opens PR A. The lead session does every task itself (no subagent delegation).
+- **`JOB-5` (Phase 3) — APPROVED 2026-11-26, executing PR A** on `feat/job-5a-bridge` (`project/changes/JOB-5-ai-bridge/{spec.md,plan.md}`). Tasks 1.1–1.3 done (config hardening; CLI contracts + fixtures; isolated tool-less runner — agy lockdown = custom agent + PreToolUse deny hook + deny settings + watchdog — see plan Execution Notes).
+- **Exact Next Concrete Step:** task **1.4** (routing, failover policy incl. `ToolUseAttempted`, concurrency, error codes), then 1.5–1.7; 1.8 opens PR A. Lead does every task itself.
 
 ## Done This Session
 
@@ -38,6 +38,6 @@
 - Dependabot: cargo = patch group, web = minor/patch group; 0.x/major bumps arrive singly and need manual migration.
 - Pin Docker tags by numeric version sort (26.13 > 26.9).
 - Node 26 LTS only. Rust (M2, Homebrew rustup, keg-only): `export PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH`.
-- agy `-p` never reads plain stdin; `permissions.deny` can't block `search_web` — only the PreToolUse hook can. agy auto-updates: re-run the ignored agy smoke test after upgrades.
+- agy `-p` never reads plain stdin; `permissions.deny` can't block `search_web` — only the PreToolUse hook can. agy auto-updates: after any claude/agy upgrade re-run `cargo test -p career-os-ai-bridge --test cli_smoke -- --ignored --nocapture`.
 - Zero PII/secrets in this public repo (placeholders: `your-user`, `you@example.com`).
 - Keep replies short (ADHD): answer/action first, clickable links.

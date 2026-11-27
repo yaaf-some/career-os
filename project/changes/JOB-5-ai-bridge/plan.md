@@ -68,3 +68,5 @@ Rust verify: `export PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH` (
   - `json_mode` → agy `--json-schema` deferred to 1.4 (needs a schema per call site).
   - Residual (for ADR-002): killing agy doesn't kill its process group; a client disconnect drops the future before brain cleanup; agy likely keeps a row in `conversation_summaries.db`.
   - Real-CLI smoke test `tests/cli_smoke.rs` (ignored) passed on the M2: both CLIs refused an injection prompt with zero tool steps; brain dir count unchanged.
+  - Generated `hooks.json` (absolute `/bin/cat` + `/bin/echo`, so it can't fail open under launchd PATH) verified against real agy **without** `--agent` under `env -i`: `search_web` ⇒ "denied by pre-tool hook". So the hook alone holds if a future agy ignores `tools: []`.
+- **1.4 note:** spec Routing bullet omits `ToolUseAttempted` from failover triggers but the agy lockdown section requires it ⇒ in 1.4 include it in the failover set, give it its own code, add a test, and don't put agy on cooldown for it. API has no `deny_unknown_fields`, so PR A's added `cost_usd` is safe before PR B.
