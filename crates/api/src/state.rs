@@ -357,14 +357,28 @@ impl AppState {
         }
     }
 
-    pub async fn sync_google_workspace(&self) -> Result<(i64, i64), AppError> {
+    /// A valid Google access token, refreshing it if needed; `None` when Google
+    /// isn't connected (or no encryption key is configured).
+    pub async fn google_access_token(&self) -> Result<Option<String>, AppError> {
         let Some(cipher) = &self.cipher else {
-            return Ok((0, 0));
+            return Ok(None);
         };
         let oauth = self.build_google_oauth_client();
-        let Some(access_token) =
-            get_valid_google_access_token(&self.pool, cipher, oauth.as_ref()).await?
-        else {
+        get_valid_google_access_token(&self.pool, cipher, oauth.as_ref()).await
+    }
+
+    /// Like [`Self::google_access_token`] but 409 `GOOGLE_NOT_CONNECTED` when absent.
+    pub async fn require_google_access_token(&self) -> Result<String, AppError> {
+        self.google_access_token().await?.ok_or_else(|| {
+            AppError::ConflictCode(
+                "GOOGLE_NOT_CONNECTED",
+                "Google is not connected; connect it in Settings first".into(),
+            )
+        })
+    }
+
+    pub async fn sync_google_workspace(&self) -> Result<(i64, i64), AppError> {
+        let Some(access_token) = self.google_access_token().await? else {
             return Ok((0, 0));
         };
 

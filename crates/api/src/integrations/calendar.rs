@@ -115,6 +115,15 @@ impl CalendarClient {
             .await
             .map_err(|e| AppError::Upstream(format!("calendar create failed: {e}")))?;
 
+        if matches!(
+            resp.status(),
+            reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN
+        ) {
+            return Err(AppError::ConflictCode(
+                "GOOGLE_RECONNECT_REQUIRED",
+                "Google needs to be reconnected to create Calendar events".into(),
+            ));
+        }
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();

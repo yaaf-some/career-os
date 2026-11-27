@@ -1,5 +1,10 @@
 use serde::{Deserialize, Serialize};
 
+use base64::{
+    engine::general_purpose::{STANDARD as B64, URL_SAFE as B64_URL},
+    Engine as _,
+};
+
 use crate::error::AppError;
 
 pub const GMAIL_API_BASE: &str = "https://gmail.googleapis.com/gmail/v1";
@@ -138,6 +143,114 @@ impl GmailClient {
 
         Ok(results)
     }
+
+    /// Creates a Gmail **draft** (never sends). Returns the draft id.
+    pub async fn create_draft(
+        &self,
+        access_token: &str,
+        draft: &DraftMessage<'_>,
+    ) -> Result<String, AppError> {
+        let url = format!("{}/users/me/drafts", self.base_url);
+        let resp = self
+            .http
+            .post(url.as_str())
+            .bearer_auth(access_token)
+            .json(&draft_body(draft))
+            .send()
+            .await
+            .map_err(|e| AppError::Upstream(format!("gmail draft create failed: {e}")))?;
+        parse_draft_response(resp).await
+    }
+
+    /// Replaces an existing Gmail draft's content (never sends). If the draft no
+    /// longer exists (deleted or sent by the user in Gmail), creates a new one.
+    pub async fn update_draft(
+        &self,
+        access_token: &str,
+        draft_id: &str,
+        draft: &DraftMessage<'_>,
+    ) -> Result<String, AppError> {
+        let url = format!("{}/users/me/drafts/{}", self.base_url, draft_id);
+        let resp = self
+            .http
+            .put(url.as_str())
+            .bearer_auth(access_token)
+            .json(&draft_body(draft))
+            .send()
+            .await
+            .map_err(|e| AppError::Upstream(format!("gmail draft update failed: {e}")))?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return self.create_draft(access_token, draft).await;
+        }
+        parse_draft_response(resp).await
+    }
+}
+
+/// Plain-text email for a Gmail draft. Header fields are sanitized (no CR/LF).
+#[derive(Debug, Clone)]
+pub struct DraftMessage<'a> {
+    pub to: &'a str,
+    pub subject: &'a str,
+    pub body: &'a str,
+}
+
+fn header_value(v: &str) -> String {
+    v.chars()
+        .filter(|c| *c != '\r' && *c != '\n')
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+/// RFC 2047 encoded-word for non-ASCII subjects.
+fn encode_subject(subject: &str) -> String {
+    let clean = header_value(subject);
+    if clean.is_ascii() {
+        clean
+    } else {
+        format!("=?UTF-8?B?{}?=", B64.encode(clean.as_bytes()))
+    }
+}
+
+/// RFC 2822 message, base64url-encoded as Gmail's `raw` field expects.
+pub fn build_raw_message(draft: &DraftMessage<'_>) -> String {
+    let body = draft.body.replace("\r\n", "\n").replace('\n', "\r\n");
+    let msg = format!(
+        "To: {}\r\nSubject: {}\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n{}",
+        header_value(draft.to),
+        encode_subject(draft.subject),
+        B64.encode(body.as_bytes()),
+    );
+    B64_URL.encode(msg.as_bytes())
+}
+
+fn draft_body(draft: &DraftMessage<'_>) -> serde_json::Value {
+    serde_json::json!({ "message": { "raw": build_raw_message(draft) } })
+}
+
+async fn parse_draft_response(resp: reqwest::Response) -> Result<String, AppError> {
+    let status = resp.status();
+    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+        return Err(AppError::ConflictCode(
+            "GOOGLE_RECONNECT_REQUIRED",
+            "Google needs to be reconnected to allow Gmail drafts".into(),
+        ));
+    }
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(AppError::Upstream(format!(
+            "gmail drafts returned {status}: {body}"
+        )));
+    }
+    #[derive(Deserialize)]
+    struct DraftResp {
+        id: String,
+    }
+    let parsed: DraftResp = resp
+        .json()
+        .await
+        .map_err(|e| AppError::Upstream(format!("invalid gmail draft JSON: {e}")))?;
+    Ok(parsed.id)
 }
 
 fn normalize_thread(raw: GmailThreadApiResponse) -> SyncedGmailThread {
@@ -232,6 +345,82 @@ mod tests {
         assert_eq!(
             threads[0].subject.as_deref(),
             Some("Interview Invitation - Acme")
+        );
+    }
+
+    #[test]
+    fn raw_message_strips_header_injection_and_encodes_utf8() {
+        let raw = build_raw_message(&DraftMessage {
+            to: "a@example.com\r\nBcc: evil@example.com",
+            subject: "Café chat\nBcc: x@example.com",
+            body: "Hi,\nThanks!",
+        });
+        let decoded = String::from_utf8(B64_URL.decode(raw).unwrap()).unwrap();
+        let (headers, body) = decoded.split_once("\r\n\r\n").unwrap();
+        assert!(headers.starts_with("To: a@example.comBcc: evil@example.com\r\n"));
+        assert_eq!(headers.lines().filter(|l| l.starts_with("Bcc")).count(), 0);
+        assert!(headers.contains("Subject: =?UTF-8?B?"));
+        assert_eq!(
+            String::from_utf8(B64.decode(body).unwrap()).unwrap(),
+            "Hi,\r\nThanks!"
+        );
+    }
+
+    #[tokio::test]
+    async fn drafts_are_created_and_updated_never_sent() {
+        use axum::{extract::Request, http::StatusCode, response::IntoResponse};
+        use std::sync::{Arc, Mutex};
+
+        let seen: Arc<Mutex<Vec<String>>> = Arc::default();
+        let log = seen.clone();
+        let app = Router::new().fallback(move |req: Request| {
+            let log = log.clone();
+            async move {
+                let line = format!("{} {}", req.method(), req.uri().path());
+                log.lock().unwrap().push(line.clone());
+                match line.as_str() {
+                    "POST /users/me/drafts" => {
+                        Json(serde_json::json!({"id": "d-new"})).into_response()
+                    }
+                    "PUT /users/me/drafts/d-1" => {
+                        Json(serde_json::json!({"id": "d-1"})).into_response()
+                    }
+                    "PUT /users/me/drafts/revoked" => StatusCode::FORBIDDEN.into_response(),
+                    _ => StatusCode::NOT_FOUND.into_response(),
+                }
+            }
+        });
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let client = GmailClient::new().with_base_url(format!("http://{addr}"));
+        let msg = DraftMessage {
+            to: "r@example.com",
+            subject: "Hi",
+            body: "Thanks",
+        };
+        assert_eq!(client.create_draft("tok", &msg).await.unwrap(), "d-new");
+        assert_eq!(
+            client.update_draft("tok", "d-1", &msg).await.unwrap(),
+            "d-1"
+        );
+        // Draft deleted in Gmail: recreate instead of failing.
+        assert_eq!(
+            client.update_draft("tok", "gone", &msg).await.unwrap(),
+            "d-new"
+        );
+        let err = client
+            .update_draft("tok", "revoked", &msg)
+            .await
+            .unwrap_err();
+        assert_eq!(err.status_and_code().1, "GOOGLE_RECONNECT_REQUIRED");
+
+        let seen = seen.lock().unwrap().clone();
+        assert_eq!(seen.len(), 5);
+        assert!(
+            seen.iter().all(|l| !l.contains("send")),
+            "never send: {seen:?}"
         );
     }
 }
