@@ -458,6 +458,15 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(eval_provider.as_deref(), Some("claude"));
+        let detail: serde_json::Value = client
+            .get(format!("{base}/api/jobs/{job_id}"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(detail["evaluations"][0]["provider"], "claude");
 
         // agy 24 h count comes from recorded rows.
         let usage: serde_json::Value = client
