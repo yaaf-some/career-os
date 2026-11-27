@@ -6,7 +6,7 @@
 ## Current Focus
 
 - **`JOB-5` (Phase 3) — APPROVED 2026-11-26, executing PR A** on `feat/job-5a-bridge` (`project/changes/JOB-5-ai-bridge/{spec.md,plan.md}`). PR A tasks 1.1–1.8 done (config hardening; CLI contracts + fixtures; routing/failover/concurrency/error codes; typed usage + healthz; plist + README; macOS CI job; PR A opened; isolated tool-less runner — agy lockdown = custom agent + PreToolUse deny hook + deny settings + watchdog — see plan Execution Notes).
-- **Exact Next Concrete Step:** PR A open: https://github.com/yaaf-some/career-os/pull/12 (Auto-fix on; needs Yaaf's merge OK). PR B (`feat/job-5b-api`, 2.1–2.5 done) stacked on A, open as draft; after #12 merges: `git merge origin/main` into B, mark ready. Then PR C (3.1–3.4) stacked on B. Lead does every task itself.
+- **Exact Next Concrete Step:** PR A #12 merged 2026-11-27 (squash). AC12 verified on the M2 (launchd bridge, container reachability, real claude + agy neon evals, ps clean, agy brain clean, usage pipeline) except the Claude Code `statusLine` hook in `~/.claude/settings.json` (Yaaf adds; README §3). PR B (`feat/job-5b-api`, 2.1–2.5 done) stacked on A, open as draft; after #12 merges: `git merge origin/main` into B, mark ready. Then PR C (3.1–3.4) stacked on B. Lead does every task itself.
 
 ## Done This Session
 
