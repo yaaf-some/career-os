@@ -21,7 +21,7 @@
 
 ## Upcoming
 
-1. Follow-ups to file: `/api/jobs/{id}/tailor` backend; web demo-fallback still hides 404/5xx outside AI routes; compose default `TOKEN_ENCRYPTION_KEY` placeholder crash-loops the app; `POST /api/jobs` (quick-add) and `/api/today` don't exist in the API (web falls back to demo); hydrogen gives no score breakdown.
+1. Follow-ups to file: `/api/jobs/{id}/tailor` backend; web demo-fallback still hides 404/5xx outside AI routes; `POST /api/jobs` (quick-add) and `/api/today` don't exist in the API (web falls back to demo); hydrogen gives no score breakdown.
 2. Kiri: AC12 ran on Docker Desktop; re-check `host.docker.internal:8787` if switching runtime.
 3. `JOB-6` Live Google sync + scheduler · `JOB-7` Mac mini cutover (compose + `tailscale serve` + launchd).
 
