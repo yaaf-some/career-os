@@ -18,7 +18,7 @@ services:
       CAREER_OS_BIND: 0.0.0.0:8080
       DATABASE_URL: ${DATABASE_URL:-sqlite:///var/lib/career-os/career-os.db?mode=rwc}
       AI_BRIDGE_URL: ${AI_BRIDGE_URL:-http://host.docker.internal:8787}
-      AI_BRIDGE_TOKEN: ${AI_BRIDGE_TOKEN:-change-me}
+      AI_BRIDGE_TOKEN: ${AI_BRIDGE_TOKEN:-}
       SCANNER_URL: ${SCANNER_URL:-http://scanner:8081}
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-base64-32-bytes}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}

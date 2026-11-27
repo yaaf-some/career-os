@@ -22,7 +22,7 @@ flowchart LR
 - **Rust + SQLite WAL backend:** Fast, low-footprint Axum service with encrypted OAuth token storage (`TOKEN_ENCRYPTION_KEY`) and structured pipeline/application state.
 - **React 19 PWA:** Mobile-friendly interface served statically by Axum (`STATIC_DIR=/app/static`).
 - **Isolated scanner sidecar:** Internal-only Node.js container (`scanner:8081`) for zero-LLM-cost portal and ATS scraping.
-- **Host AI bridge:** Lightweight macOS `launchd` service exposing local `claude -p` / `agy -p` execution over `host.docker.internal:8787`.
+- **Host AI bridge:** Small Rust `launchd` service that runs your local `claude` / `agy` CLI with tools disabled, reachable from the app at `host.docker.internal:8787`.
 - **Source-of-truth discipline:** Fact-grounded resume and outreach generation with strict separation between system code and private candidate data.
 
 ## Quickstart
@@ -35,7 +35,7 @@ cp .env.example .env
 
 Edit `.env` and set at minimum:
 - `ALLOWED_TAILSCALE_USER` — your Tailscale login email (e.g. `you@example.com`)
-- `AI_BRIDGE_TOKEN` — a random shared secret matching your `ai-bridge` plist
+- `AI_BRIDGE_TOKEN` — the shared secret from step 3 (`openssl rand -hex 32`); leave empty until the bridge is set up
 - `TOKEN_ENCRYPTION_KEY` — base64-encoded 32-byte key (`openssl rand -base64 32`)
 - `DATA_DIR` (optional) — host path to your private candidate data directory (mounted read-only at `/data`)
 
@@ -57,12 +57,56 @@ Your instance will be reachable only by your tailnet user at `https://your-mac-m
 
 ### 3. Set up `ai-bridge` (macOS launchd)
 
-Copy the example launchd plist and fill in your local paths and `AI_BRIDGE_TOKEN`:
+The bridge is a small Rust service on the host. It runs your logged-in `claude` and/or `agy` CLI with **no tools**: the prompt goes in on stdin, it runs in a private work folder with a minimal environment, and agy's saved conversations are deleted after each run. Job posting text is treated as untrusted data. Background and trade-offs: [ADR-002](docs/adr/) and [docs/trust.md](docs/trust.md).
+
+Prerequisites: Rust (`rustup`), and `claude` and/or `agy` installed and logged in (default location `~/.local/bin`).
 
 ```bash
+# 1. Build and install the binary to ~/.cargo/bin/career-os-ai-bridge
+cargo install --path crates/ai-bridge --locked
+
+# 2. Create a shared token (put the same value in .env as AI_BRIDGE_TOKEN)
+openssl rand -hex 32
+
+# 3. Install the LaunchAgent, then edit it: replace every `your-user` and the token
 cp deploy/launchd/com.career-os.ai-bridge.plist.example ~/Library/LaunchAgents/com.career-os.ai-bridge.plist
-launchctl load -w ~/Library/LaunchAgents/com.career-os.ai-bridge.plist
+chmod 600 ~/Library/LaunchAgents/com.career-os.ai-bridge.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.career-os.ai-bridge.plist
+
+# 4. Check it
+curl -s http://127.0.0.1:8787/healthz
 ```
+
+`/healthz` shows `"status":"ok"` and which CLIs the bridge can find. If it isn't running, check `~/Library/Logs/career-os-ai-bridge.err.log`: the bridge refuses to start with a missing, short (< 32 chars), or placeholder token. After rebuilding, restart it with `launchctl kickstart -k gui/$(id -u)/com.career-os.ai-bridge`. After upgrading `claude` or `agy`, re-run the tool-isolation smoke test: `cargo test -p career-os-ai-bridge --test cli_smoke -- --ignored --nocapture`.
+
+Bridge settings (plist `EnvironmentVariables`):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `AI_BRIDGE_TOKEN` | — (required) | Shared bearer token, ≥ 32 chars |
+| `AI_BRIDGE_BIND` | `127.0.0.1:8787` | Listen address (keep it on loopback) |
+| `AI_BRIDGE_PRIMARY` | `claude` | Default CLI (`claude` or `agy`); requests can override |
+| `AI_BRIDGE_MAX_CONCURRENCY` | `2` | Max CLI runs at once; extra requests wait, then get 503 `BRIDGE_BUSY` |
+| `AI_BRIDGE_TIMEOUT_SECS` | `90` | Default per-run timeout (requests may set 5–300) |
+| `AI_BRIDGE_COOLDOWN_SECS` | `300` | How long a rate-limited CLI is skipped |
+| `AI_BRIDGE_WORKDIR` | `~/Library/Application Support/career-os-ai-bridge/work` | Private run folder |
+| `AI_BRIDGE_CLAUDE_BIN` / `AI_BRIDGE_AGY_BIN` | `claude` / `agy` | CLI names or absolute paths |
+| `AI_BRIDGE_{CLAUDE,AGY}_{HYDROGEN,NEON,CARBON}_MODEL` | see `crates/ai-bridge/src/config.rs` | Model per tier |
+| `CLAUDE_STATUSLINE_PATH` | unset | Claude usage file (below) |
+| `AI_BRIDGE_STATUSLINE_MAX_AGE_SECS` | `900` | Usage older than this is marked stale |
+
+**Claude usage in the Usage Bar (optional).** Claude Code passes your 5-hour and 7-day usage to its status line. To share it with the bridge, add this to `~/.claude/settings.json` (if you already have a `statusLine`, put the `tee` part in front of your own command):
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "f=\"$HOME/Library/Application Support/career-os-ai-bridge/statusline.json\"; cat > \"$f.tmp\" && mv \"$f.tmp\" \"$f\"; echo career-os"
+  }
+}
+```
+
+The file only refreshes while you use Claude Code interactively, so the bar shows it as stale after `AI_BRIDGE_STATUSLINE_MAX_AGE_SECS`.
 
 ### 4. Configure Google OAuth (Testing Mode) & LA Commute Maps (optional)
 
