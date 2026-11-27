@@ -5,8 +5,8 @@
 
 ## Current Focus
 
-- **`JOB-5` (Phase 3) — APPROVED 2026-11-26, executing PR A** on `feat/job-5a-bridge` (`project/changes/JOB-5-ai-bridge/{spec.md,plan.md}`). PR A tasks 1.1–1.8 done (config hardening; CLI contracts + fixtures; routing/failover/concurrency/error codes; typed usage + healthz; plist + README; macOS CI job; PR A opened; isolated tool-less runner — agy lockdown = custom agent + PreToolUse deny hook + deny settings + watchdog — see plan Execution Notes).
-- **Exact Next Concrete Step:** PR A open: https://github.com/yaaf-some/career-os/pull/12 (Auto-fix on; needs Yaaf's merge OK). PR B (`feat/job-5b-api`, 2.1–2.5 done) stacked on A, open as draft; after #12 merges: `git merge origin/main` into B, mark ready. Then PR C (3.1–3.4) stacked on B. Lead does every task itself.
+- **`JOB-5` (Phase 3) — APPROVED 2026-11-26, 3 PRs open (A ready, B/C draft)** on `feat/job-5a-bridge` (`project/changes/JOB-5-ai-bridge/{spec.md,plan.md}`). PR A tasks 1.1–1.8 done (config hardening; CLI contracts + fixtures; routing/failover/concurrency/error codes; typed usage + healthz; plist + README; macOS CI job; PR A opened; isolated tool-less runner — agy lockdown = custom agent + PreToolUse deny hook + deny settings + watchdog — see plan Execution Notes).
+- **Exact Next Concrete Step:** PR A open: https://github.com/yaaf-some/career-os/pull/12 (Auto-fix on; needs Yaaf's merge OK). PR B (`feat/job-5b-api`, 2.1–2.5 done) stacked on A, open as draft; after #12 merges: `git merge origin/main` into B, mark ready. PR C (`feat/job-5c-web-docs`, 3.1–3.3 done) stacked on B, draft. Merge order A → B → C (merge `origin/main` into each after the previous lands); then `project-verify-archive`, then Yaaf runs AC12 on the M2 (task 3.5). Lead does every task itself.
 
 ## Done This Session
 
