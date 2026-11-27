@@ -45,6 +45,8 @@ pub struct EvaluationRecord {
     pub job_id: String,
     pub tier: String,
     pub model: String,
+    /// CLI that produced it (`claude` | `agy`); null for rows before migration 0003.
+    pub provider: Option<String>,
     pub overall_score: Option<f64>,
     pub archetype: Option<String>,
     pub blocks_json: Option<String>,
@@ -224,7 +226,7 @@ pub async fn get_job(
 
     let evaluations = sqlx::query_as::<_, EvaluationRecord>(
         r#"
-        SELECT id, job_id, tier, model, overall_score, archetype, blocks_json,
+        SELECT id, job_id, tier, model, provider, overall_score, archetype, blocks_json,
                report_md, rubric_score, created_at
         FROM evaluations
         WHERE job_id = ?1
