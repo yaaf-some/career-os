@@ -1,6 +1,7 @@
 use std::{fmt::Display, path::PathBuf, str::FromStr};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum CliProviderKind {
     Claude,
     Agy,

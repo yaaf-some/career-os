@@ -57,6 +57,24 @@ impl InvokeRequest<'_> {
     }
 }
 
+/// Appended to the system prompt when the caller sets `json_mode`.
+pub const JSON_MODE_INSTRUCTION: &str = "Respond with exactly one valid JSON value and nothing \
+else: no prose, no explanation, no Markdown code fences.";
+
+/// System prompt the router sends: caller's (or the default) plus the JSON-mode instruction.
+/// Returns `None` when the runner should fall back to the default unchanged.
+pub fn compose_system_prompt(user: Option<&str>, json_mode: bool) -> Option<String> {
+    let base = user.map(str::trim).filter(|s| !s.is_empty());
+    match (base, json_mode) {
+        (b, true) => Some(format!(
+            "{}\n\n{JSON_MODE_INSTRUCTION}",
+            b.unwrap_or(DEFAULT_SYSTEM_PROMPT)
+        )),
+        (Some(b), false) => Some(b.to_string()),
+        (None, false) => None,
+    }
+}
+
 /// A file the runner must write (0600) before spawning and delete afterwards.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TempFile {
@@ -716,5 +734,19 @@ mod tests {
         assert!(!remove_agy_conversation(&root, "../keep").unwrap());
         assert!(root.join("keep").exists());
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn compose_system_prompt_cases() {
+        assert_eq!(compose_system_prompt(None, false), None);
+        assert_eq!(compose_system_prompt(Some("  "), false), None);
+        assert_eq!(
+            compose_system_prompt(Some(" S "), false).as_deref(),
+            Some("S")
+        );
+        let j = compose_system_prompt(None, true).unwrap();
+        assert!(j.starts_with(DEFAULT_SYSTEM_PROMPT) && j.ends_with(JSON_MODE_INSTRUCTION));
+        let j = compose_system_prompt(Some("S"), true).unwrap();
+        assert_eq!(j, format!("S\n\n{JSON_MODE_INSTRUCTION}"));
     }
 }

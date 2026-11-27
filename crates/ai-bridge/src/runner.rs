@@ -14,14 +14,14 @@ use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader},
     process::{Child, Command},
-    sync::Mutex,
+    sync::{Mutex, Semaphore},
 };
 
 pub use crate::cli::{looks_like_rate_limit, InvokeRequest};
 use crate::{
     cli::{
-        build_command_spec, parse_agy_line, parse_claude_output, remove_agy_conversation,
-        write_private_file, AgyEvent, CommandSpec, ParsedOutput,
+        build_command_spec, compose_system_prompt, parse_agy_line, parse_claude_output,
+        remove_agy_conversation, write_private_file, AgyEvent, CommandSpec, ParsedOutput,
     },
     config::{BridgeConfig, CliProviderKind},
 };
@@ -46,6 +46,16 @@ pub struct CompleteRequest {
     #[serde(default)]
     pub json_mode: bool,
     pub timeout_secs: Option<u64>,
+    /// Overrides `AI_BRIDGE_PRIMARY` for this request.
+    #[serde(default)]
+    pub primary: Option<CliProviderKind>,
+    /// When false, only the primary is tried (no failover, even on rate limit).
+    #[serde(default = "default_true")]
+    pub allow_failover: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,6 +92,46 @@ pub enum CliInvokeError {
     Unavailable(String),
     #[error("provider attempted tool use ({0}); run aborted")]
     ToolUseAttempted(String),
+}
+
+impl CliInvokeError {
+    /// Errors that say "this provider can't serve now", not "this request is bad".
+    /// Generic non-zero exits are excluded: retrying them elsewhere doubles wall time
+    /// for what is usually a prompt/response problem.
+    pub fn is_failover_eligible(&self) -> bool {
+        matches!(
+            self,
+            Self::RateLimited(_)
+                | Self::TimedOut(_)
+                | Self::Unavailable(_)
+                | Self::ToolUseAttempted(_)
+        )
+    }
+}
+
+/// Errors returned by `BridgeRouter::complete`.
+#[derive(Debug, thiserror::Error)]
+pub enum BridgeError {
+    #[error(transparent)]
+    Upstream(#[from] CliInvokeError),
+    #[error("bridge busy: no free slot within {0}s")]
+    Busy(u64),
+}
+
+impl BridgeError {
+    /// HTTP status and stable error code for the JSON error body.
+    pub fn status_and_code(&self) -> (u16, &'static str) {
+        match self {
+            Self::Busy(_) => (503, "BRIDGE_BUSY"),
+            Self::Upstream(e) => match e {
+                CliInvokeError::RateLimited(_) => (429, "RATE_LIMITED"),
+                CliInvokeError::TimedOut(_) => (504, "TIMED_OUT"),
+                CliInvokeError::ExecutionFailed(_) => (502, "UPSTREAM_FAILED"),
+                CliInvokeError::ToolUseAttempted(_) => (502, "TOOL_USE_BLOCKED"),
+                CliInvokeError::Unavailable(_) => (503, "PROVIDER_UNAVAILABLE"),
+            },
+        }
+    }
 }
 
 pub trait CliRunner: Send + Sync {
@@ -318,6 +368,7 @@ pub struct RuntimeMetrics {
     pub total_requests: u64,
     pub total_failovers: u64,
     pub rate_limit_hits: u64,
+    pub busy_rejections: u64,
     pub claude_requests: u64,
     pub claude_failures: u64,
     pub claude_rate_limits: u64,
@@ -390,6 +441,7 @@ impl RuntimeMetrics {
             "total_requests": self.total_requests,
             "total_failovers": self.total_failovers,
             "rate_limit_hits": self.rate_limit_hits,
+            "busy_rejections": self.busy_rejections,
             "providers": {
                 "claude": ProviderRuntimeStats {
                     requests: self.claude_requests,
@@ -412,14 +464,17 @@ pub struct BridgeRouter {
     pub config: BridgeConfig,
     pub runner: Arc<dyn CliRunner>,
     pub metrics: Mutex<RuntimeMetrics>,
+    slots: Semaphore,
 }
 
 impl BridgeRouter {
     pub fn new(config: BridgeConfig, runner: Arc<dyn CliRunner>) -> Self {
+        let slots = Semaphore::new(config.max_concurrency.max(1));
         Self {
             config,
             runner,
             metrics: Mutex::new(RuntimeMetrics::default()),
+            slots,
         }
     }
 
@@ -434,28 +489,42 @@ impl BridgeRouter {
         }
     }
 
-    pub async fn complete(&self, req: CompleteRequest) -> Result<CompleteResponse, CliInvokeError> {
+    pub async fn complete(&self, req: CompleteRequest) -> Result<CompleteResponse, BridgeError> {
         let timeout = Duration::from_secs(
             req.timeout_secs
                 .unwrap_or(self.config.default_timeout_secs)
                 .clamp(5, 300),
         );
+        // Waiting for a slot counts toward the first attempt's timeout.
+        let deadline = tokio::time::Instant::now() + timeout;
 
-        let primary = self.config.primary_provider;
-        let secondary = primary.other();
-        let now = Instant::now();
+        self.metrics.lock().await.total_requests += 1;
 
-        let order = {
-            let mut m = self.metrics.lock().await;
-            m.total_requests += 1;
-            let primary_cooled = m.is_on_cooldown(primary, now);
-            let secondary_cooled = m.is_on_cooldown(secondary, now);
-            if primary_cooled && !secondary_cooled {
+        let permit = tokio::time::timeout_at(deadline, self.slots.acquire()).await;
+        let first_timeout = deadline.saturating_duration_since(tokio::time::Instant::now());
+        let _permit = match permit {
+            Ok(Ok(p)) if first_timeout >= Duration::from_secs(1) => p,
+            _ => {
+                self.metrics.lock().await.busy_rejections += 1;
+                return Err(BridgeError::Busy(timeout.as_secs()));
+            }
+        };
+
+        let primary = req.primary.unwrap_or(self.config.primary_provider);
+        let order = if req.allow_failover {
+            let secondary = primary.other();
+            let now = Instant::now();
+            let m = self.metrics.lock().await;
+            if m.is_on_cooldown(primary, now) && !m.is_on_cooldown(secondary, now) {
                 vec![secondary, primary]
             } else {
                 vec![primary, secondary]
             }
+        } else {
+            vec![primary]
         };
+
+        let system_prompt = compose_system_prompt(req.system_prompt.as_deref(), req.json_mode);
 
         let mut last_err = None;
         for (idx, provider) in order.iter().copied().enumerate() {
@@ -465,9 +534,11 @@ impl BridgeRouter {
                 .invoke(InvokeRequest {
                     provider,
                     model,
-                    system_prompt: req.system_prompt.as_deref(),
+                    system_prompt: system_prompt.as_deref(),
                     prompt: &req.prompt,
-                    timeout,
+                    // A failover attempt gets the full budget; the API's client timeout
+                    // allows 2x + slack when failover is on.
+                    timeout: if idx == 0 { first_timeout } else { timeout },
                 })
                 .await;
 
@@ -489,7 +560,7 @@ impl BridgeRouter {
                         completion_tokens: out.completion_tokens,
                         cost_usd: out.cost_usd,
                         latency_ms: out.latency_ms,
-                        failover_used: idx > 0 || provider != primary,
+                        failover_used: provider != primary,
                     });
                 }
                 Err(err) => {
@@ -498,14 +569,20 @@ impl BridgeRouter {
                         error = %err,
                         "CLI provider attempt failed"
                     );
+                    let eligible = err.is_failover_eligible();
                     last_err = Some(err);
+                    if !eligible {
+                        break;
+                    }
                 }
             }
         }
 
-        Err(last_err.unwrap_or_else(|| {
-            CliInvokeError::ExecutionFailed("no CLI providers available".to_string())
-        }))
+        Err(last_err
+            .unwrap_or_else(|| {
+                CliInvokeError::ExecutionFailed("no CLI providers available".to_string())
+            })
+            .into())
     }
 }
 
@@ -514,9 +591,49 @@ mod tests {
     use super::*;
     use std::collections::VecDeque;
 
+    type Scripted = Mutex<VecDeque<Result<CliInvokeOutput, CliInvokeError>>>;
+
+    #[derive(Debug, Clone)]
+    struct Call {
+        provider: CliProviderKind,
+        timeout: Duration,
+        system_prompt: Option<String>,
+    }
+
+    #[derive(Default)]
     struct ScriptedRunner {
-        claude_results: Mutex<VecDeque<Result<CliInvokeOutput, CliInvokeError>>>,
-        agy_results: Mutex<VecDeque<Result<CliInvokeOutput, CliInvokeError>>>,
+        claude_results: Scripted,
+        agy_results: Scripted,
+        calls: Mutex<Vec<Call>>,
+        /// Each invoke sleeps this long first (concurrency tests).
+        delay: Duration,
+    }
+
+    impl ScriptedRunner {
+        fn with(claude: Vec<CliInvokeResult>, agy: Vec<CliInvokeResult>) -> Self {
+            Self {
+                claude_results: Mutex::new(claude.into()),
+                agy_results: Mutex::new(agy.into()),
+                ..Self::default()
+            }
+        }
+
+        async fn providers_called(&self) -> Vec<CliProviderKind> {
+            self.calls.lock().await.iter().map(|c| c.provider).collect()
+        }
+    }
+
+    type CliInvokeResult = Result<CliInvokeOutput, CliInvokeError>;
+
+    fn ok(content: &str, model: &str) -> CliInvokeResult {
+        Ok(CliInvokeOutput {
+            content: content.to_string(),
+            model: model.to_string(),
+            latency_ms: 10,
+            prompt_tokens: None,
+            completion_tokens: None,
+            cost_usd: None,
+        })
     }
 
     impl CliRunner for ScriptedRunner {
@@ -524,90 +641,77 @@ mod tests {
             &'a self,
             req: InvokeRequest<'a>,
         ) -> BoxFuture<'a, Result<CliInvokeOutput, CliInvokeError>> {
-            let (provider, model) = (req.provider, req.model);
             Box::pin(async move {
-                let queue = match provider {
+                self.calls.lock().await.push(Call {
+                    provider: req.provider,
+                    timeout: req.timeout,
+                    system_prompt: req.system_prompt.map(str::to_string),
+                });
+                if !self.delay.is_zero() {
+                    tokio::time::sleep(self.delay).await;
+                }
+                let queue = match req.provider {
                     CliProviderKind::Claude => &self.claude_results,
                     CliProviderKind::Agy => &self.agy_results,
                 };
-                let mut guard = queue.lock().await;
-                guard.pop_front().unwrap_or_else(|| {
-                    Ok(CliInvokeOutput {
-                        content: format!("ok from {} ({model})", provider.as_str()),
-                        model: model.to_string(),
-                        latency_ms: 12,
-                        prompt_tokens: None,
-                        completion_tokens: None,
-                        cost_usd: None,
-                    })
+                let next = queue.lock().await.pop_front();
+                next.unwrap_or_else(|| {
+                    ok(
+                        &format!("ok from {} ({})", req.provider.as_str(), req.model),
+                        req.model,
+                    )
                 })
             })
         }
     }
 
-    #[tokio::test]
-    async fn failover_on_rate_limit_and_cooldown_routing() {
-        let runner = Arc::new(ScriptedRunner {
-            claude_results: Mutex::new(VecDeque::from([Err(CliInvokeError::RateLimited(
-                "429 rate limit".to_string(),
-            ))])),
-            agy_results: Mutex::new(VecDeque::from([
-                Ok(CliInvokeOutput {
-                    content: "agy fallback ok".to_string(),
-                    model: "gemini-2.5-flash-lite".to_string(),
-                    latency_ms: 15,
-                    prompt_tokens: None,
-                    completion_tokens: None,
-                    cost_usd: None,
-                }),
-                Ok(CliInvokeOutput {
-                    content: "agy direct during cooldown".to_string(),
-                    model: "gemini-2.5-pro".to_string(),
-                    latency_ms: 10,
-                    prompt_tokens: None,
-                    completion_tokens: None,
-                    cost_usd: None,
-                }),
-            ])),
-        });
+    fn creq(tier: AiTier, prompt: &str) -> CompleteRequest {
+        CompleteRequest {
+            tier,
+            system_prompt: None,
+            prompt: prompt.to_string(),
+            max_tokens: None,
+            temperature: None,
+            json_mode: false,
+            timeout_secs: Some(15),
+            primary: None,
+            allow_failover: true,
+        }
+    }
 
-        let cfg = BridgeConfig {
+    fn claude_primary() -> BridgeConfig {
+        BridgeConfig {
             primary_provider: CliProviderKind::Claude,
             cooldown_secs: 120,
             ..BridgeConfig::default()
-        };
-        let router = BridgeRouter::new(cfg, runner);
+        }
+    }
+
+    #[tokio::test]
+    async fn failover_on_rate_limit_and_cooldown_routing() {
+        let runner = Arc::new(ScriptedRunner::with(
+            vec![Err(CliInvokeError::RateLimited("429 rate limit".into()))],
+            vec![
+                ok("agy fallback ok", "gemini-a"),
+                ok("agy direct during cooldown", "gemini-b"),
+            ],
+        ));
+        let router = BridgeRouter::new(claude_primary(), runner);
 
         // First request hits Claude 429 -> fails over to Agy and sets Claude cooldown
         let r1 = router
-            .complete(CompleteRequest {
-                tier: AiTier::Hydrogen,
-                system_prompt: None,
-                prompt: "score".to_string(),
-                max_tokens: None,
-                temperature: None,
-                json_mode: true,
-                timeout_secs: Some(15),
-            })
+            .complete(creq(AiTier::Hydrogen, "score"))
             .await
-            .expect("failover succeeds");
+            .unwrap();
         assert_eq!(r1.provider, "agy");
         assert!(r1.failover_used);
-        assert_eq!(r1.model, "gemini-2.5-flash-lite");
+        assert_eq!(r1.model, "gemini-a");
 
         // Second request skips cooled-down Claude and routes directly to Agy
         let r2 = router
-            .complete(CompleteRequest {
-                tier: AiTier::Neon,
-                system_prompt: None,
-                prompt: "evaluate".to_string(),
-                max_tokens: None,
-                temperature: None,
-                json_mode: true,
-                timeout_secs: Some(15),
-            })
+            .complete(creq(AiTier::Neon, "evaluate"))
             .await
-            .expect("cooldown routes to agy");
+            .unwrap();
         assert_eq!(r2.provider, "agy");
         assert_eq!(r2.content, "agy direct during cooldown");
 
@@ -616,6 +720,234 @@ mod tests {
         assert_eq!(snap["total_failovers"], 1);
         assert_eq!(snap["providers"]["claude"]["requests"], 1);
         assert_eq!(snap["providers"]["agy"]["requests"], 2);
+    }
+
+    #[tokio::test]
+    async fn request_primary_overrides_config() {
+        let runner = Arc::new(ScriptedRunner::default());
+        let router = BridgeRouter::new(claude_primary(), runner.clone());
+        let mut r = creq(AiTier::Neon, "x");
+        r.primary = Some(CliProviderKind::Agy);
+        let resp = router.complete(r).await.unwrap();
+        assert_eq!(resp.provider, "agy");
+        assert!(!resp.failover_used);
+        assert_eq!(runner.providers_called().await, vec![CliProviderKind::Agy]);
+    }
+
+    #[tokio::test]
+    async fn allow_failover_false_tries_primary_only() {
+        let runner = Arc::new(ScriptedRunner::with(
+            vec![Err(CliInvokeError::RateLimited("429".into()))],
+            vec![],
+        ));
+        let router = BridgeRouter::new(claude_primary(), runner.clone());
+        let mut r = creq(AiTier::Neon, "x");
+        r.allow_failover = false;
+        let err = router.complete(r).await.unwrap_err();
+        assert!(matches!(
+            err,
+            BridgeError::Upstream(CliInvokeError::RateLimited(_))
+        ));
+        assert_eq!(err.status_and_code(), (429, "RATE_LIMITED"));
+        assert_eq!(
+            runner.providers_called().await,
+            vec![CliProviderKind::Claude]
+        );
+
+        // Even with Claude cooling down, failover=false keeps the requested primary.
+        let mut r = creq(AiTier::Neon, "y");
+        r.allow_failover = false;
+        assert_eq!(router.complete(r).await.unwrap().provider, "claude");
+    }
+
+    #[tokio::test]
+    async fn generic_exit_failure_does_not_fail_over() {
+        let runner = Arc::new(ScriptedRunner::with(
+            vec![Err(CliInvokeError::ExecutionFailed("bad output".into()))],
+            vec![],
+        ));
+        let router = BridgeRouter::new(claude_primary(), runner.clone());
+        let err = router.complete(creq(AiTier::Neon, "x")).await.unwrap_err();
+        assert_eq!(err.status_and_code(), (502, "UPSTREAM_FAILED"));
+        assert_eq!(
+            runner.providers_called().await,
+            vec![CliProviderKind::Claude]
+        );
+    }
+
+    #[tokio::test]
+    async fn timeout_and_unavailable_fail_over() {
+        for err in [
+            CliInvokeError::TimedOut(15),
+            CliInvokeError::Unavailable("not found".into()),
+        ] {
+            let runner = Arc::new(ScriptedRunner::with(vec![Err(err)], vec![]));
+            let router = BridgeRouter::new(claude_primary(), runner.clone());
+            let resp = router.complete(creq(AiTier::Neon, "x")).await.unwrap();
+            assert_eq!(resp.provider, "agy");
+            assert!(resp.failover_used);
+            // Only rate limits put a provider on cooldown.
+            let m = router.metrics.lock().await;
+            assert!(!m.is_on_cooldown(CliProviderKind::Claude, Instant::now()));
+        }
+    }
+
+    #[tokio::test]
+    async fn agy_tool_attempt_fails_over_without_cooldown() {
+        let runner = Arc::new(ScriptedRunner::with(
+            vec![],
+            vec![Err(CliInvokeError::ToolUseAttempted("search_web".into()))],
+        ));
+        let cfg = BridgeConfig {
+            primary_provider: CliProviderKind::Agy,
+            ..claude_primary()
+        };
+        let router = BridgeRouter::new(cfg, runner.clone());
+        let resp = router.complete(creq(AiTier::Neon, "x")).await.unwrap();
+        assert_eq!(resp.provider, "claude");
+        assert!(resp.failover_used);
+        assert!(!router
+            .metrics
+            .lock()
+            .await
+            .is_on_cooldown(CliProviderKind::Agy, Instant::now()));
+        // Next request still starts with agy.
+        router.complete(creq(AiTier::Neon, "y")).await.unwrap();
+        assert_eq!(
+            runner.providers_called().await,
+            vec![
+                CliProviderKind::Agy,
+                CliProviderKind::Claude,
+                CliProviderKind::Agy
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn tool_attempt_with_failover_off_maps_to_its_own_code() {
+        let runner = Arc::new(ScriptedRunner::with(
+            vec![],
+            vec![Err(CliInvokeError::ToolUseAttempted("search_web".into()))],
+        ));
+        let router = BridgeRouter::new(claude_primary(), runner);
+        let mut r = creq(AiTier::Neon, "x");
+        r.primary = Some(CliProviderKind::Agy);
+        r.allow_failover = false;
+        let err = router.complete(r).await.unwrap_err();
+        assert_eq!(err.status_and_code(), (502, "TOOL_USE_BLOCKED"));
+    }
+
+    #[tokio::test]
+    async fn both_failing_returns_last_error() {
+        let runner = Arc::new(ScriptedRunner::with(
+            vec![Err(CliInvokeError::RateLimited("429".into()))],
+            vec![Err(CliInvokeError::TimedOut(15))],
+        ));
+        let router = BridgeRouter::new(claude_primary(), runner);
+        let err = router.complete(creq(AiTier::Neon, "x")).await.unwrap_err();
+        assert_eq!(err.status_and_code(), (504, "TIMED_OUT"));
+    }
+
+    #[tokio::test]
+    async fn saturated_bridge_returns_busy_and_wait_counts_toward_timeout() {
+        let runner = Arc::new(ScriptedRunner {
+            delay: Duration::from_millis(2500),
+            ..ScriptedRunner::default()
+        });
+        let cfg = BridgeConfig {
+            max_concurrency: 1,
+            ..claude_primary()
+        };
+        let router = Arc::new(BridgeRouter::new(cfg, runner.clone()));
+
+        let r1 = router.clone();
+        let first = tokio::spawn(async move {
+            let mut r = creq(AiTier::Neon, "slow");
+            r.timeout_secs = Some(30);
+            r1.complete(r).await
+        });
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Min timeout is 5 s; the slot frees after ~2.5 s, so this one waits, then runs
+        // with the remaining ~2.4 s as its attempt timeout.
+        let r2 = router.clone();
+        let waiter = tokio::spawn(async move {
+            let mut r = creq(AiTier::Neon, "waits");
+            r.timeout_secs = Some(5);
+            r2.complete(r).await
+        });
+
+        first.await.unwrap().unwrap();
+        waiter.await.unwrap().unwrap();
+        let calls = runner.calls.lock().await.clone();
+        assert_eq!(calls.len(), 2);
+        assert!(
+            calls[1].timeout < Duration::from_secs(5) && calls[1].timeout > Duration::from_secs(1),
+            "wait not deducted: {:?}",
+            calls[1].timeout
+        );
+
+        // Hold the only slot past a request's whole budget => BRIDGE_BUSY.
+        let runner = Arc::new(ScriptedRunner {
+            delay: Duration::from_secs(8),
+            ..ScriptedRunner::default()
+        });
+        let cfg = BridgeConfig {
+            max_concurrency: 1,
+            ..claude_primary()
+        };
+        let router = Arc::new(BridgeRouter::new(cfg, runner.clone()));
+        let r1 = router.clone();
+        let hog = tokio::spawn(async move {
+            let mut r = creq(AiTier::Neon, "hog");
+            r.timeout_secs = Some(30);
+            r1.complete(r).await
+        });
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let mut r = creq(AiTier::Neon, "rejected");
+        r.timeout_secs = Some(5);
+        let err = router.complete(r).await.unwrap_err();
+        assert!(matches!(err, BridgeError::Busy(5)), "{err:?}");
+        assert_eq!(err.status_and_code(), (503, "BRIDGE_BUSY"));
+        assert_eq!(runner.calls.lock().await.len(), 1);
+        assert_eq!(
+            router.metrics.lock().await.snapshot(Instant::now())["busy_rejections"],
+            1
+        );
+        hog.abort();
+    }
+
+    #[tokio::test]
+    async fn json_mode_adds_instruction_to_system_prompt() {
+        let runner = Arc::new(ScriptedRunner::default());
+        let router = BridgeRouter::new(claude_primary(), runner.clone());
+        let mut r = creq(AiTier::Neon, "x");
+        r.json_mode = true;
+        r.system_prompt = Some("Score this job.".into());
+        router.complete(r).await.unwrap();
+        router.complete(creq(AiTier::Neon, "plain")).await.unwrap();
+        let calls = runner.calls.lock().await.clone();
+        let sys = calls[0].system_prompt.as_deref().unwrap();
+        assert!(sys.starts_with("Score this job."));
+        assert!(sys.contains(crate::cli::JSON_MODE_INSTRUCTION));
+        assert_eq!(calls[1].system_prompt, None);
+    }
+
+    #[test]
+    fn complete_request_defaults_and_bad_primary() {
+        let r: CompleteRequest = serde_json::from_str(r#"{"tier":"neon","prompt":"p"}"#).unwrap();
+        assert!(r.allow_failover);
+        assert_eq!(r.primary, None);
+        let r: CompleteRequest = serde_json::from_str(
+            r#"{"tier":"neon","prompt":"p","primary":"agy","allow_failover":false}"#,
+        )
+        .unwrap();
+        assert_eq!(r.primary, Some(CliProviderKind::Agy));
+        assert!(!r.allow_failover);
+        assert!(serde_json::from_str::<CompleteRequest>(
+            r#"{"tier":"neon","prompt":"p","primary":"codex"}"#
+        )
+        .is_err());
     }
 
     #[cfg(unix)]
