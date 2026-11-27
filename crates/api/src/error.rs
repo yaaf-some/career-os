@@ -29,6 +29,10 @@ pub enum AppError {
     #[error("conflict: {0}")]
     Conflict(String),
 
+    /// 409 with a specific machine-readable code (e.g. `GOOGLE_NOT_CONNECTED`).
+    #[error("{1}")]
+    ConflictCode(&'static str, String),
+
     #[error("upstream service error: {0}")]
     Upstream(String),
 
@@ -59,6 +63,7 @@ impl AppError {
             Self::Forbidden(_) => (StatusCode::FORBIDDEN, "FORBIDDEN"),
             Self::NotFound(_) => (StatusCode::NOT_FOUND, "NOT_FOUND"),
             Self::Conflict(_) => (StatusCode::CONFLICT, "CONFLICT"),
+            Self::ConflictCode(code, _) => (StatusCode::CONFLICT, code),
             Self::Upstream(_) => (StatusCode::BAD_GATEWAY, "UPSTREAM_ERROR"),
             Self::ServiceUnavailable(_) => (StatusCode::SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE"),
             Self::RateLimited(_) => (StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED"),

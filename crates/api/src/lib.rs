@@ -9,6 +9,7 @@ pub mod openapi;
 pub mod routes;
 pub mod scheduler;
 pub mod state;
+pub mod sync;
 
 use axum::{
     http::HeaderValue,
@@ -37,7 +38,10 @@ pub fn build_router(state: AppState) -> Router {
 
     let api_router = Router::new()
         .route("/healthz", get(routes::health::healthz))
-        .route("/api/jobs", get(routes::jobs::list_jobs))
+        .route(
+            "/api/jobs",
+            get(routes::jobs::list_jobs).post(routes::jobs::quick_add_job),
+        )
         .route("/api/jobs/{id}", get(routes::jobs::get_job))
         .route(
             "/api/jobs/{id}/commute",
@@ -56,6 +60,16 @@ pub fn build_router(state: AppState) -> Router {
             patch(routes::tracker::update_application),
         )
         .route("/api/tracker/stats", get(routes::tracker::tracker_stats))
+        .route(
+            "/api/tracker",
+            get(routes::tracker::get_tracker).patch(routes::tracker::patch_tracker),
+        )
+        .route("/api/today", get(routes::workspace::get_today))
+        .route("/api/sync/google", post(routes::workspace::sync_google_now))
+        .route(
+            "/api/gmail-threads/{id}/application",
+            put(routes::workspace::link_thread),
+        )
         .route(
             "/api/sources",
             get(routes::sources::list_sources).post(routes::sources::create_source),
@@ -150,6 +164,7 @@ mod tests {
             drive: DriveClient::new(),
             calendar: CalendarClient::new(),
             maps: MapsClient::new(None),
+            sync_lock: Default::default(),
         };
 
         let app = build_router(state);
@@ -269,6 +284,7 @@ mod tests {
             drive: DriveClient::new(),
             calendar: CalendarClient::new(),
             maps: MapsClient::new(None),
+            sync_lock: Default::default(),
         };
         let app = build_router(state.clone());
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -347,7 +363,7 @@ mod tests {
             assert_eq!(json["code"], "SERVICE_UNAVAILABLE");
         }
 
-        crate::scheduler::run_hourly_cycle(&state).await.unwrap();
+        crate::scheduler::run_hourly_scoring(&state).await.unwrap();
 
         assert_eq!(
             count(&pool, "SELECT COUNT(*) FROM ai_usage_events").await,
@@ -500,5 +516,167 @@ mod tests {
                 .unwrap();
             assert_eq!(resp.status(), expect);
         }
+    }
+
+    #[tokio::test]
+    async fn quick_add_tracker_patch_sync_and_link() {
+        let (base, pool, state) = serve_with(Arc::new(MockAiProvider)).await;
+        let client = reqwest::Client::new();
+
+        // AC4: quick-add derives title/company, dedupes by canonical URL.
+        let added: serde_json::Value = client
+            .post(format!("{base}/api/jobs"))
+            .json(&serde_json::json!({"url": "https://jobs.example-co.com/careers/staff-platform-engineer/123?utm_source=x"}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(added["company"], "Example Co");
+        assert_eq!(added["title"], "Staff Platform Engineer");
+        assert_eq!(added["triage_status"], "pending_scoring");
+        assert_eq!(added["source_type"], "manual");
+        let job_id = added["id"].as_str().unwrap().to_string();
+        let again: serde_json::Value = client
+            .post(format!("{base}/api/jobs"))
+            .json(&serde_json::json!({"url": "https://jobs.example-co.com/careers/staff-platform-engineer/123", "title": "Other"}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(again["id"], job_id.as_str());
+        let bad = client
+            .post(format!("{base}/api/jobs"))
+            .json(&serde_json::json!({"url": "javascript:alert(1)"}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(bad.status(), reqwest::StatusCode::BAD_REQUEST);
+
+        // AC3: PATCH creates the application, sets stage/applied_at/follow-up/notes.
+        let tracker: serde_json::Value = client
+            .patch(format!("{base}/api/tracker"))
+            .json(&serde_json::json!({
+                "jobId": job_id, "stage": "applied",
+                "nextFollowUpAt": "2026-12-01T09:00:00Z", "notes": "Referred by a friend"
+            }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let entry = &tracker["entries"][0];
+        assert_eq!(entry["stage"], "applied");
+        assert_eq!(entry["nextFollowUpAt"], "2026-12-01T09:00:00Z");
+        assert_eq!(entry["notes"], "Referred by a friend");
+        let applied_at: Option<String> =
+            sqlx::query_scalar("SELECT applied_at FROM applications WHERE job_id = ?1")
+                .bind(&job_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(applied_at.is_some());
+        // Absent field = unchanged; null = cleared.
+        let kept: serde_json::Value = client
+            .patch(format!("{base}/api/tracker"))
+            .json(&serde_json::json!({"jobId": job_id, "notes": "Updated"}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(kept["entries"][0]["nextFollowUpAt"], "2026-12-01T09:00:00Z");
+        let cleared: serde_json::Value = client
+            .patch(format!("{base}/api/tracker"))
+            .json(&serde_json::json!({"jobId": job_id, "nextFollowUpAt": null}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert!(cleared["entries"][0]["nextFollowUpAt"].is_null());
+        assert_eq!(cleared["entries"][0]["notes"], "Updated");
+        for (body, status) in [
+            (
+                serde_json::json!({"jobId": job_id, "stage": "hired"}),
+                reqwest::StatusCode::BAD_REQUEST,
+            ),
+            (
+                serde_json::json!({"jobId": "nope"}),
+                reqwest::StatusCode::NOT_FOUND,
+            ),
+        ] {
+            let resp = client
+                .patch(format!("{base}/api/tracker"))
+                .json(&body)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), status);
+        }
+
+        // Manual link survives a relink and shows up in job detail.
+        let app_id: String = sqlx::query_scalar("SELECT id FROM applications WHERE job_id = ?1")
+            .bind(&job_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO gmail_threads (id, thread_id, subject, from_email, snippet, needs_reply) VALUES ('t1','g1','Coffee chat?','pat@example.org','Hi there',1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let linked: serde_json::Value = client
+            .put(format!("{base}/api/gmail-threads/t1/application"))
+            .json(&serde_json::json!({"applicationId": app_id}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(linked["linkSource"], "manual");
+        crate::sync::link::relink_all(&pool).await.unwrap();
+        let detail: serde_json::Value = client
+            .get(format!("{base}/api/jobs/{job_id}"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(detail["gmail_threads"][0]["subject"], "Coffee chat?");
+        assert_eq!(detail["gmail_threads"][0]["needs_reply"], true);
+        let missing = client
+            .put(format!("{base}/api/gmail-threads/t1/application"))
+            .json(&serde_json::json!({"applicationId": "nope"}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(missing.status(), reqwest::StatusCode::NOT_FOUND);
+
+        // AC7: sync now needs Google; an in-flight sync blocks a second one.
+        let resp = client
+            .post(format!("{base}/api/sync/google"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), reqwest::StatusCode::CONFLICT);
+        let body: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(body["code"], "GOOGLE_NOT_CONNECTED");
+        let guard = state.sync_lock.lock().await;
+        let err = crate::scheduler::run_google_sync(&state).await.unwrap_err();
+        assert_eq!(err.status_and_code().1, "SYNC_IN_PROGRESS");
+        drop(guard);
+        let run = crate::scheduler::run_google_sync(&state).await.unwrap();
+        assert_eq!(run.run_type, "gmail_sync");
+        assert_eq!(run.status, "succeeded");
     }
 }

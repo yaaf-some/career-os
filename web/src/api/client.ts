@@ -1,6 +1,19 @@
 import { demoStore } from './demoData';
-import { jobDetailFromApi, jobsListFromApi } from './jobs';
-import type { ApiJobDetailResponse, ApiListJobsResponse } from './jobs';
+import {
+  jobDetailFromApi,
+  jobsListFromApi,
+  jobSummaryFromApi,
+  todayFromApi,
+  trackerFromApi,
+  trackerPatchToApi,
+} from './jobs';
+import type {
+  ApiJobDetailResponse,
+  ApiJobRecord,
+  ApiListJobsResponse,
+  ApiTodayResponse,
+  ApiTrackerEntry,
+} from './jobs';
 import type {
   AiUsageResponse,
   CalendarReminder,
@@ -20,6 +33,7 @@ import type {
   ScanSourcesResponse,
   SettingsState,
   SourcesResponse,
+  SyncRun,
   TailorResponse,
   TodayResponse,
   TrackerResponse,
@@ -117,6 +131,44 @@ async function requestWithFallback<T>(
   }
 }
 
+/** Routes the API implements: show real errors, never demo data, outside demo mode. */
+const LIVE_ONLY: RequestOptions = { fallbackOnServerError: false };
+
+interface ApiSyncRun {
+  id: string;
+  run_type: string;
+  status: SyncRun['status'];
+  items_fetched: number;
+  error_message: string | null;
+  started_at: string;
+  finished_at: string | null;
+}
+
+function syncRunFromApi(r: ApiSyncRun): SyncRun {
+  return {
+    id: r.id,
+    runType: r.run_type,
+    status: r.status,
+    itemsFetched: r.items_fetched,
+    errorMessage: r.error_message,
+    startedAt: r.started_at,
+    finishedAt: r.finished_at,
+  };
+}
+
+function demoSyncRun(): ApiSyncRun {
+  const now = new Date().toISOString();
+  return {
+    id: 'demo-sync',
+    run_type: 'gmail_sync',
+    status: 'succeeded',
+    items_fetched: 0,
+    error_message: null,
+    started_at: now,
+    finished_at: now,
+  };
+}
+
 export const careerApi = {
   healthz(): Promise<HealthResponse> {
     return requestWithFallback('/api/healthz', { method: 'GET' }, () => ({
@@ -134,26 +186,47 @@ export const careerApi = {
     });
   },
 
-  getToday(): Promise<TodayResponse> {
-    return requestWithFallback('/api/today', { method: 'GET' }, () => demoStore.getToday());
+  async getToday(): Promise<TodayResponse> {
+    let fellBack = false;
+    const res = await requestWithFallback<unknown>(
+      '/api/today',
+      { method: 'GET' },
+      () => {
+        fellBack = true;
+        return demoStore.getToday();
+      },
+      LIVE_ONLY,
+    );
+    return fellBack ? (res as TodayResponse) : todayFromApi(res as ApiTodayResponse);
   },
 
   async listJobs(): Promise<JobsListResponse> {
     let fellBack = false;
-    const res = await requestWithFallback<unknown>('/api/jobs', { method: 'GET' }, () => {
-      fellBack = true;
-      const jobs = demoStore.listJobs();
-      return { jobs, total: jobs.length };
-    });
+    const res = await requestWithFallback<unknown>(
+      '/api/jobs',
+      { method: 'GET' },
+      () => {
+        fellBack = true;
+        const jobs = demoStore.listJobs();
+        return { jobs, total: jobs.length };
+      },
+      LIVE_ONLY,
+    );
     return fellBack ? (res as JobsListResponse) : jobsListFromApi(res as ApiListJobsResponse);
   },
 
-  quickAddJob(payload: QuickAddJobRequest): Promise<JobSummary> {
-    return requestWithFallback(
+  async quickAddJob(payload: QuickAddJobRequest): Promise<JobSummary> {
+    let fellBack = false;
+    const res = await requestWithFallback<unknown>(
       '/api/jobs',
       { method: 'POST', body: JSON.stringify(payload) },
-      () => demoStore.quickAddJob(payload),
+      () => {
+        fellBack = true;
+        return demoStore.quickAddJob(payload);
+      },
+      LIVE_ONLY,
     );
+    return fellBack ? (res as JobSummary) : jobSummaryFromApi(res as ApiJobRecord);
   },
 
   async getJob(id: string): Promise<JobDetail> {
@@ -167,6 +240,7 @@ export const careerApi = {
         if (!found) throw new Error(`Job ${id} not found`);
         return found;
       },
+      LIVE_ONLY,
     );
     return fellBack ? (res as JobDetail) : jobDetailFromApi(res as ApiJobDetailResponse);
   },
@@ -232,16 +306,57 @@ export const careerApi = {
     );
   },
 
-  getTracker(): Promise<TrackerResponse> {
-    return requestWithFallback('/api/tracker', { method: 'GET' }, () => demoStore.getTracker());
+  async getTracker(): Promise<TrackerResponse> {
+    let fellBack = false;
+    const res = await requestWithFallback<unknown>(
+      '/api/tracker',
+      { method: 'GET' },
+      () => {
+        fellBack = true;
+        return demoStore.getTracker();
+      },
+      LIVE_ONLY,
+    );
+    return fellBack
+      ? (res as TrackerResponse)
+      : trackerFromApi(res as { entries: ApiTrackerEntry[] });
   },
 
-  updateTracker(payload: UpdateTrackerRequest): Promise<TrackerResponse> {
-    return requestWithFallback(
-      '/api/tracker',
-      { method: 'PATCH', body: JSON.stringify(payload) },
-      () => demoStore.updateTracker(payload),
+  /** `POST /api/sync/google`: one Gmail/Calendar sync now (409 when not connected or busy). */
+  async syncGoogleNow(): Promise<SyncRun> {
+    const raw = await requestWithFallback<ApiSyncRun>(
+      '/api/sync/google',
+      { method: 'POST' },
+      () => demoSyncRun(),
+      LIVE_ONLY,
     );
+    return syncRunFromApi(raw);
+  },
+
+  async getSyncRuns(): Promise<SyncRun[]> {
+    const raw = await requestWithFallback<{ runs: ApiSyncRun[] }>(
+      '/api/sync-runs',
+      { method: 'GET' },
+      () => ({ runs: [] }),
+      LIVE_ONLY,
+    );
+    return raw.runs.map(syncRunFromApi);
+  },
+
+  async updateTracker(payload: UpdateTrackerRequest): Promise<TrackerResponse> {
+    let fellBack = false;
+    const res = await requestWithFallback<unknown>(
+      '/api/tracker',
+      { method: 'PATCH', body: JSON.stringify(trackerPatchToApi(payload)) },
+      () => {
+        fellBack = true;
+        return demoStore.updateTracker(payload);
+      },
+      LIVE_ONLY,
+    );
+    return fellBack
+      ? (res as TrackerResponse)
+      : trackerFromApi(res as { entries: ApiTrackerEntry[] });
   },
 
   getSources(): Promise<SourcesResponse> {

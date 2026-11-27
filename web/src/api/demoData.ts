@@ -167,6 +167,7 @@ const INITIAL_JOBS: JobDetail[] = [
     },
     gmailDraft: null,
     calendarReminders: [],
+    gmailThreads: [],
   },
   {
     id: 'job-102',
@@ -249,6 +250,7 @@ const INITIAL_JOBS: JobDetail[] = [
         notes: 'Review Experience List.md platform stories before screen.',
       },
     ],
+    gmailThreads: [],
   },
   {
     id: 'job-103',
@@ -297,6 +299,7 @@ const INITIAL_JOBS: JobDetail[] = [
     },
     gmailDraft: null,
     calendarReminders: [],
+    gmailThreads: [],
   },
   {
     id: 'job-104',
@@ -332,6 +335,7 @@ const INITIAL_JOBS: JobDetail[] = [
     },
     gmailDraft: null,
     calendarReminders: [],
+    gmailThreads: [],
   },
 ];
 
@@ -566,6 +570,7 @@ class DemoStore {
       },
       gmailDraft: null,
       calendarReminders: [],
+      gmailThreads: [],
     };
     this.jobs.unshift(created);
     return this.toSummary(created);

@@ -10,6 +10,7 @@ import {
 } from '@/api/queries';
 import type { CliTierModel } from '@/api/types';
 import { CommuteBadgeDisplay } from '@/components/CommuteBadge';
+import { GoogleSyncPanel } from '@/components/GoogleSyncPanel';
 import { Badge, Button, Card, SectionHeader } from '@/components/ui';
 import { cn } from '@/lib/cn';
 
@@ -183,6 +184,8 @@ export function SettingsView() {
                 ) : null}
               </div>
             ) : null}
+
+            <GoogleSyncPanel connected={Boolean(googleStatus?.connected)} />
 
             <div className="flex flex-wrap gap-1.5">
               {settings.googleScopes.map((scope) => (

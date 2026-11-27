@@ -115,7 +115,7 @@ The file only refreshes while you use Claude Code interactively, so the bar show
 1. In your Google Cloud project (`Career-Ops`), keep the OAuth consent screen intentionally in **Testing mode** (add yourself as a test user; the PWA surfaces a 7-day countdown and `<24h` 1-click reconnect pill).
 2. Add your callback URL (`https://your-mac-mini.your-tailnet.ts.net/api/auth/google/callback` or `http://localhost:8080/api/auth/google/callback` for local dev) to Authorized Redirect URIs.
 3. Optionally enable **Places API (New)** and **Routes API** and set `GOOGLE_MAPS_API_KEY`, `HOME_LOCATION_AREA` (neighborhood/city only, e.g. `West Los Angeles, CA`), and `DEFAULT_TRAVEL_MODE` (`drive` or `transit`) in `.env` to compute cached commute estimates for non-remote roles.
-4. Populate `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` in `.env`, then restart:
+4. Populate `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` in `.env`. Gmail and Calendar sync every `GOOGLE_SYNC_INTERVAL_HOURS` (default `12`, twice daily); use Settings → **Sync now** for an immediate run. Then restart:
 
 ```bash
 docker compose up -d

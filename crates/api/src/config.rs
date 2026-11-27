@@ -24,6 +24,8 @@ pub struct AppConfig {
     pub profile_summary: Option<String>,
     /// Optional daily agy call budget shown in the Usage Bar.
     pub ai_agy_daily_call_limit: Option<i64>,
+    /// Hours between scheduled Google syncs (`GOOGLE_SYNC_INTERVAL_HOURS`, 1–168, default 12).
+    pub google_sync_interval_hours: u64,
 }
 
 impl Default for AppConfig {
@@ -50,6 +52,7 @@ impl Default for AppConfig {
             scheduler_enabled: true,
             profile_summary: None,
             ai_agy_daily_call_limit: None,
+            google_sync_interval_hours: DEFAULT_GOOGLE_SYNC_INTERVAL_HOURS,
         }
     }
 }
@@ -88,8 +91,20 @@ impl AppConfig {
             ai_agy_daily_call_limit: env_non_empty("AI_AGY_DAILY_CALL_LIMIT")
                 .and_then(|v| v.parse::<i64>().ok())
                 .filter(|v| *v > 0),
+            google_sync_interval_hours: parse_sync_interval(
+                env_non_empty("GOOGLE_SYNC_INTERVAL_HOURS").as_deref(),
+            ),
         }
     }
+}
+
+pub const DEFAULT_GOOGLE_SYNC_INTERVAL_HOURS: u64 = 12;
+
+/// Twice daily by default; invalid values fall back to the default, out-of-range values clamp.
+pub fn parse_sync_interval(raw: Option<&str>) -> u64 {
+    raw.and_then(|v| v.trim().parse::<u64>().ok())
+        .map(|h| h.clamp(1, 168))
+        .unwrap_or(DEFAULT_GOOGLE_SYNC_INTERVAL_HOURS)
 }
 
 fn env_non_empty(key: &str) -> Option<String> {
@@ -107,5 +122,19 @@ fn env_bool(key: &str, default: bool) -> bool {
             _ => default,
         },
         Err(_) => default,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sync_interval_defaults_to_twice_daily_and_clamps() {
+        assert_eq!(parse_sync_interval(None), 12);
+        assert_eq!(parse_sync_interval(Some("abc")), 12);
+        assert_eq!(parse_sync_interval(Some("6")), 6);
+        assert_eq!(parse_sync_interval(Some("0")), 1);
+        assert_eq!(parse_sync_interval(Some("1000")), 168);
     }
 }

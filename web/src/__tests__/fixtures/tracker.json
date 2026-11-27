@@ -1,0 +1,32 @@
+{
+  "entries": [
+    {
+      "applicationId": "app-1",
+      "jobId": "job-1",
+      "company": "Example Co",
+      "title": "Staff Platform Engineer",
+      "stage": "interviewing",
+      "hydrogenScore": 87.5,
+      "threadSubject": "Example Co: next steps",
+      "threadCount": 1,
+      "threadsNeedReply": true,
+      "lastActivityAt": "2026-11-26T15:00:00Z",
+      "nextFollowUpAt": "2026-11-27T09:00:00Z",
+      "notes": "Panel next week"
+    },
+    {
+      "applicationId": "app-2",
+      "jobId": "job-2",
+      "company": "Globex",
+      "title": "Backend Engineer",
+      "stage": "applied",
+      "hydrogenScore": 72.0,
+      "threadSubject": "Globex application received",
+      "threadCount": 1,
+      "threadsNeedReply": false,
+      "lastActivityAt": "2026-11-23T08:00:00Z",
+      "nextFollowUpAt": null,
+      "notes": ""
+    }
+  ]
+}
