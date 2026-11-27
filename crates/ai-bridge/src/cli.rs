@@ -415,6 +415,13 @@ pub fn write_private_file(path: &Path, contents: &str) -> io::Result<()> {
 pub fn prepare_workdir(workdir: &Path) -> io::Result<()> {
     ensure_private_dir(workdir)?;
     ensure_private_dir(&workdir.join("tmp"))?;
+    // A run aborted mid-flight (shutdown drain timeout, dropped request) can leave its
+    // system-prompt file behind; nothing else lives here, so clear it at startup.
+    for entry in fs::read_dir(workdir.join("tmp"))?.flatten() {
+        if entry.file_name().to_string_lossy().starts_with("system-") {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
     let agents = workdir.join(".agents");
     ensure_private_dir(&agents.join("agents"))?;
     write_private_file(
@@ -708,7 +715,9 @@ mod tests {
         let root = test_dir("prep");
         let wd = root.join("work");
         prepare_workdir(&wd).unwrap();
-        prepare_workdir(&wd).unwrap(); // idempotent
+        fs::write(wd.join("tmp/system-stale.txt"), "old prompt").unwrap();
+        prepare_workdir(&wd).unwrap(); // idempotent, clears leftovers
+        assert!(!wd.join("tmp/system-stale.txt").exists());
         let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode(&wd), 0o700);
         let agent = wd.join(".agents/agents/career-os-bridge.md");

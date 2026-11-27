@@ -57,7 +57,7 @@ Your instance will be reachable only by your tailnet user at `https://your-mac-m
 
 ### 3. Set up `ai-bridge` (macOS launchd)
 
-The bridge is a small Rust service on the host. It runs your logged-in `claude` and/or `agy` CLI with **no tools**: the prompt goes in on stdin, it runs in a private work folder with a minimal environment, and agy's saved conversations are deleted after each run. Job posting text is treated as untrusted data. Background and trade-offs: [ADR-002](docs/adr/) and [docs/trust.md](docs/trust.md).
+The bridge is a small Rust service on the host. It runs your logged-in `claude` and/or `agy` CLI with **no tools**: the prompt goes in on stdin, it runs in a private work folder with a minimal environment, and agy's saved conversations are deleted after each run. Job posting text is treated as untrusted data. Background and trade-offs: [JOB-5 spec](project/changes/JOB-5-ai-bridge/spec.md) and [docs/trust.md](docs/trust.md).
 
 Prerequisites: Rust (`rustup`), and `claude` and/or `agy` installed and logged in (default location `~/.local/bin`).
 
