@@ -22,6 +22,7 @@ jobs:
       rust: ${{ steps.filter.outputs.rust }}
       web: ${{ steps.filter.outputs.web }}
       scanner: ${{ steps.filter.outputs.scanner }}
+      ai_bridge: ${{ steps.filter.outputs.ai_bridge }}
       docker_app: ${{ steps.filter.outputs.docker_app }}
       docker_scanner: ${{ steps.filter.outputs.docker_scanner }}
     steps:
@@ -40,6 +41,11 @@ jobs:
               - 'web/**'
             scanner:
               - 'scanner/**'
+            ai_bridge:
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'crates/ai-bridge/**'
+              - 'deploy/**'
             docker_app:
               - 'Dockerfile'
               - '.dockerignore'
@@ -124,6 +130,26 @@ jobs:
           cache-dependency-path: scanner/package-lock.json
       - run: npm ci --no-audit --no-fund
       - run: npm test
+
+  ai-bridge-macos:
+    name: ai-bridge (macOS build, test, plist lint)
+    needs: changes
+    if: needs.changes.outputs.ai_bridge == 'true'
+    # The bridge runs on the macOS host under launchd; test it on the real OS.
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Build (release, as installed on the host)
+        run: cargo build --release -p career-os-ai-bridge --locked
+      - name: Test (real-CLI smoke tests stay ignored)
+        run: cargo test -p career-os-ai-bridge --locked
+      - name: Lint launchd plists
+        run: plutil -lint deploy/launchd/*.plist.example
 
   docker-app:
     name: Container App (hadolint, build, Trivy)
@@ -263,7 +289,7 @@ jobs:
 
   ci-gate:
     name: CI Gate
-    needs: [changes, rust, web, scanner, docker-app, docker-scanner, security]
+    needs: [changes, rust, web, scanner, ai-bridge-macos, docker-app, docker-scanner, security]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -274,16 +300,17 @@ jobs:
           RUST_RESULT: ${{ needs.rust.result }}
           WEB_RESULT: ${{ needs.web.result }}
           SCANNER_RESULT: ${{ needs.scanner.result }}
+          AI_BRIDGE_RESULT: ${{ needs.ai-bridge-macos.result }}
           DOCKER_APP_RESULT: ${{ needs.docker-app.result }}
           DOCKER_SCANNER_RESULT: ${{ needs.docker-scanner.result }}
           SECURITY_RESULT: ${{ needs.security.result }}
         run: |
-          echo "changes=$CHANGES_RESULT rust=$RUST_RESULT web=$WEB_RESULT scanner=$SCANNER_RESULT docker_app=$DOCKER_APP_RESULT docker_scanner=$DOCKER_SCANNER_RESULT security=$SECURITY_RESULT"
+          echo "changes=$CHANGES_RESULT rust=$RUST_RESULT web=$WEB_RESULT scanner=$SCANNER_RESULT ai_bridge=$AI_BRIDGE_RESULT docker_app=$DOCKER_APP_RESULT docker_scanner=$DOCKER_SCANNER_RESULT security=$SECURITY_RESULT"
           if [ "$CHANGES_RESULT" != "success" ] || [ "$SECURITY_RESULT" != "success" ]; then
             echo "Core gate (changes/security) failed"
             exit 1
           fi
-          for res in "$RUST_RESULT" "$WEB_RESULT" "$SCANNER_RESULT" "$DOCKER_APP_RESULT" "$DOCKER_SCANNER_RESULT"; do
+          for res in "$RUST_RESULT" "$WEB_RESULT" "$SCANNER_RESULT" "$AI_BRIDGE_RESULT" "$DOCKER_APP_RESULT" "$DOCKER_SCANNER_RESULT"; do
             if [ "$res" != "success" ] && [ "$res" != "skipped" ]; then
               echo "Stack job failed with status: $res"
               exit 1

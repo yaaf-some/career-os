@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  career-os ai-bridge (Rust) as a per-user LaunchAgent.
+  Replace every `your-user` and the token, then:
+    chmod 600 ~/Library/LaunchAgents/com.career-os.ai-bridge.plist
+  The bridge refuses to start while AI_BRIDGE_TOKEN is still a placeholder.
+-->
 <plist version="1.0">
 <dict>
   <key>Label</key>
@@ -7,34 +13,50 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/local/bin/node</string>
-    <string>/Users/your-user/career-os/deploy/ai-bridge/server.mjs</string>
+    <string>/Users/your-user/.local/bin/career-os-ai-bridge</string>
   </array>
 
   <key>EnvironmentVariables</key>
   <dict>
+    <!-- Loopback only. Containers reach it via host.docker.internal. -->
     <key>AI_BRIDGE_BIND</key>
     <string>127.0.0.1:8787</string>
+    <!-- Same value as AI_BRIDGE_TOKEN in the app's .env. -->
     <key>AI_BRIDGE_TOKEN</key>
-    <string>change-me</string>
-    <key>AI_BRIDGE_AGENT</key>
+    <string>&lt;generate: openssl rand -hex 32&gt;</string>
+    <!-- Default primary CLI (claude | agy); requests may override per tier. -->
+    <key>AI_BRIDGE_PRIMARY</key>
     <string>claude</string>
+    <key>AI_BRIDGE_MAX_CONCURRENCY</key>
+    <string>2</string>
+    <!-- Written by the Claude Code statusLine command (see README). -->
+    <key>CLAUDE_STATUSLINE_PATH</key>
+    <string>/Users/your-user/Library/Application Support/career-os-ai-bridge/statusline.json</string>
+    <!-- Must find `claude` and `agy` (default install: ~/.local/bin). -->
     <key>PATH</key>
-    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <string>/Users/your-user/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>RUST_LOG</key>
+    <string>info</string>
   </dict>
-
-  <key>WorkingDirectory</key>
-  <string>/Users/your-user/career-os</string>
 
   <key>RunAtLoad</key>
   <true/>
 
+  <!-- Restart on crash or bad config, not after a clean stop; at most every 30 s. -->
   <key>KeepAlive</key>
-  <true/>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <!-- Bridge drains for 20 s on SIGTERM, then aborts in-flight CLI runs. -->
+  <key>ExitTimeOut</key>
+  <integer>30</integer>
 
   <key>StandardOutPath</key>
   <string>/Users/your-user/Library/Logs/career-os-ai-bridge.log</string>
-
   <key>StandardErrorPath</key>
   <string>/Users/your-user/Library/Logs/career-os-ai-bridge.err.log</string>
 </dict>
