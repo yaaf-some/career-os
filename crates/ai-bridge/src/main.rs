@@ -19,12 +19,13 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let config = BridgeConfig::from_env();
-    if config.bearer_token.is_none() {
-        tracing::warn!(
-            "AI_BRIDGE_TOKEN is unset; all authenticated endpoints will fail closed with 401"
-        );
-    }
+    let config = match BridgeConfig::from_env() {
+        Ok(config) => config,
+        Err(e) => {
+            tracing::error!(error = %e, "invalid ai-bridge configuration");
+            return Err(anyhow::anyhow!(e));
+        }
+    };
 
     let bind_addr = config.bind_addr.clone();
     let runner = Arc::new(SystemCliRunner::from_config(&config));

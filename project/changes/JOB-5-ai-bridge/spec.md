@@ -1,6 +1,6 @@
 # JOB-5 — Host ai-bridge: hardened daemon, tier routing & live Usage Bar
 
-**Status:** Approved (2026-11-26, Yaaf)
+**Status:** In Progress (approved 2026-11-26, Yaaf)
 **Issue:** JOB-5 (Linear, no description) · Parent JOB-1 · Branches `feat/job-5a-bridge` → `feat/job-5b-api` → `feat/job-5c-web-docs` (spec/plan ship in PR A)
 
 ## Problem / Context

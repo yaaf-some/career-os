@@ -6,7 +6,7 @@ Rust verify: `export PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH` (
 
 ## PR A — Bridge + deploy + macOS CI (`feat/job-5a-bridge`)
 
-- [ ] **1.1 [haiku] Config hardening** — `crates/ai-bridge/src/config.rs`, `src/main.rs`: token validation (missing / <32 chars / placeholders ⇒ startup error), new vars `AI_BRIDGE_WORKDIR`, `AI_BRIDGE_MAX_CONCURRENCY`(2), `AI_BRIDGE_STATUSLINE_MAX_AGE_SECS`(900); `#[cfg(test)]` tests for defaults + rejection (inject env via a map, not global env).
+- [x] **1.1 [haiku] Config hardening** — `crates/ai-bridge/src/config.rs`, `src/main.rs`: token validation (missing / <32 chars / placeholders ⇒ startup error), new vars `AI_BRIDGE_WORKDIR`, `AI_BRIDGE_MAX_CONCURRENCY`(2), `AI_BRIDGE_STATUSLINE_MAX_AGE_SECS`(900); `#[cfg(test)]` tests for defaults + rejection (inject env via a map, not global env).
   Verify: `cargo test -p career-os-ai-bridge config`
 - [x] **1.2 [lead] Pin CLI contracts** — run `claude -p --output-format json --tools "" …` and `agy -p --output-format json --sandbox --mode plan …` with stdin on the dev box; save sanitized sample outputs as `crates/ai-bridge/tests/fixtures/{claude_print.json,agy_stream_ok.jsonl,agy_stream_tool_denied.jsonl}`; record exact flags in `Execution Notes`.
   Verify: fixtures committed, flags noted.
@@ -56,3 +56,4 @@ Rust verify: `export PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH` (
   - Lockdown that works: custom agent (`tools: []`, `excludeDefaultComponents: true`, `inheritMcp: false`) ⇒ model reports no search tool; `.agents/hooks.json` `PreToolUse` `*` ⇒ deny hard-blocks `search_web` ("tool call denied by pre-tool hook"). Both loaded from the cwd's `.agents/` without workspace trust. `init.tools` still lists the full pool, so don't use it as proof.
   - agy always persists conversations to `~/.gemini/antigravity-cli/brain/<id>`; no flag/setting (agy docs: cli/headless.md, settings schema) — bridge deletes after run.
   - Spec approved with this agy design (agy may be a tier primary; claude stays default).
+- **1.6 reminder:** 1.1 makes the bridge exit non-zero on a bad/placeholder token; the plist uses `KeepAlive` true, so 1.6 must add `ThrottleInterval` (e.g. 30) or `KeepAlive`→`{SuccessfulExit: false}` + throttle to avoid a tight respawn loop.
