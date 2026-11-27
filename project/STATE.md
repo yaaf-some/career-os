@@ -1,17 +1,16 @@
 # Project State (Elephant Handoff — career-os)
 
-**Last updated:** 2026-11-26 · **Linear:** team `JOB` (`Yaaf-Career`), project Mac Mini Rebuild (v1)
-**Host:** now on the **M2 Mac mini** (arm64). Installed: claude, agy, Rust 1.100 (Homebrew rustup). Not yet: Kiri (needed for AC12 only).
+**Last updated:** 2026-11-27 · **Linear:** team `JOB` (`Yaaf-Career`), project Mac Mini Rebuild (v1)
+**Host:** now on the **M2 Mac mini** (arm64). Installed: claude, agy, Rust 1.100 (Homebrew rustup, PATH in `~/.zshrc`), Docker Desktop. **ai-bridge live under launchd** (`~/.local/bin/career-os-ai-bridge`, `~/Library/LaunchAgents/com.career-os.ai-bridge.plist`, token also in gitignored `.env`).
 
 ## Current Focus
 
-- **`JOB-5` (Phase 3) — APPROVED 2026-11-26, 3 PRs open (A ready, B/C draft)** on `feat/job-5a-bridge` (`project/changes/JOB-5-ai-bridge/{spec.md,plan.md}`). PR A tasks 1.1–1.8 done (config hardening; CLI contracts + fixtures; routing/failover/concurrency/error codes; typed usage + healthz; plist + README; macOS CI job; PR A opened; isolated tool-less runner — agy lockdown = custom agent + PreToolUse deny hook + deny settings + watchdog — see plan Execution Notes).
-- **Exact Next Concrete Step:** PR A open: https://github.com/yaaf-some/career-os/pull/12 (Auto-fix on; needs Yaaf's merge OK). PR B https://github.com/yaaf-some/career-os/pull/13 (2.1–2.5 done) stacked on A, open as draft; after #12 merges: `git merge origin/main` into B, mark ready. PR C https://github.com/yaaf-some/career-os/pull/14 (3.1–3.3 done) stacked on B, draft. Merge order A → B → C (merge `origin/main` into each after the previous lands); then `project-verify-archive`, then Yaaf runs AC12 on the M2 (task 3.5). Lead does every task itself.
+- **`JOB-5` Verified + archived 2026-11-27** (`project/changes/archive/JOB-5-ai-bridge/`). #12 (bridge) + #13 (API) merged; #14 (web + docs + archive) merges after CI. AC12 passed on the M2 under Docker Desktop.
+- **Exact Next Concrete Step:** Yaaf adds the README §3 `statusLine` hook to `~/.claude/settings.json` (agent not permitted) so the Usage Bar shows live Claude windows. Then file follow-ups below and start `JOB-6`.
 
 ## Done This Session
 
-- JOB-4 merged (PR #4) + container hardening; deps PR #5; Node bump #6 (auto-merge); arm64-only releases (#11). Closed #2, #3, #7–#10. No open PRs. JOB-4 is Done in Linear.
-- JOB-5 research via 3 Haiku agents; findings are in `spec.md` "Problem / Context".
+- JOB-5 shipped in 3 stacked PRs (#12 → #13 → #14): Rust bridge with tool-less claude/agy (ADR-002), per-request routing/failover, concurrency cap, typed usage; API disabled mode (no silent mock), bridge contract, `ai_routing`, `/api/ai/usage`; web on real routes + typed Usage Bar.
 
 ## Container Baseline
 
@@ -21,24 +20,24 @@
 
 ## Upcoming
 
-1. JOB-5 PR A (bridge + plist + macOS CI) → PR B (API contract, no silent mock) → PR C (web + docs) → host acceptance AC12 on the M2 under Kiri.
-2. Follow-ups to file: `/api/jobs/{id}/tailor` backend; web demo-fallback hides 404/5xx in live mode.
+1. Follow-ups to file: web `getJob`/`listJobs` don't map the API's snake_case job shape (live job detail broken, pre-existing); `/api/jobs/{id}/tailor` backend; web demo-fallback still hides 404/5xx outside AI routes; compose default `TOKEN_ENCRYPTION_KEY` placeholder crash-loops the app.
+2. Kiri: AC12 ran on Docker Desktop; re-check `host.docker.internal:8787` if switching runtime.
 3. `JOB-6` Live Google sync + scheduler · `JOB-7` Mac mini cutover (compose + `tailscale serve` + launchd).
 
 ## Recent Decisions
 
-- ADR-001 split-plane `app` + `scanner` + host `ai-bridge` (Rust crate `crates/ai-bridge`, NOT Node — docs say Node, fix in PR C).
+- ADR-001 split-plane; ADR-002 tool-less bridge (agy: custom agent + deny hook + deny settings + watchdog; prompts on stdin). Re-run `cargo test -p career-os-ai-bridge --test cli_smoke -- --ignored --nocapture` after claude/agy upgrades.
 - Tier routing: Settings choose primary CLI per tier (`claude` | `agy` only, Codex/Gemini dropped) + failover toggle, honored per request.
 - GCP `Career-Ops` stays in Testing mode. Cloudflare: don't touch.
 
 ## Standing Gotchas
-- **JOB-5 stacked PRs + squash merges:** after #12 squash-merges, `git merge origin/main` into B (then C) will conflict where later branches re-edited A's lines (STATE.md, plan.md, `.env.example`, `docker-compose.yml`, README). Keep the branch side, re-run full checks, push, then mark ready. Never rebase.
-
+- **Stacked PRs + squash merges:** merging `origin/main` into the next branch conflicts on lines it re-edited; keep the branch side when it is a superset, confirm `git diff HEAD^1 HEAD` is empty, push. Never rebase.
+- Auto mode blocks: editing `~/.claude/settings.json`, adding the `automerge` label. Ask Yaaf for those.
 - **Never force-push (incl. `--force-with-lease`), never rebase pushed branches** — merge `origin/main` in instead; others' PRs: `gh api -X PUT repos/<owner>/<repo>/pulls/<n>/update-branch`. Never merge without Yaaf's explicit OK.
 - `gh pr edit` fails (Projects classic GraphQL) → use `gh api -X PATCH repos/<owner>/<repo>/pulls/<n>`.
 - Dependabot: cargo = patch group, web = minor/patch group; 0.x/major bumps arrive singly and need manual migration.
 - Pin Docker tags by numeric version sort (26.13 > 26.9).
-- Node 26 LTS only. Rust (M2, Homebrew rustup, keg-only): `export PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH`.
+- Node 26 LTS only. Rust (M2, Homebrew rustup): run `source ~/.zshrc` in a fresh shell to get cargo on PATH.
 - agy `-p` never reads plain stdin; `permissions.deny` can't block `search_web` — only the PreToolUse hook can. agy auto-updates: after any claude/agy upgrade re-run `cargo test -p career-os-ai-bridge --test cli_smoke -- --ignored --nocapture`.
 - Zero PII/secrets in this public repo (placeholders: `your-user`, `you@example.com`).
 - Keep replies short (ADHD): answer/action first, clickable links.

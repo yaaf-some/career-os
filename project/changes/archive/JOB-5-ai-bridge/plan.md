@@ -34,7 +34,7 @@ Rust verify: `export PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH` (
   Verify: `cargo test -p career-os-api`
 - [x] **2.5 Usage endpoint** — `src/routes/ai.rs`: camelCase `AiUsageResponse` per spec from bridge `/v1/usage` + DB (agy 24 h count, `AI_AGY_DAILY_CALL_LIMIT`); shared fixture `web/src/__tests__/fixtures/ai-usage.json` produced by a Rust test (snapshot) — lead creates fixture path first.
   Verify: `cargo test -p career-os-api usage`; OpenAPI export step in CI.
-- [ ] **2.6 Full checks + PR B.**
+- [x] **2.6 Full checks + PR B.**
 
 ## PR C — Web + docs (`feat/job-5c-web-docs`)
 
@@ -44,8 +44,8 @@ Rust verify: `export PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH` (
   Verify: `cd web && npm test && npm run build`
 - [x] **3.3 Docs sync** — `docs/architecture.md`, `docs/glossary.md`, `docs/trust.md`, new `docs/adr/ADR-002-ai-bridge-cli-isolation.md` (content from spec Design + 1.2 notes).
   Verify: lead review; no "Node" for ai-bridge (`grep -n "ai-bridge" docs/*.md`).
-- [ ] **3.4 Full checks + PR C**, then `project-verify-archive` (AC1–AC11).
-- [ ] **3.5 [Yaaf on M2] Host acceptance (AC12)** — install, bootstrap, container→bridge curl under Kiri, one neon eval, `ps` check, Usage Bar live.
+- [x] **3.4 Full checks + PR C**, then `project-verify-archive` (AC1–AC11).
+- [x] **3.5 [Yaaf on M2] Host acceptance (AC12)** — install, bootstrap, container→bridge curl under Kiri, one neon eval, `ps` check, Usage Bar live.
 
 ## Execution Notes / Deviations
 
@@ -85,4 +85,5 @@ Rust verify: `export PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH` (
 - **2026-11-27 · 3.3 done:** architecture (Rust bridge row + diagram), glossary (agy, ai_routing, failover, disabled mode, tiers, statusline; scanner node:26; sorted), trust §4 Host AI CLI Isolation, ADR-002 (decision, four agy layers, residual risks). README links ADR-002.
 - **AC status before verify-archive:** AC1–AC10 + AC13 covered by tests/checks across PRs A–C; AC11 = CI on #12/#13/C; AC12 = Yaaf on the M2 (task 3.5).
 - **2026-11-27 · C follow-up:** evaluate errors now render in the role drawer (`describeAiError`; disabled bridge ⇒ "AI is not configured…"); `getAiUsage` no longer falls back to demo numbers on a live API 5xx (bar renders nothing).
+- **2026-11-27 · Verified + archived.** #12 and #13 squash-merged; C carries the archive. AC12 run by the lead on the M2 (Yaaf: "go ahead … verify whatever needs to be verified"): Docker Desktop (not Kiri), see spec AC12 note. AC12 found one bug: job detail omitted `evaluations.provider` (fixed in #13). Compose default `TOKEN_ENCRYPTION_KEY` placeholder crash-loops the app; README already requires a real key (not JOB-5 scope).
 

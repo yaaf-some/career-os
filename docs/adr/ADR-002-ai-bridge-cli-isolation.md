@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-11-27
-- **Change:** JOB-5 (`project/changes/JOB-5-ai-bridge/`)
+- **Change:** JOB-5 (`project/changes/archive/JOB-5-ai-bridge/`)
 
 ## Context
 
