@@ -11,8 +11,8 @@ flowchart TB
     App -->|SQLite WAL| DB[("career_os_db volume\n/var/lib/career-os/career-os.db")]
     App -->|Read-only bind mount| Data["${DATA_DIR}:/data:ro\nCandidate source files"]
     App -->|Internal Docker network\nhttp://scanner:8081| Scanner["scanner container (node:26-alpine)\nsrc/server.mjs"]
-    App -->|host.docker.internal:8787\nBearer AI_BRIDGE_TOKEN| Bridge["Host launchd ai-bridge\n127.0.0.1:8787"]
-    Bridge -->|Subprocess| CLI["Local Agent CLI\nclaude -p / agy -p"]
+    App -->|host.docker.internal:8787\nBearer AI_BRIDGE_TOKEN| Bridge["Host launchd ai-bridge (Rust)\n127.0.0.1:8787"]
+    Bridge -->|Subprocess, stdin prompt, no tools| CLI["Local Agent CLI\nclaude -p / agy"]
     App -->|OAuth2 + AES-GCM encrypted tokens| Google["Google Gmail / Calendar APIs"]
 ```
 
@@ -23,7 +23,7 @@ flowchart TB
 | `career-os-api` | Rust (`crates/`), `gcr.io/distroless/cc-debian13:nonroot` (digest-pinned, UID 65532, `--healthcheck` probe, SIGTERM-graceful) | HTTP API, static PWA serving, SQLite WAL state, Tailscale user verification, OAuth token encryption (`TOKEN_ENCRYPTION_KEY`), scanner & AI bridge orchestration. |
 | `web` | React 19 + Vite + TypeScript (`web/`) | Compiled into `/app/static` at image build time; mobile-ready PWA for pipeline review, job evaluation, and status tracking. |
 | `scanner` | Node.js 26 LTS (`scanner/`, `node:26-alpine`) | Internal-only sidecar on port `8081` (no host port binding) handling ATS API polling and HTML job-board fetching. |
-| `ai-bridge` | Node.js on macOS host (`launchd`) | Listens on `127.0.0.1:8787`, authenticates requests with `AI_BRIDGE_TOKEN`, and executes `claude -p` or `agy -p` on the host machine. |
+| `ai-bridge` | Rust (`crates/ai-bridge`) on the macOS host (`launchd`, `deploy/launchd/`) | Listens on `127.0.0.1:8787`, requires `AI_BRIDGE_TOKEN` (≥ 32 chars, no placeholders), and runs `claude` or `agy` with tools disabled: prompt on stdin, private 0700 workdir, minimal env, agy conversation deleted after each run. Per-request primary CLI and failover, concurrency cap, typed Claude usage from the statusline. See [ADR-002](adr/ADR-002-ai-bridge-cli-isolation.md). |
 
 ## Network & Storage Boundaries
 

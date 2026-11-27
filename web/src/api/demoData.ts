@@ -31,6 +31,9 @@ function daysAgoIso(days: number): string {
 }
 
 const DEMO_USAGE: AiUsageResponse = {
+  configured: true,
+  bridgeReachable: true,
+  updatedAt: new Date().toISOString(),
   claude5h: {
     percentUsed: 42,
     resetAt: hoursFromNowIso(2.35),
@@ -39,13 +42,14 @@ const DEMO_USAGE: AiUsageResponse = {
     percentUsed: 68,
     resetAt: hoursFromNowIso(54),
   },
+  claudeStale: false,
   antigravity: {
     callsUsed: 14,
     callsLimit: 40,
     cooldownUntil: null,
     status: 'ready',
   },
-  updatedAt: new Date().toISOString(),
+  dbStatsByTier: [],
 };
 
 const INITIAL_JOBS: JobDetail[] = [

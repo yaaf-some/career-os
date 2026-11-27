@@ -1,6 +1,6 @@
 # JOB-5 — Host ai-bridge: hardened daemon, tier routing & live Usage Bar
 
-**Status:** In Progress (approved 2026-11-26, Yaaf)
+**Status:** Verified 2026-11-27 (PRs #12, #13, #14)
 **Issue:** JOB-5 (Linear, no description) · Parent JOB-1 · Branches `feat/job-5a-bridge` → `feat/job-5b-api` → `feat/job-5c-web-docs` (spec/plan ship in PR A)
 
 ## Problem / Context
@@ -72,19 +72,19 @@ The Rust `ai-bridge` crate (`crates/ai-bridge`) and the API's `HostBridgeProvide
 
 ## Acceptance Criteria
 
-- [ ] AC1 Bridge refuses to start with missing/short/placeholder token (unit test).
-- [ ] AC2 Claude/agy invocations pass the prompt on stdin, never argv; argv contains the tool-less flags; cwd is the dedicated workdir; agy agent + hook files are written to the workdir; a tool `step_update` aborts the agy run; agy brain dir is removed after each run (unit tests via recording runner + one ignored-by-default real-CLI smoke test that asks agy to call `search_web` and asserts it is denied).
-- [ ] AC3 Request `primary` and `allow_failover=false` are honored; failover does not trigger on generic non-zero exit (unit tests).
-- [ ] AC4 Concurrency cap enforced; saturation returns 503 `BRIDGE_BUSY` (unit test).
-- [ ] AC5 `/v1/usage` returns typed 5h/7d windows + `stale` from a fixture statusline (unit test).
-- [ ] AC6 API with no AI config: AI routes 503, scheduler does not modify `jobs` (integration test).
-- [ ] AC7 Bridge 429/504 surface as API 429/504 (integration test with fake bridge).
-- [ ] AC8 `GET /api/ai/usage` matches web `AiUsageResponse` (shared JSON fixture tested on both sides).
-- [ ] AC9 Web evaluate/triage/settings hit real routes (Vitest with fetch mock asserting URL + body); UsageBar renders null/stale/unconfigured without throwing.
-- [ ] AC10 Token counts + cost persisted in `ai_usage_events` when the bridge returns them.
-- [ ] AC11 CI green incl. new `ai-bridge-macos` job and `plutil -lint`.
-- [ ] AC12 **On the M2 host (manual, Yaaf):** bridge runs under launchd bound to 127.0.0.1; `curl` from the app container to `host.docker.internal:8787/healthz` succeeds under the chosen runtime (Kiri/OrbStack/Docker Desktop); one neon eval completes end to end; `ps` during a run shows no prompt text; Usage Bar shows live values.
-- [ ] AC13 Full checks pass: cargo fmt/clippy/test, web typecheck/test/build; no PII in diff.
+- [x] AC1 Bridge refuses to start with missing/short/placeholder token (unit test).
+- [x] AC2 Claude/agy invocations pass the prompt on stdin, never argv; argv contains the tool-less flags; cwd is the dedicated workdir; agy agent + hook files are written to the workdir; a tool `step_update` aborts the agy run; agy brain dir is removed after each run (unit tests via recording runner + one ignored-by-default real-CLI smoke test that asks agy to call `search_web` and asserts it is denied).
+- [x] AC3 Request `primary` and `allow_failover=false` are honored; failover does not trigger on generic non-zero exit (unit tests).
+- [x] AC4 Concurrency cap enforced; saturation returns 503 `BRIDGE_BUSY` (unit test).
+- [x] AC5 `/v1/usage` returns typed 5h/7d windows + `stale` from a fixture statusline (unit test).
+- [x] AC6 API with no AI config: AI routes 503, scheduler does not modify `jobs` (integration test).
+- [x] AC7 Bridge 429/504 surface as API 429/504 (integration test with fake bridge).
+- [x] AC8 `GET /api/ai/usage` matches web `AiUsageResponse` (shared JSON fixture tested on both sides).
+- [x] AC9 Web evaluate/triage/settings hit real routes (Vitest with fetch mock asserting URL + body); UsageBar renders null/stale/unconfigured without throwing.
+- [x] AC10 Token counts + cost persisted in `ai_usage_events` when the bridge returns them.
+- [x] AC11 CI green incl. new `ai-bridge-macos` job and `plutil -lint`.
+- [x] AC12 **On the M2 host (manual, Yaaf):** bridge runs under launchd bound to 127.0.0.1; `curl` from the app container to `host.docker.internal:8787/healthz` succeeds under the chosen runtime (Kiri/OrbStack/Docker Desktop); one neon eval completes end to end; `ps` during a run shows no prompt text; Usage Bar shows live values. *(Verified 2026-11-27 on the M2 under Docker Desktop: launchd bridge, container → `host.docker.internal:8787`, real neon evals via claude/sonnet and agy/gemini-4-neon-medium, `ps` clean, agy brain clean, usage pipeline from a real-format statusline file. Remaining one-time step for Yaaf: add the README §3 `statusLine` hook to `~/.claude/settings.json`; the agent was not permitted to edit global Claude settings. Kiri not tested.)*
+- [x] AC13 Full checks pass: cargo fmt/clippy/test, web typecheck/test/build; no PII in diff.
 
 ## Docs Impact
 

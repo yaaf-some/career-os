@@ -6,7 +6,8 @@
 
 - **Tailscale identity enforcement:** `career-os-api` binds only to loopback on the host (`127.0.0.1:8080`) and expects `tailscale serve` in front of it. Requests must match `ALLOWED_TAILSCALE_USER` via the Tailscale identity header (except unauthenticated liveness probes if explicitly configured).
 - **Sidecar isolation:** `scanner` exposes port `8081` only on the internal Docker network (`expose`, never `ports`), preventing direct external access.
-- **Bridge authentication:** `ai-bridge` listens on `127.0.0.1:8787` on the host and rejects requests lacking a valid `Authorization: Bearer <AI_BRIDGE_TOKEN>` header.
+- **Bridge authentication:** `ai-bridge` listens on `127.0.0.1:8787` on the host and rejects requests lacking a valid `Authorization: Bearer <AI_BRIDGE_TOKEN>` header (constant-time compare). It refuses to start if the token is missing, shorter than 32 characters, or a placeholder. Only `/healthz` is unauthenticated, and it reports booleans only (no paths, no CLI output).
+- **Bridge errors don't impersonate user auth:** a bridge 401/400 reaches the browser as a 502, never as a 401.
 
 ## 2. Secret & PII Hygiene
 
@@ -19,7 +20,18 @@
 - **Data, never instructions:** Job descriptions, company career pages, ATS payloads, and inbound recruiter emails fetched by `scanner` or Gmail sync are untrusted inputs. They may inform scoring and summaries, never trigger shell commands, state mutations outside normal API flows, or override system instructions.
 - **Zero fabrication:** Generated CVs, cover letters, and outreach drafts must derive factual claims exclusively from verified candidate source files in `DATA_DIR` (`/data:ro`) and explicit user input.
 
-## 4. Repository & CI/CD Governance
+## 4. Host AI CLI Isolation (ADR-002)
+
+The bridge sends untrusted job text to CLIs that normally have tools (shell, file access, web search). It runs them as text-only completion engines:
+
+- **No tools:** claude runs with `--tools ""`, `--strict-mcp-config`, `--setting-sources ""`, `--disable-slash-commands`. agy runs a custom agent with `tools: []` and `excludeDefaultComponents`, a `PreToolUse` hook that denies every tool (including server-side `search_web`), `permissions.deny` for all tool classes, `--sandbox --mode plan`, and a stream watchdog that kills the run on any tool step (`TOOL_USE_BLOCKED`).
+- **Prompt never in argv:** the prompt goes on stdin; claude's system prompt goes through a 0600 temp file that is deleted after the run. `ps` shows no prompt text.
+- **Minimal environment:** child processes get only `PATH HOME USER LANG TMPDIR` and run in a private 0700 workdir.
+- **No conversation history left behind:** agy's saved conversation (`~/.gemini/antigravity-cli/brain/<uuid>`) is deleted after every run; claude runs with `--no-session-persistence`.
+- **No mock outside demo:** without a bridge URL + token (and `AI_DEMO_MODE` off), the API returns 503 for AI routes instead of fabricated scores, and the web shows the error instead of demo output.
+- **Re-verify after CLI upgrades:** `cargo test -p career-os-ai-bridge --test cli_smoke -- --ignored --nocapture`.
+
+## 5. Repository & CI/CD Governance
 
 - **Protected `main` Ruleset:** Direct pushes, deletions, and force-pushes (`non_fast_forward`) are blocked on `main`. All merges require squash-only linear history and a passing `CI Gate` check.
 - **Supply-Chain Hardening:** Every third-party GitHub Action is pinned to an immutable 40-character commit SHA, `actions/checkout` disables credential persistence (`persist-credentials: false`), workflows are audited by `actionlint` + `zizmor`, containers are linted (`hadolint`) and scanned (`Trivy`), and published GHCR images receive SBOMs, SLSA provenance attestations, and keyless Cosign OIDC signatures.

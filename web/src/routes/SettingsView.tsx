@@ -14,10 +14,8 @@ import { Badge, Button, Card, SectionHeader } from '@/components/ui';
 import { cn } from '@/lib/cn';
 
 const CLI_OPTIONS: readonly { value: CliTierModel; label: string }[] = [
-  { value: 'claude', label: 'Claude Code CLI' },
-  { value: 'antigravity', label: 'Antigravity CLI' },
-  { value: 'codex', label: 'Codex CLI' },
-  { value: 'gemini', label: 'Gemini CLI' },
+  { value: 'claude', label: 'Claude Code' },
+  { value: 'agy', label: 'Antigravity' },
 ];
 
 export function SettingsView() {
@@ -102,9 +100,10 @@ export function SettingsView() {
 
               <div className="flex items-center justify-between rounded-lg border border-border p-3">
                 <div>
-                  <div className="font-medium">Auto-Failover on Quota Exhaustion</div>
+                  <div className="font-medium">Auto-Failover</div>
                   <div className="text-xs text-muted-foreground">
-                    Automatically route to secondary CLI when 5h/7d limit or cooldown triggers.
+                    Retry on the other CLI when the primary is rate-limited, times out, is
+                    missing, or tries to use a tool.
                   </div>
                 </div>
                 <Switch.Root

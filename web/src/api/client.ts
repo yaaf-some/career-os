@@ -2,6 +2,7 @@ import { demoStore } from './demoData';
 import type {
   AiUsageResponse,
   CalendarReminder,
+  CliTierModel,
   CommuteInfo,
   CommutePreviewRequest,
   CreateSourceRequest,
@@ -31,10 +32,55 @@ export function isDemoModeActive(): boolean {
   return usingDemoFallback;
 }
 
+interface RequestOptions {
+  /**
+   * Fall back to demo data on 404/5xx (default). AI routes turn this off so a disabled
+   * or failing bridge shows its error instead of a fake demo answer.
+   */
+  fallbackOnServerError?: boolean;
+}
+
+/** Error from the API's `{error, code}` body. */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code: string | null,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+/** One-line message for a failed AI call, e.g. when the bridge is disabled or busy. */
+export function describeAiError(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.code === 'SERVICE_UNAVAILABLE' && /not configured/i.test(err.message)) {
+      return 'AI is not configured: set up the host ai-bridge (README §3).';
+    }
+    return err.code ? `${err.message} (${err.code})` : err.message;
+  }
+  return err instanceof Error ? err.message : 'AI request failed';
+}
+
+async function toApiError(res: Response): Promise<ApiError> {
+  const text = await res.text();
+  try {
+    const body = JSON.parse(text) as { error?: unknown; code?: unknown };
+    if (typeof body.error === 'string') {
+      return new ApiError(body.error, res.status, typeof body.code === 'string' ? body.code : null);
+    }
+  } catch {
+    // not JSON
+  }
+  return new ApiError(text || `API request failed (${res.status})`, res.status, null);
+}
+
 async function requestWithFallback<T>(
   path: string,
   init: RequestInit | undefined,
   fallback: () => T | Promise<T>,
+  { fallbackOnServerError = true }: RequestOptions = {},
 ): Promise<T> {
   if (import.meta.env.VITE_DEMO_MODE === 'true') {
     usingDemoFallback = true;
@@ -51,12 +97,11 @@ async function requestWithFallback<T>(
     });
 
     if (!res.ok) {
-      if (res.status === 404 || res.status >= 500) {
+      if (fallbackOnServerError && (res.status === 404 || res.status >= 500)) {
         usingDemoFallback = true;
         return fallback();
       }
-      const message = await res.text();
-      throw new Error(message || `API request failed (${res.status})`);
+      throw await toApiError(res);
     }
 
     usingDemoFallback = false;
@@ -81,7 +126,10 @@ export const careerApi = {
   },
 
   getAiUsage(): Promise<AiUsageResponse> {
-    return requestWithFallback('/api/ai/usage', { method: 'GET' }, () => demoStore.getUsage());
+    // No demo numbers on a live API error: the bar renders nothing instead.
+    return requestWithFallback('/api/ai/usage', { method: 'GET' }, () => demoStore.getUsage(), {
+      fallbackOnServerError: false,
+    });
   },
 
   getToday(): Promise<TodayResponse> {
@@ -111,20 +159,35 @@ export const careerApi = {
     });
   },
 
-  triageJob(id: string, payload: TriageActionRequest): Promise<JobSummary> {
-    return requestWithFallback(
-      `/api/jobs/${encodeURIComponent(id)}/triage`,
-      { method: 'POST', body: JSON.stringify(payload) },
-      () => demoStore.triageJob(id, payload),
+  /** `POST /api/triage/{id}`, then re-reads the job. */
+  async triageJob(id: string, payload: TriageActionRequest): Promise<JobSummary> {
+    let fellBack = false;
+    const res = await requestWithFallback<unknown>(
+      `/api/triage/${encodeURIComponent(id)}`,
+      { method: 'POST', body: JSON.stringify(toTriageRequest(payload)) },
+      () => {
+        fellBack = true;
+        return demoStore.triageJob(id, payload);
+      },
     );
+    if (fellBack) return res as JobSummary;
+    return careerApi.getJob(id);
   },
 
-  evaluateJob(id: string): Promise<JobDetail> {
-    return requestWithFallback(
-      `/api/jobs/${encodeURIComponent(id)}/evaluate`,
-      { method: 'POST', body: JSON.stringify({}) },
-      () => demoStore.evaluateJob(id),
+  /** Deep (neon) evaluation via `POST /api/ai/evaluate/{id}`, then re-reads the job. */
+  async evaluateJob(id: string): Promise<JobDetail> {
+    let fellBack = false;
+    const res = await requestWithFallback<unknown>(
+      `/api/ai/evaluate/${encodeURIComponent(id)}`,
+      { method: 'POST', body: JSON.stringify({ tier: 'neon' }) },
+      () => {
+        fellBack = true;
+        return demoStore.evaluateJob(id);
+      },
+      { fallbackOnServerError: false },
     );
+    if (fellBack) return res as JobDetail;
+    return careerApi.getJob(id);
   },
 
   tailorJob(id: string): Promise<TailorResponse> {
@@ -189,16 +252,44 @@ export const careerApi = {
     );
   },
 
-  getSettings(): Promise<SettingsState> {
-    return requestWithFallback('/api/settings', { method: 'GET' }, () => demoStore.getSettings());
+  /** Builds settings from `GET /api/settings`; only `ai_routing` is stored server-side so far. */
+  async getSettings(): Promise<SettingsState> {
+    let fellBack = false;
+    const res = await requestWithFallback<unknown>('/api/settings', { method: 'GET' }, () => {
+      fellBack = true;
+      return demoStore.getSettings();
+    });
+    if (fellBack) return res as SettingsState;
+    return settingsFromApi(res as ApiSettingsList);
   },
 
-  updateSettings(payload: UpdateSettingsRequest): Promise<SettingsState> {
-    return requestWithFallback(
-      '/api/settings',
-      { method: 'PATCH', body: JSON.stringify(payload) },
-      () => demoStore.updateSettings(payload),
+  /** Tier routing is saved with `PUT /api/settings/ai_routing` (full object). */
+  async updateSettings(payload: UpdateSettingsRequest): Promise<SettingsState> {
+    const touchesRouting =
+      payload.hydrogenPrimaryCli !== undefined ||
+      payload.neonPrimaryCli !== undefined ||
+      payload.autoFailover !== undefined;
+    if (!touchesRouting) {
+      // Commute preferences have no API yet (demo store only).
+      return demoStore.updateSettings(payload);
+    }
+    const current = await careerApi.getSettings();
+    const value: AiRoutingSetting = {
+      hydrogenPrimary: payload.hydrogenPrimaryCli ?? current.hydrogenPrimaryCli,
+      neonPrimary: payload.neonPrimaryCli ?? current.neonPrimaryCli,
+      autoFailover: payload.autoFailover ?? current.autoFailover,
+    };
+    let fellBack = false;
+    const res = await requestWithFallback<unknown>(
+      '/api/settings/ai_routing',
+      { method: 'PUT', body: JSON.stringify({ value }) },
+      () => {
+        fellBack = true;
+        return demoStore.updateSettings(payload);
+      },
     );
+    if (fellBack) return res as SettingsState;
+    return careerApi.getSettings();
   },
 
   async getGoogleAuthStatus(): Promise<GoogleAuthStatusResponse> {
@@ -279,5 +370,70 @@ function normalizeCommute(raw: Record<string, unknown>): CommuteInfo {
     estimateSource: (raw.estimate_source ?? raw.estimateSource ?? null) as string | null,
     cached: Boolean(raw.cached ?? false),
     mapsUrl: (raw.maps_url ?? raw.mapsUrl ?? null) as string | null,
+  };
+}
+
+/** API triage actions (`TriageAction` in crates/api). */
+type ApiTriageAction = 'shortlist' | 'skip' | 'blacklist' | 'restore';
+
+export function toTriageRequest(payload: TriageActionRequest): { action: ApiTriageAction } {
+  const map: Record<TriageActionRequest['action'], ApiTriageAction> = {
+    approve: 'shortlist',
+    shortlist: 'shortlist',
+    skip: 'skip',
+    reject: 'blacklist',
+  };
+  return { action: map[payload.action] };
+}
+
+/** Value of the `ai_routing` setting (validated by the API). */
+export interface AiRoutingSetting {
+  hydrogenPrimary: CliTierModel;
+  neonPrimary: CliTierModel;
+  autoFailover: boolean;
+}
+
+interface ApiSettingsList {
+  settings: { key: string; value_json: string; updated_at: string }[];
+}
+
+const DEFAULT_ROUTING: AiRoutingSetting = {
+  hydrogenPrimary: 'claude',
+  neonPrimary: 'claude',
+  autoFailover: true,
+};
+
+function isCli(v: unknown): v is CliTierModel {
+  return v === 'claude' || v === 'agy';
+}
+
+export function settingsFromApi(list: ApiSettingsList): SettingsState {
+  let routing = DEFAULT_ROUTING;
+  const row = list.settings?.find((s) => s.key === 'ai_routing');
+  if (row) {
+    try {
+      const v = JSON.parse(row.value_json) as Partial<AiRoutingSetting>;
+      routing = {
+        hydrogenPrimary: isCli(v.hydrogenPrimary) ? v.hydrogenPrimary : DEFAULT_ROUTING.hydrogenPrimary,
+        neonPrimary: isCli(v.neonPrimary) ? v.neonPrimary : DEFAULT_ROUTING.neonPrimary,
+        autoFailover:
+          typeof v.autoFailover === 'boolean' ? v.autoFailover : DEFAULT_ROUTING.autoFailover,
+      };
+    } catch {
+      // keep defaults
+    }
+  }
+  return {
+    hydrogenPrimaryCli: routing.hydrogenPrimary,
+    neonPrimaryCli: routing.neonPrimary,
+    autoFailover: routing.autoFailover,
+    // Not stored by the API yet; neutral values instead of demo data.
+    googleOAuthConnected: false,
+    googleScopes: [],
+    linearTeamKey: '',
+    linearConnected: false,
+    linearIssues: [],
+    homeLocationArea: '',
+    defaultTravelMode: 'drive',
   };
 }

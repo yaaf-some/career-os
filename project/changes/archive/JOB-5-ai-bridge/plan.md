@@ -34,18 +34,18 @@ Rust verify: `export PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH` (
   Verify: `cargo test -p career-os-api`
 - [x] **2.5 Usage endpoint** — `src/routes/ai.rs`: camelCase `AiUsageResponse` per spec from bridge `/v1/usage` + DB (agy 24 h count, `AI_AGY_DAILY_CALL_LIMIT`); shared fixture `web/src/__tests__/fixtures/ai-usage.json` produced by a Rust test (snapshot) — lead creates fixture path first.
   Verify: `cargo test -p career-os-api usage`; OpenAPI export step in CI.
-- [ ] **2.6 Full checks + PR B.**
+- [x] **2.6 Full checks + PR B.**
 
 ## PR C — Web + docs (`feat/job-5c-web-docs`)
 
-- [ ] **3.1 Types + client routes** — `web/src/api/types.ts`, `client.ts`, `queries.ts`, `demoData.ts` (demo shape updated): evaluate/triage/settings per spec. Vitest asserting URL/method/body with mocked fetch.
+- [x] **3.1 Types + client routes** — `web/src/api/types.ts`, `client.ts`, `queries.ts`, `demoData.ts` (demo shape updated): evaluate/triage/settings per spec. Vitest asserting URL/method/body with mocked fetch.
   Verify: `cd web && npm run typecheck && npm test`
-- [ ] **3.2 UsageBar + Settings UI** — `web/src/components/UsageBar.tsx`, `web/src/lib/usage.ts`, `web/src/routes/SettingsView.tsx`: null/stale/unconfigured states; claude/agy only; failover toggle. Tests use the shared API fixture from 2.5.
+- [x] **3.2 UsageBar + Settings UI** — `web/src/components/UsageBar.tsx`, `web/src/lib/usage.ts`, `web/src/routes/SettingsView.tsx`: null/stale/unconfigured states; claude/agy only; failover toggle. Tests use the shared API fixture from 2.5.
   Verify: `cd web && npm test && npm run build`
-- [ ] **3.3 Docs sync** — `docs/architecture.md`, `docs/glossary.md`, `docs/trust.md`, new `docs/adr/ADR-002-ai-bridge-cli-isolation.md` (content from spec Design + 1.2 notes).
+- [x] **3.3 Docs sync** — `docs/architecture.md`, `docs/glossary.md`, `docs/trust.md`, new `docs/adr/ADR-002-ai-bridge-cli-isolation.md` (content from spec Design + 1.2 notes).
   Verify: lead review; no "Node" for ai-bridge (`grep -n "ai-bridge" docs/*.md`).
-- [ ] **3.4 Full checks + PR C**, then `project-verify-archive` (AC1–AC11).
-- [ ] **3.5 [Yaaf on M2] Host acceptance (AC12)** — install, bootstrap, container→bridge curl under Kiri, one neon eval, `ps` check, Usage Bar live.
+- [x] **3.4 Full checks + PR C**, then `project-verify-archive` (AC1–AC11).
+- [x] **3.5 [Yaaf on M2] Host acceptance (AC12)** — install, bootstrap, container→bridge curl under Kiri, one neon eval, `ps` check, Usage Bar live.
 
 ## Execution Notes / Deviations
 
@@ -81,4 +81,9 @@ Rust verify: `export PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH` (
   - `GET /api/ai/usage` field names follow the existing web types (`claude5h.{percentUsed,resetAt}`, `antigravity.status: ready|cooldown|exhausted`) plus spec additions (`configured`, `bridgeReachable`, `claudeStale`, `dbStatsByTier`, nullable windows); timestamps RFC 3339. Shared fixture `web/src/__tests__/fixtures/ai-usage.json` is checked by `routes::ai::tests::ai_usage_fixture_matches_web` (regenerate with `UPDATE_FIXTURES=1`). Web consumes it in 3.1/3.2, so **C must follow B** (web types still non-nullable until then; the client already falls back to demo data on 5xx).
   - Known gap: failed calls are recorded under provider `host-bridge` (the bridge doesn't say which CLI failed), so an agy failure with failover off doesn't count toward `callsUsed`.
   - New optional env `AI_AGY_DAILY_CALL_LIMIT`.
+- **2026-11-27 · 3.1–3.2 done** (stacked on B). `requestWithFallback` gains `fallbackOnServerError` (default true); evaluate turns it off so a 503 (AI disabled) or other bridge error surfaces as `ApiError {status, code}` instead of a fake demo eval. Network errors still fall back to demo (no-backend dev mode). Triage maps web actions → API (`approve`/`shortlist`→`shortlist`, `skip`→`skip`, `reject`→`blacklist`). `getSettings` maps `GET /api/settings` (only `ai_routing` is server-side; other fields neutral, not demo data); routing saves `PUT /api/settings/ai_routing` with the full object; commute prefs stay demo-store only (no API). Evaluate/triage re-read the job via the existing `getJob` — **follow-up:** API `JobDetailResponse` (snake_case) is still cast to web `JobDetail` without mapping (pre-existing). UsageBar: unconfigured / bridge offline / stale / null windows; agy without limit shows "N calls today".
+- **2026-11-27 · 3.3 done:** architecture (Rust bridge row + diagram), glossary (agy, ai_routing, failover, disabled mode, tiers, statusline; scanner node:26; sorted), trust §4 Host AI CLI Isolation, ADR-002 (decision, four agy layers, residual risks). README links ADR-002.
+- **AC status before verify-archive:** AC1–AC10 + AC13 covered by tests/checks across PRs A–C; AC11 = CI on #12/#13/C; AC12 = Yaaf on the M2 (task 3.5).
+- **2026-11-27 · C follow-up:** evaluate errors now render in the role drawer (`describeAiError`; disabled bridge ⇒ "AI is not configured…"); `getAiUsage` no longer falls back to demo numbers on a live API 5xx (bar renders nothing).
+- **2026-11-27 · Verified + archived.** #12 and #13 squash-merged; C carries the archive. AC12 run by the lead on the M2 (Yaaf: "go ahead … verify whatever needs to be verified"): Docker Desktop (not Kiri), see spec AC12 note. AC12 found one bug: job detail omitted `evaluations.provider` (fixed in #13). Compose default `TOKEN_ENCRYPTION_KEY` placeholder crash-loops the app; README already requires a real key (not JOB-5 scope).
 

@@ -5,7 +5,8 @@ export type UsageSeverity = 'ok' | 'warn' | 'critical';
 /**
  * Clamp and format a utilization percentage (0..100).
  */
-export function formatUsagePercent(percent: number): string {
+export function formatUsagePercent(percent: number | null | undefined): string {
+  if (percent == null) return '—';
   if (!Number.isFinite(percent)) return '0%';
   const clamped = Math.max(0, Math.min(100, Math.round(percent)));
   return `${clamped}%`;
@@ -14,8 +15,8 @@ export function formatUsagePercent(percent: number): string {
 /**
  * Map utilization percentage to visual severity threshold.
  */
-export function getUsageSeverity(percent: number): UsageSeverity {
-  if (!Number.isFinite(percent)) return 'ok';
+export function getUsageSeverity(percent: number | null | undefined): UsageSeverity {
+  if (percent == null || !Number.isFinite(percent)) return 'ok';
   if (percent >= 85) return 'critical';
   if (percent >= 65) return 'warn';
   return 'ok';
@@ -62,8 +63,8 @@ export function formatAntigravityStatus(
   nowMs = Date.now(),
 ): AntigravityStatusDisplay {
   const used = Math.max(0, usage.callsUsed);
-  const limit = Math.max(1, usage.callsLimit);
-  const callsLabel = `${used}/${limit} calls`;
+  const limit = usage.callsLimit == null ? null : Math.max(1, usage.callsLimit);
+  const callsLabel = limit == null ? `${used} calls today` : `${used}/${limit} calls`;
 
   if (usage.cooldownUntil) {
     const cooldownMs = Date.parse(usage.cooldownUntil);
@@ -76,7 +77,7 @@ export function formatAntigravityStatus(
     }
   }
 
-  if (used >= limit || usage.status === 'exhausted') {
+  if ((limit != null && used >= limit) || usage.status === 'exhausted') {
     return {
       label: 'Quota Exhausted',
       callsLabel,
