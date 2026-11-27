@@ -321,6 +321,7 @@ mod tests {
             calendar: CalendarClient::new().with_base_url(google_base.to_string()),
             maps: MapsClient::new(None),
             sync_lock: Default::default(),
+            linear: None,
         }
     }
 

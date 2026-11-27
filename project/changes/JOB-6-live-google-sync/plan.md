@@ -61,11 +61,11 @@ Branch per PR off `main`. Merge `origin/main` into a branch to catch up; never r
 - [x] **2.5 Web write side** — map the draft and reminder responses; button text "Save to Gmail Drafts (you send it)"; show 409 errors with a reconnect hint.
 
   Verify: web checks.
-- [ ] **2.6 Docs + PR B** — `trust.md` (drafts only, never send; scopes), README, ADR-003 if needed, STATE; full checks; PR; CI; ask Yaaf.
+- [x] **2.6 Docs + PR B** — `trust.md` (drafts only, never send; scopes), README, ADR-003 if needed, STATE; full checks; PR; CI; ask Yaaf.
 
 ## PR C — Linear ops (`feat/job-6c-linear`)
 
-- [ ] **3.1** On a tracker stage change to `applied`, with `LINEAR_API_KEY` and `LINEAR_TEAM_ID` set and `linear_issue_id` empty, call `create_issue` (title "Applied: {title} @ {company}", job URL in the description) and store the id. Do nothing without the key (AC10).
+- [x] **3.1** On a tracker stage change to `applied`, with `LINEAR_API_KEY` and `LINEAR_TEAM_ID` set and `linear_issue_id` empty, call `create_issue` (title "Applied: {title} @ {company}", job URL in the description) and store the id. Do nothing without the key (AC10).
 
   Verify: `cargo test -p career-os-api linear`
 - [ ] **3.2** Docs + PR C.
@@ -89,3 +89,4 @@ Branch per PR off `main`. Merge `origin/main` into a branch to catch up; never r
   - `PATCH /api/tracker` set a follow-up, and Today showed it as overdue.
   - Changing the stage in the Tracker UI to Interview saved `interviewing` and left the follow-up and notes unchanged.
   - Sync now without Google returned 409 `GOOGLE_NOT_CONNECTED`.
+- 3.1: Linear runs best effort after the tracker commit, so a Linear outage never blocks a stage change. A `creating` claim on `linear_issue_id` makes double submits create only one issue. `LINEAR_TEAM_ID` was added to `.env.example` and compose (it was read by config but undocumented).

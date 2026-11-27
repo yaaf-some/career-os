@@ -173,6 +173,7 @@ mod tests {
             calendar: CalendarClient::new(),
             maps: MapsClient::new(None),
             sync_lock: Default::default(),
+            linear: None,
         };
 
         let app = build_router(state);
@@ -293,6 +294,7 @@ mod tests {
             calendar: CalendarClient::new(),
             maps: MapsClient::new(None),
             sync_lock: Default::default(),
+            linear: None,
         };
         let app = build_router(state.clone());
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

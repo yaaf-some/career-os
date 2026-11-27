@@ -10,8 +10,8 @@ use career_os_api::{
     crypto::TokenCipher,
     db::init_pool,
     integrations::{
-        calendar::CalendarClient, drive::DriveClient, gmail::GmailClient, maps::MapsClient,
-        scanner::ScannerClient,
+        calendar::CalendarClient, drive::DriveClient, gmail::GmailClient, linear::LinearClient,
+        maps::MapsClient, scanner::ScannerClient,
     },
     openapi::export_openapi_to_file,
     scheduler::spawn_scheduler,
@@ -58,6 +58,10 @@ async fn main() -> anyhow::Result<()> {
         calendar: CalendarClient::new(),
         maps: MapsClient::new(config.google_maps_api_key.clone()),
         sync_lock: Default::default(),
+        linear: match (&config.linear_api_key, &config.linear_team_id) {
+            (Some(key), Some(_)) => Some(LinearClient::new(key.clone())),
+            _ => None,
+        },
     };
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
