@@ -10,7 +10,8 @@ export type PipelineStage =
 
 export type GmailThreadStatus = 'none' | 'awaiting_reply' | 'reply_received' | 'draft_ready';
 
-export type CliTierModel = 'claude' | 'antigravity' | 'codex' | 'gemini';
+/** Host CLI the ai-bridge runs (`claude` = Claude Code, `agy` = Antigravity). */
+export type CliTierModel = 'claude' | 'agy';
 
 export interface HealthResponse {
   ok: boolean;
@@ -19,23 +20,42 @@ export interface HealthResponse {
   demoMode?: boolean;
 }
 
+/** Mirrors the API's `AiUsageResponse` (`GET /api/ai/usage`). */
 export interface ClaudeUsageWindow {
-  percentUsed: number;
-  resetAt: string;
+  /** 0–100, or null when Claude Code didn't report it. */
+  percentUsed: number | null;
+  /** RFC 3339, or null. */
+  resetAt: string | null;
 }
 
 export interface AntigravityUsage {
+  /** agy calls recorded in the last 24 h. */
   callsUsed: number;
-  callsLimit: number;
+  /** Optional daily budget (`AI_AGY_DAILY_CALL_LIMIT`). */
+  callsLimit: number | null;
   cooldownUntil: string | null;
   status: 'ready' | 'cooldown' | 'exhausted';
 }
 
+export interface AiUsageTierStat {
+  tier: string;
+  totalCalls: number;
+  successfulCalls: number;
+  avgLatencyMs: number;
+}
+
 export interface AiUsageResponse {
-  claude5h: ClaudeUsageWindow;
-  claude7d: ClaudeUsageWindow;
+  /** False when no AI bridge is configured. */
+  configured: boolean;
+  bridgeReachable: boolean;
+  /** When Claude Code last wrote its statusline. */
+  updatedAt: string | null;
+  claude5h: ClaudeUsageWindow | null;
+  claude7d: ClaudeUsageWindow | null;
+  /** True when there is no fresh Claude usage data. */
+  claudeStale: boolean;
   antigravity: AntigravityUsage;
-  updatedAt: string;
+  dbStatsByTier: AiUsageTierStat[];
 }
 
 export interface ScoreBreakdown {

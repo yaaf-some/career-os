@@ -93,6 +93,10 @@ describe('UsageBar component', () => {
             status: 'ready',
           },
           updatedAt: '2026-11-26T12:00:00Z',
+          configured: true,
+          bridgeReachable: true,
+          claudeStale: false,
+          dbStatsByTier: [],
         }}
       />,
     );
