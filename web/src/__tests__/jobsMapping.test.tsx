@@ -105,8 +105,24 @@ describe('API job shape → web (fixture shared with crates/api)', () => {
       generatedAt: '2026-11-22T12:00:00Z',
       groundedBullets: [],
     });
-    expect(d.gmailDraft).toBeNull();
-    expect(d.calendarReminders).toEqual([]);
+    // Comms: a linked thread needs a reply, so that wins over the saved draft.
+    expect(d.gmailStatus).toBe('reply_received');
+    expect(d.gmailThreads).toEqual([
+      {
+        id: 'thr-1',
+        threadId: 'gmail-thread-1',
+        subject: 'Example Co: next steps',
+        from: 'Recruiter <recruiting@example.com>',
+        snippet: 'Thanks for applying to Example Co. Are you free Tuesday?',
+        needsReply: true,
+        lastMessageAt: '2026-11-24T15:00:00Z',
+        linkSource: 'auto',
+      },
+    ]);
+    expect(d.gmailDraft).toMatchObject({ to: 'recruiting@example.com', confirmed: false });
+    expect(d.calendarReminders).toEqual([
+      { id: 'evt-1', title: 'Example Co interview', startsAt: '2026-11-26T17:00:00Z', notes: '' },
+    ]);
   });
 
   it('maps every DB triage status and stage', () => {
@@ -129,8 +145,23 @@ describe('API job shape → web (fixture shared with crates/api)', () => {
       'offer',
       'archived',
     ]);
-    const noApp = jobDetailFromApi({ ...apiDetail, application: null, evaluations: [], drive_artifacts: [] });
-    expect(noApp).toMatchObject({ stage: 'saved', nextFollowUpAt: null, hasNeonEval: false, neonEval: null });
+    const noApp = jobDetailFromApi({
+      ...apiDetail,
+      application: null,
+      evaluations: [],
+      drive_artifacts: [],
+      gmail_threads: [],
+      calendar_events: [],
+      email_draft: null,
+    });
+    expect(noApp).toMatchObject({
+      stage: 'saved',
+      nextFollowUpAt: null,
+      hasNeonEval: false,
+      neonEval: null,
+      gmailStatus: 'none',
+      gmailThreads: [],
+    });
   });
 
   it('never throws on odd blocks_json', () => {
@@ -187,5 +218,14 @@ describe('live API job routes', () => {
     expect(screen.getByText('claude · sonnet')).toBeTruthy();
     expect(screen.getByText('No Kubernetes operator experience.')).toBeTruthy();
     expect(screen.queryByText(/Confidence:/)).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Gmail & Calendar' }));
+    await waitFor(() => expect(screen.getByText('Example Co: next steps')).toBeTruthy());
+    expect(screen.getByText('Needs reply')).toBeTruthy();
+    expect(screen.getByText('Example Co interview')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Tailor Docs' }));
+    const tailor = await screen.findByRole('button', { name: /Tailoring: not available yet/ });
+    expect((tailor as HTMLButtonElement).disabled).toBe(true);
   });
 });

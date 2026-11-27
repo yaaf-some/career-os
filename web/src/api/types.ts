@@ -126,6 +126,18 @@ export interface CalendarReminder {
   notes: string;
 }
 
+/** A Gmail thread linked to the job's application (live API only). */
+export interface GmailThreadSummary {
+  id: string;
+  threadId: string;
+  subject: string;
+  from: string;
+  snippet: string;
+  needsReply: boolean;
+  lastMessageAt: string | null;
+  linkSource: 'auto' | 'manual';
+}
+
 export interface JobDetail extends JobSummary {
   descriptionText: string;
   requirements: string[];
@@ -141,6 +153,7 @@ export interface JobDetail extends JobSummary {
   tailor: TailorArtifacts;
   gmailDraft: GmailDraft | null;
   calendarReminders: CalendarReminder[];
+  gmailThreads: GmailThreadSummary[];
 }
 
 export interface TodayReplyItem {
@@ -221,6 +234,17 @@ export interface UpdateTrackerRequest {
   stage?: PipelineStage;
   nextFollowUpAt?: string | null;
   notes?: string;
+}
+
+/** One background sync run (`GET /api/sync-runs`). */
+export interface SyncRun {
+  id: string;
+  runType: string;
+  status: 'running' | 'succeeded' | 'partial' | 'failed';
+  itemsFetched: number;
+  errorMessage: string | null;
+  startedAt: string;
+  finishedAt: string | null;
 }
 
 export interface JobSource {

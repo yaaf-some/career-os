@@ -22,6 +22,7 @@ export const queryKeys = {
   tracker: ['tracker'] as const,
   sources: ['sources'] as const,
   settings: ['settings'] as const,
+  syncRuns: ['sync-runs'] as const,
 };
 
 export function useHealthQuery() {
@@ -214,6 +215,26 @@ export function useGoogleAuthStatusQuery() {
     queryFn: () => careerApi.getGoogleAuthStatus(),
     refetchInterval: 60_000,
     staleTime: 30_000,
+  });
+}
+
+export function useSyncRunsQuery() {
+  return useQuery({
+    queryKey: queryKeys.syncRuns,
+    queryFn: () => careerApi.getSyncRuns(),
+  });
+}
+
+export function useSyncGoogleMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => careerApi.syncGoogleNow(),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.syncRuns });
+      void qc.invalidateQueries({ queryKey: queryKeys.today });
+      void qc.invalidateQueries({ queryKey: queryKeys.tracker });
+      void qc.invalidateQueries({ queryKey: queryKeys.jobs });
+    },
   });
 }
 

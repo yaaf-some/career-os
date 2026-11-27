@@ -25,6 +25,9 @@ import { Badge, Button, Card } from '@/components/ui';
 import { CommuteBadge } from '@/components/CommuteBadge';
 import { cn } from '@/lib/cn';
 
+/** The tailor backend isn't built yet (separate issue); only the demo can run it. */
+const tailorAvailable = () => import.meta.env.VITE_DEMO_MODE === 'true';
+
 export function RoleDetailDrawer({
   jobId,
   onClose,
@@ -33,6 +36,7 @@ export function RoleDetailDrawer({
   onClose: () => void;
 }) {
   const detailQuery = useJobDetailQuery(jobId);
+  const TAILOR_AVAILABLE = tailorAvailable();
   const evaluateMutation = useEvaluateJobMutation();
   const tailorMutation = useTailorJobMutation();
   const triageMutation = useTriageMutation();
@@ -298,12 +302,17 @@ export function RoleDetailDrawer({
                       <Button
                         size="sm"
                         variant="primary"
-                        disabled={tailorMutation.isPending}
+                        disabled={!TAILOR_AVAILABLE || tailorMutation.isPending}
+                        title={TAILOR_AVAILABLE ? undefined : 'Not available yet'}
                         onClick={() => tailorMutation.mutate(job.id)}
                       >
                         <FileText className="h-3.5 w-3.5" />
                         <span>
-                          {tailorMutation.isPending ? 'Generating Docs…' : 'Tailor to Google Docs'}
+                          {!TAILOR_AVAILABLE
+                            ? 'Tailoring: not available yet'
+                            : tailorMutation.isPending
+                              ? 'Generating Docs…'
+                              : 'Tailor to Google Docs'}
                         </span>
                       </Button>
                     </div>
@@ -372,6 +381,46 @@ export function RoleDetailDrawer({
                   </Tabs.Panel>
 
                   <Tabs.Panel value="comms" className="space-y-4">
+                    <Card className="p-4 space-y-2.5">
+                      <div className="flex items-center gap-2 text-sm font-semibold">
+                        <Mail className="h-4 w-4 text-accent-brand" />
+                        <span>Linked Gmail threads</span>
+                      </div>
+                      {job.gmailThreads.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          No Gmail threads linked to this role yet. Sync runs twice daily; use
+                          Settings → Sync now for an immediate check.
+                        </p>
+                      ) : (
+                        <ul className="space-y-2">
+                          {job.gmailThreads.map((t) => (
+                            <li key={t.id} className="rounded-lg border border-border p-2.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <a
+                                  href={`https://mail.google.com/mail/u/0/#all/${encodeURIComponent(t.threadId)}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="truncate text-sm font-medium hover:text-accent-brand"
+                                >
+                                  {t.subject}
+                                </a>
+                                {t.needsReply ? <Badge variant="warning">Needs reply</Badge> : null}
+                              </div>
+                              <div className="truncate text-xs text-muted-foreground">
+                                {t.from}
+                                {t.lastMessageAt
+                                  ? ` · ${new Date(t.lastMessageAt).toLocaleString()}`
+                                  : ''}
+                              </div>
+                              {t.snippet ? (
+                                <p className="mt-1 line-clamp-2 text-xs text-foreground/80">{t.snippet}</p>
+                              ) : null}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </Card>
+
                     <Card className="p-4 space-y-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 text-sm font-semibold">

@@ -5,11 +5,16 @@
  */
 import type {
   EvalBlock,
+  GmailThreadStatus,
   JobDetail,
   JobsListResponse,
   JobSummary,
   PipelineStage,
+  TodayResponse,
+  TrackerEntry,
+  TrackerResponse,
   TriageStatus,
+  UpdateTrackerRequest,
 } from './types';
 
 export interface ApiJobRecord {
@@ -58,11 +63,45 @@ export interface ApiListJobsResponse {
   total: number;
 }
 
+export interface ApiGmailThreadRecord {
+  id: string;
+  thread_id: string;
+  subject: string | null;
+  from_email: string | null;
+  snippet: string | null;
+  needs_reply: boolean;
+  last_message_at: string | null;
+  link_source: string;
+}
+
+export interface ApiCalendarEventRecord {
+  id: string;
+  kind: string;
+  title: string;
+  starts_at: string;
+  ends_at: string;
+  html_link: string | null;
+  notes: string | null;
+}
+
+export interface ApiEmailDraftRecord {
+  id: string;
+  to_email: string;
+  subject: string;
+  body: string;
+  confirmed: boolean;
+  gmail_draft_id: string | null;
+  updated_at: string;
+}
+
 export interface ApiJobDetailResponse {
   job: ApiJobRecord;
   evaluations: ApiEvaluationRecord[];
   application: ApiApplicationRecord | null;
   drive_artifacts: ApiDriveArtifactRecord[];
+  gmail_threads: ApiGmailThreadRecord[];
+  calendar_events: ApiCalendarEventRecord[];
+  email_draft: ApiEmailDraftRecord | null;
 }
 
 const TRIAGE_STATUS: Record<string, TriageStatus> = {
@@ -81,6 +120,26 @@ const STAGE: Record<string, PipelineStage> = {
   offer: 'offer',
   closed: 'archived',
 };
+
+const STAGE_TO_API: Record<PipelineStage, string> = {
+  saved: 'shortlisted',
+  applied: 'applied',
+  screen: 'recruiter',
+  interview: 'interviewing',
+  offer: 'offer',
+  archived: 'closed',
+};
+
+export function stageFromApi(stage: string): PipelineStage {
+  return STAGE[stage] ?? 'saved';
+}
+
+/** Reply waiting on you > draft saved > conversation exists > nothing. */
+function gmailStatusFrom(threads: { needsReply: boolean }[], hasDraft: boolean): GmailThreadStatus {
+  if (threads.some((t) => t.needsReply)) return 'reply_received';
+  if (hasDraft) return 'draft_ready';
+  return threads.length > 0 ? 'awaiting_reply' : 'none';
+}
 
 const BLOCK_TITLES: Record<EvalBlock['block'], string> = {
   A: 'Fit',
@@ -140,7 +199,7 @@ export function jobSummaryFromApi(
     source: job.source_type,
     url: job.url,
     triageStatus: TRIAGE_STATUS[job.triage_status] ?? 'pending',
-    stage: app ? (STAGE[app.stage] ?? 'saved') : 'saved',
+    stage: app ? stageFromApi(app.stage) : 'saved',
     hydrogenScore: job.tier1_score,
     // The hydrogen tier returns one score, not a per-dimension breakdown.
     scoreBreakdown: null,
@@ -276,9 +335,161 @@ export function jobDetailFromApi(res: ApiJobDetailResponse): JobDetail {
       generatedAt: generated ?? null,
       groundedBullets: [],
     },
-    gmailDraft: null,
-    calendarReminders: [],
+    gmailStatus: gmailStatusFrom(
+      res.gmail_threads.map((t) => ({ needsReply: t.needs_reply })),
+      res.email_draft !== null,
+    ),
+    gmailDraft: res.email_draft
+      ? {
+          id: res.email_draft.id,
+          to: res.email_draft.to_email,
+          subject: res.email_draft.subject,
+          body: res.email_draft.body,
+          confirmed: res.email_draft.confirmed,
+          updatedAt: res.email_draft.updated_at,
+        }
+      : null,
+    calendarReminders: res.calendar_events.map((e) => ({
+      id: e.id,
+      title: e.title,
+      startsAt: e.starts_at,
+      notes: e.notes ?? '',
+    })),
+    gmailThreads: res.gmail_threads.map((t) => ({
+      id: t.id,
+      threadId: t.thread_id,
+      subject: t.subject ?? '(no subject)',
+      from: t.from_email ?? '',
+      snippet: t.snippet ?? '',
+      needsReply: t.needs_reply,
+      lastMessageAt: t.last_message_at,
+      linkSource: t.link_source === 'manual' ? 'manual' : 'auto',
+    })),
   };
+}
+
+// ---- Today / Tracker (JOB-6) ----
+
+export interface ApiTodayResponse {
+  date: string;
+  unreadReplies: {
+    threadId: string;
+    jobId: string;
+    company: string;
+    role: string;
+    sender: string;
+    subject: string;
+    snippet: string;
+    receivedAt: string;
+  }[];
+  agenda: {
+    id: string;
+    jobId: string | null;
+    kind: string;
+    title: string;
+    startsAt: string;
+    endsAt: string;
+    htmlLink: string | null;
+  }[];
+  followUpsDue: {
+    jobId: string;
+    company: string;
+    role: string;
+    dueAt: string;
+    overdue: boolean;
+    stage: string;
+  }[];
+  topMatches: ApiJobRecord[];
+}
+
+/** `2026-11-27` → `Friday, Nov 27` (the API's UTC date, labelled without shifting it). */
+export function formatDateLabel(date: string): string {
+  const d = new Date(`${date}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return date;
+  return d.toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+export function todayFromApi(res: ApiTodayResponse): TodayResponse {
+  return {
+    dateLabel: formatDateLabel(res.date),
+    unreadReplies: res.unreadReplies.map((r) => ({
+      jobId: r.jobId,
+      company: r.company,
+      role: r.role,
+      sender: r.sender,
+      snippet: r.snippet || r.subject,
+      receivedAt: r.receivedAt,
+    })),
+    agenda: res.agenda.map((e) => ({
+      id: e.id,
+      jobId: e.jobId,
+      title: e.title,
+      startsAt: e.startsAt,
+      endsAt: e.endsAt,
+      locationOrLink: e.htmlLink ?? '',
+    })),
+    followUpsDue: res.followUpsDue.map((f) => ({
+      jobId: f.jobId,
+      company: f.company,
+      role: f.role,
+      dueAt: f.dueAt,
+      overdue: f.overdue,
+      stage: stageFromApi(f.stage),
+    })),
+    topMatches: res.topMatches.map((j) => jobSummaryFromApi(j)),
+  };
+}
+
+export interface ApiTrackerEntry {
+  applicationId: string;
+  jobId: string;
+  company: string;
+  title: string;
+  stage: string;
+  hydrogenScore: number | null;
+  threadSubject: string | null;
+  threadCount: number;
+  threadsNeedReply: boolean;
+  lastActivityAt: string;
+  nextFollowUpAt: string | null;
+  notes: string;
+}
+
+export function trackerFromApi(res: { entries: ApiTrackerEntry[] }): TrackerResponse {
+  return {
+    entries: res.entries.map(
+      (e): TrackerEntry => ({
+        jobId: e.jobId,
+        company: e.company,
+        title: e.title,
+        stage: stageFromApi(e.stage),
+        hydrogenScore: e.hydrogenScore,
+        gmailStatus: e.threadsNeedReply
+          ? 'reply_received'
+          : e.threadCount > 0
+            ? 'awaiting_reply'
+            : 'none',
+        threadSubject: e.threadSubject,
+        lastActivityAt: e.lastActivityAt,
+        nextFollowUpAt: e.nextFollowUpAt,
+        notes: e.notes,
+      }),
+    ),
+  };
+}
+
+/** Web stage names → API stage names; only sends the fields being changed. */
+export function trackerPatchToApi(req: UpdateTrackerRequest): Record<string, unknown> {
+  const body: Record<string, unknown> = { jobId: req.jobId };
+  if (req.stage !== undefined) body.stage = STAGE_TO_API[req.stage];
+  if (req.nextFollowUpAt !== undefined) body.nextFollowUpAt = req.nextFollowUpAt;
+  if (req.notes !== undefined) body.notes = req.notes;
+  return body;
 }
 
 /** Badge text for a hydrogen score; 'unscored' until the hydrogen tier runs. */
