@@ -36,7 +36,7 @@ cp .env.example .env
 Edit `.env` and set at minimum:
 - `ALLOWED_TAILSCALE_USER` — your Tailscale login email (e.g. `you@example.com`)
 - `AI_BRIDGE_TOKEN` — the shared secret from step 3 (`openssl rand -hex 32`); leave empty until the bridge is set up
-- `TOKEN_ENCRYPTION_KEY` — base64-encoded 32-byte key (`openssl rand -base64 32`)
+- `TOKEN_ENCRYPTION_KEY` — base64-encoded 32-byte key (`openssl rand -base64 32`); needed for Google OAuth. Leave empty to run without it (an invalid value stops the app at startup)
 - `DATA_DIR` (optional) — host path to your private candidate data directory (mounted read-only at `/data`)
 
 ### 2. Start containers

@@ -36,7 +36,7 @@ async fn main() -> anyhow::Result<()> {
     let cipher = match &config.token_encryption_key {
         Some(raw) => Some(
             TokenCipher::from_encoded_key(raw)
-                .map_err(|e| anyhow::anyhow!("CAREER_OS_TOKEN_KEY invalid: {e}"))?,
+                .map_err(|e| anyhow::anyhow!("TOKEN_ENCRYPTION_KEY (or CAREER_OS_TOKEN_KEY) invalid: {e}; generate one with `openssl rand -base64 32`, or leave it unset to disable Google OAuth"))?,
         ),
         None => None,
     };
