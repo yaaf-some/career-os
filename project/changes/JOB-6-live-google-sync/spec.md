@@ -56,6 +56,7 @@ The Google plumbing exists but nothing reaches the user:
   - the sender's domain (`from_email`) equals the job URL's registrable domain or a known ATS sender (`greenhouse.io`, `lever.co`, `ashbyhq.com`), **and** the normalized company name appears in the subject or snippet;
   - or the normalized company name appears in the subject.
   
+  A sender on the company's own domain (`r@examplecorp.com` for "Example Corp") also counts as a domain match.
   When several applications match, take the most recently updated one. Never overwrite a link set by hand (new column `link_source`: `auto` or `manual`).
 - **Event → application.** Link when the normalized company name appears in the event title. Events the app created are linked when they're made.
 - **Manual link.** `PUT /api/gmail-threads/{id}/application` with `{applicationId|null}` sets `link_source='manual'`.
@@ -68,7 +69,7 @@ The Google plumbing exists but nothing reaches the user:
   - `agenda`: events with `starts_at` in the next 7 days
   - `followUpsDue`: applications with `next_followup_at <= end of today`, flagged `overdue` when it's before now
   - `topMatches`: the top 5 jobs by `tier1_score` with status `pending_triage` or `shortlisted`
-- **`GET /api/tracker`** returns `TrackerResponse`. Stages are mapped the same way as `web/src/api/jobs.ts`. **`PATCH /api/tracker`** with `{jobId, stage?, nextFollowUpAt?, notes?}` updates the application (creating it at `shortlisted` if it doesn't exist) and returns the list.
+- **`GET /api/tracker`** returns `TrackerResponse`. The API uses the DB's stage names; `web/src/api/jobs.ts` translates them in both directions. **`PATCH /api/tracker`** with `{jobId, stage?, nextFollowUpAt?, notes?}` updates the application (creating it at `shortlisted` if it doesn't exist) and returns the list.
 - **`GET /api/jobs/{id}`** adds `gmail_threads` and `calendar_events` for the application. Web `jobDetailFromApi` maps these to `gmailStatus` (`reply_received` when a linked thread needs a reply, `awaiting_reply` when threads exist, else `none`), `calendarReminders`, and `gmailDraft` (from a new `email_drafts` row).
 - **`POST /api/jobs`** with `{url, title?, company?}`. Title and company default to values derived from the URL host and path. Uses the same canonical-key de-duplication as ingest and returns `JobSummary`-compatible JSON.
 - **`POST /api/jobs/{id}/email-draft`** with `{to, subject, body, confirmed}` upserts `email_drafts`. When `confirmed` is true and Google is connected, it calls Gmail `drafts.create`, or `drafts.update` if a `gmail_draft_id` exists, and returns the job detail. It never calls `messages.send` or `drafts.send`.

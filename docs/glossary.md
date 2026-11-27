@@ -11,7 +11,9 @@
 - **Elephant / Goldfish workflow:** Cross-session project discipline where `project/STATE.md` holds compact handoff context (Elephant) while implementation tasks execute in focused, bounded contexts (Goldfish).
 - **Failover:** The bridge retrying on the other CLI after the primary is rate-limited, times out, is missing, or attempts a tool. Generic CLI errors do not fail over.
 - **hydrogen / neon / carbon:** AI tiers: hydrogen = fast batch triage scoring, neon = deep single-job evaluation, carbon = reserved heavier tier.
+- **Linking:** Matching a synced Gmail thread or Calendar event to an application by company name and sender domain (`crates/api/src/sync/link.rs`). `link_source` is `auto` (recomputed each sync) or `manual` (set via `PUT /api/gmail-threads/{id}/application`, never overwritten).
 - **scanner:** The isolated `node:26-alpine` sidecar container (`scanner.Dockerfile`, port `8081`) dedicated to deterministic job-portal fetching and liveness checks.
 - **Statusline file:** JSON that Claude Code's `statusLine` command writes to `CLAUDE_STATUSLINE_PATH`; the bridge reads its `rate_limits` for the 5 h / 7 d Usage Bar windows.
+- **Sync now / sync interval:** Google sync runs every `GOOGLE_SYNC_INTERVAL_HOURS` (default 12); Settings → Sync now calls `POST /api/sync/google`.
 - **Tailscale Serve:** Tailscale reverse proxy terminating TLS for the tailnet and forwarding authenticated identity headers to `127.0.0.1:8080`.
 - **TOKEN_ENCRYPTION_KEY:** 32-byte base64 key used by `career-os-api` to encrypt Google OAuth refresh/access tokens at rest in SQLite.

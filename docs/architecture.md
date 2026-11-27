@@ -29,4 +29,18 @@ flowchart TB
 
 - **Ingress:** Only `127.0.0.1:8080` is published on the host. Remote access is mediated exclusively by `tailscale serve`.
 - **Internal network:** `scanner` is reachable only on the Compose bridge network (`http://scanner:8081`).
+## Google Sync & Linking (JOB-6)
+
+- **Schedule:** the API syncs Gmail (inbox threads matching interview/application/recruiter) and upcoming Calendar events every `GOOGLE_SYNC_INTERVAL_HOURS` (default 12, so twice daily). Settings → **Sync now** (`POST /api/sync/google`) runs one immediately. A shared lock prevents two syncs from overlapping (409 `SYNC_IN_PROGRESS`), and each run is recorded in `sync_runs`.
+- **Linking** (`crates/api/src/sync/link.rs`, no AI): after each sync, a thread is linked to an application when either:
+  - the company name appears in the subject; or
+  - the sender is the company's own domain, the job board's domain or a known ATS, **and** the company is named in the snippet.
+
+  An event is linked when its title names the company. When several applications match, the most recently updated wins. Manual links (`PUT /api/gmail-threads/{id}/application`, `link_source='manual'`) are never overwritten.
+- **Read surfaces:**
+  - `GET /api/today`: linked replies that need an answer, the 7-day agenda, follow-ups due, and top-scored jobs still in triage.
+  - `GET /api/tracker` and `PATCH /api/tracker`.
+  - `GET /api/jobs/{id}` now includes `gmail_threads`, `calendar_events` and `email_draft`.
+  - The API uses the DB's stage names (`shortlisted/recruiter/interviewing/closed`); `web/src/api/jobs.ts` converts them to and from the UI's names (`saved/screen/interview/archived`).
+
 - **Persistence:** Application state resides in the named Docker volume `career_os_db` (`/var/lib/career-os`) using SQLite WAL mode. Candidate source files are mounted read-only at `/data`.

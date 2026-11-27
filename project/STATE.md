@@ -6,8 +6,8 @@
 ## Current Focus
 
 - **`JOB-5` Verified + archived 2026-11-27** (`project/changes/archive/JOB-5-ai-bridge/`). #12/#13/#14 merged. AC12 passed on the M2 under Docker Desktop. statusLine hook installed (Usage Bar live).
-- **Web job mapping fix** (`fix/web-job-mapping`): `web/src/api/jobs.ts` maps the API's snake_case list/detail to web types; shared fixture `web/src/__tests__/fixtures/jobs.json` from `jobs_fixture_matches_web`. Verified live (real claude neon eval in the drawer).
-- **Exact Next Concrete Step:** merge the mapping PR, file the follow-ups below, start `JOB-6`.
+- **`JOB-6` in progress** (`project/changes/JOB-6-live-google-sync/`, approved 2026-11-27: Q1 `gmail.compose` yes, Q2 Linear yes, Google sync every 12 h). PR A `feat/job-6a-read`: linking, Today, Tracker, quick-add, job comms, Sync now, web read side.
+- **Exact Next Concrete Step:** merge PR A after CI, then PR B `feat/job-6b-write` (plan 2.1–2.6: `gmail.compose` scope, Gmail drafts never sent, Calendar reminders), then PR C (Linear).
 
 ## Done This Session
 
@@ -21,9 +21,9 @@
 
 ## Upcoming
 
-1. Follow-ups to file: `/api/jobs/{id}/tailor` backend; web demo-fallback still hides 404/5xx outside AI routes; `POST /api/jobs` (quick-add) and `/api/today` don't exist in the API (web falls back to demo); hydrogen gives no score breakdown.
+1. Follow-ups to file: `/api/jobs/{id}/tailor` backend; web demo-fallback still hides 404/5xx on sources/settings/commute routes; hydrogen gives no score breakdown.
 2. Kiri: AC12 ran on Docker Desktop; re-check `host.docker.internal:8787` if switching runtime.
-3. `JOB-6` Live Google sync + scheduler · `JOB-7` Mac mini cutover (compose + `tailscale serve` + launchd).
+3. `JOB-7` Mac mini cutover (compose + `tailscale serve` + launchd).
 
 ## Recent Decisions
 
