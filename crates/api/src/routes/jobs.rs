@@ -311,3 +311,137 @@ pub async fn ingest_jobs(
         duplicates: outcome.duplicates,
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_job() -> JobRecord {
+        JobRecord {
+            id: "job-1".into(),
+            canonical_key: "example-co|staff-platform-engineer".into(),
+            url: "https://jobs.example.com/staff-platform-engineer".into(),
+            company: "Example Co".into(),
+            title: "Staff Platform Engineer".into(),
+            location: Some("Remote (US)".into()),
+            workplace_type: Some("remote".into()),
+            yoe_min: Some(8),
+            yoe_max: None,
+            yoe_label: Some("8+ years".into()),
+            salary_min: Some(210_000),
+            salary_max: Some(260_000),
+            salary_currency: Some("USD".into()),
+            posted_at: Some("2026-11-20T00:00:00Z".into()),
+            source_type: "ats_board".into(),
+            source_id: Some("greenhouse-example".into()),
+            jd_text: Some("Build the platform.\nOwn reliability.".into()),
+            guard_flags_json: None,
+            triage_status: "pending_triage".into(),
+            tier1_score: Some(87.5),
+            tier1_json: Some(
+                r#"{"job_id":"job-1","score":87.5,"recommended_status":"pending_triage","rationale":"Strong platform match.","archetype":"Platform"}"#
+                    .into(),
+            ),
+            created_at: "2026-11-21T09:00:00Z".into(),
+            updated_at: "2026-11-21T09:05:00Z".into(),
+        }
+    }
+
+    fn unscored_job() -> JobRecord {
+        JobRecord {
+            id: "job-2".into(),
+            canonical_key: "other-co|backend-engineer".into(),
+            url: "https://jobs.example.com/backend-engineer".into(),
+            company: "Other Co".into(),
+            title: "Backend Engineer".into(),
+            location: None,
+            workplace_type: None,
+            salary_min: None,
+            salary_max: None,
+            salary_currency: None,
+            jd_text: None,
+            triage_status: "pending_scoring".into(),
+            tier1_score: None,
+            tier1_json: None,
+            ..sample_job()
+        }
+    }
+
+    fn evaluation(id: &str, created_at: &str, blocks: &str) -> EvaluationRecord {
+        EvaluationRecord {
+            id: id.into(),
+            job_id: "job-1".into(),
+            tier: "neon".into(),
+            model: "sonnet".into(),
+            provider: Some("claude".into()),
+            overall_score: Some(4.1),
+            archetype: Some("Staff Platform Engineer".into()),
+            blocks_json: Some(blocks.into()),
+            report_md: Some("## Summary\n\nGood fit.".into()),
+            rubric_score: None,
+            created_at: created_at.into(),
+        }
+    }
+
+    fn sample_detail() -> JobDetailResponse {
+        JobDetailResponse {
+            job: sample_job(),
+            evaluations: vec![
+                evaluation(
+                    "eval-old",
+                    "2026-11-21T10:00:00Z",
+                    r#"{"A":"Older evaluation."}"#,
+                ),
+                evaluation(
+                    "eval-new",
+                    "2026-11-22T10:00:00Z",
+                    r#"{"A":"Strong fit on platform work.","B":{"summary":"No Kubernetes operator experience.","rating":"minor","highlights":["Learnable in weeks"]},"G":{"verdict":"Posting looks genuine."}}"#,
+                ),
+            ],
+            application: Some(ApplicationRecord {
+                id: "app-1".into(),
+                job_id: "job-1".into(),
+                stage: "interviewing".into(),
+                applied_at: Some("2026-11-23T00:00:00Z".into()),
+                next_followup_at: Some("2026-11-30T00:00:00Z".into()),
+                followup_count: 1,
+                notes: None,
+                gmail_thread_id: None,
+                linear_issue_id: None,
+                updated_at: "2026-11-23T00:00:00Z".into(),
+            }),
+            drive_artifacts: vec![DriveArtifactRecord {
+                id: "art-1".into(),
+                job_id: "job-1".into(),
+                kind: "resume_doc".into(),
+                drive_file_id: "drive-file-1".into(),
+                drive_url: "https://docs.example.com/resume-1".into(),
+                title: "Resume — Example Co".into(),
+                created_at: "2026-11-22T12:00:00Z".into(),
+            }],
+        }
+    }
+
+    /// The web maps these shapes (`web/src/api/jobs.ts`). Regenerate with
+    /// `UPDATE_FIXTURES=1 cargo test -p career-os-api jobs_fixture`.
+    #[test]
+    fn jobs_fixture_matches_web() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../web/src/__tests__/fixtures/jobs.json");
+        let value = serde_json::json!({
+            "list": ListJobsResponse { jobs: vec![sample_job(), unscored_job()], total: 2 },
+            "detail": sample_detail(),
+        });
+        let actual = serde_json::to_string_pretty(&value).unwrap() + "\n";
+        if std::env::var("UPDATE_FIXTURES").as_deref() == Ok("1") {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, &actual).unwrap();
+        }
+        let expected = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("missing {}: {e}", path.display()));
+        assert_eq!(
+            actual, expected,
+            "fixture out of date; see test doc comment"
+        );
+    }
+}

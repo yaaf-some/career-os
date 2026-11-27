@@ -5,8 +5,9 @@
 
 ## Current Focus
 
-- **`JOB-5` Verified + archived 2026-11-27** (`project/changes/archive/JOB-5-ai-bridge/`). #12 (bridge) + #13 (API) merged; #14 (web + docs + archive) merges after CI. AC12 passed on the M2 under Docker Desktop.
-- **Exact Next Concrete Step:** Yaaf adds the README §3 `statusLine` hook to `~/.claude/settings.json` (agent not permitted) so the Usage Bar shows live Claude windows. Then file follow-ups below and start `JOB-6`.
+- **`JOB-5` Verified + archived 2026-11-27** (`project/changes/archive/JOB-5-ai-bridge/`). #12/#13/#14 merged. AC12 passed on the M2 under Docker Desktop. statusLine hook installed (Usage Bar live).
+- **Web job mapping fix** (`fix/web-job-mapping`): `web/src/api/jobs.ts` maps the API's snake_case list/detail to web types; shared fixture `web/src/__tests__/fixtures/jobs.json` from `jobs_fixture_matches_web`. Verified live (real claude neon eval in the drawer).
+- **Exact Next Concrete Step:** merge the mapping PR, file the follow-ups below, start `JOB-6`.
 
 ## Done This Session
 
@@ -20,7 +21,7 @@
 
 ## Upcoming
 
-1. Follow-ups to file: web `getJob`/`listJobs` don't map the API's snake_case job shape (live job detail broken, pre-existing); `/api/jobs/{id}/tailor` backend; web demo-fallback still hides 404/5xx outside AI routes; compose default `TOKEN_ENCRYPTION_KEY` placeholder crash-loops the app.
+1. Follow-ups to file: `/api/jobs/{id}/tailor` backend; web demo-fallback still hides 404/5xx outside AI routes; compose default `TOKEN_ENCRYPTION_KEY` placeholder crash-loops the app; `POST /api/jobs` (quick-add) and `/api/today` don't exist in the API (web falls back to demo); hydrogen gives no score breakdown.
 2. Kiri: AC12 ran on Docker Desktop; re-check `host.docker.internal:8787` if switching runtime.
 3. `JOB-6` Live Google sync + scheduler · `JOB-7` Mac mini cutover (compose + `tailscale serve` + launchd).
 

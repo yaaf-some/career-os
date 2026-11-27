@@ -1,5 +1,6 @@
 import { Check, Eye, FastForward, Star, XCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { formatHydrogenScore } from '@/api/jobs';
 import { useJobsQuery, useTriageMutation } from '@/api/queries';
 import type { TriageStatus } from '@/api/types';
 import { Badge, Button, Card, SectionHeader } from '@/components/ui';
@@ -28,7 +29,7 @@ export function TriageView({
   const jobs = jobsQuery.data?.jobs ?? [];
 
   const visibleJobs = useMemo(() => {
-    const sorted = [...jobs].sort((a, b) => b.hydrogenScore - a.hydrogenScore);
+    const sorted = [...jobs].sort((a, b) => (b.hydrogenScore ?? -1) - (a.hydrogenScore ?? -1));
     if (filter === 'inbox') {
       return sorted.filter(
         (j) => j.triageStatus === 'pending' || j.triageStatus === 'shortlisted',
@@ -85,7 +86,7 @@ export function TriageView({
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0 flex-1 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="brand">hydrogen {job.hydrogenScore}/100</Badge>
+                    <Badge variant="brand">hydrogen {formatHydrogenScore(job.hydrogenScore)}</Badge>
                     <Badge variant={STATUS_BADGE[job.triageStatus]}>{job.triageStatus}</Badge>
                     <span className="text-xs text-muted-foreground">{job.source}</span>
                   </div>
@@ -110,29 +111,31 @@ export function TriageView({
                   <p className="text-sm text-foreground/90">{job.hydrogenSummary}</p>
 
                   {/* Score Breakdown */}
-                  <div className="grid grid-cols-2 gap-2 pt-1 sm:grid-cols-4">
-                    {(
-                      [
-                        ['Skills', job.scoreBreakdown.skills],
-                        ['Level', job.scoreBreakdown.level],
-                        ['Domain', job.scoreBreakdown.domain],
-                        ['Logistics', job.scoreBreakdown.logistics],
-                      ] as const
-                    ).map(([label, score]) => (
-                      <div key={label} className="rounded-lg bg-secondary/60 px-2.5 py-1.5">
-                        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                          <span>{label}</span>
-                          <span className="font-semibold text-foreground tabular-nums">{score}</span>
+                  {job.scoreBreakdown ? (
+                    <div className="grid grid-cols-2 gap-2 pt-1 sm:grid-cols-4">
+                      {(
+                        [
+                          ['Skills', job.scoreBreakdown.skills],
+                          ['Level', job.scoreBreakdown.level],
+                          ['Domain', job.scoreBreakdown.domain],
+                          ['Logistics', job.scoreBreakdown.logistics],
+                        ] as const
+                      ).map(([label, score]) => (
+                        <div key={label} className="rounded-lg bg-secondary/60 px-2.5 py-1.5">
+                          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                            <span>{label}</span>
+                            <span className="font-semibold text-foreground tabular-nums">{score}</span>
+                          </div>
+                          <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-background">
+                            <div
+                              className="h-full rounded-full bg-accent-brand"
+                              style={{ width: `${Math.min(100, Math.max(0, score))}%` }}
+                            />
+                          </div>
                         </div>
-                        <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-background">
-                          <div
-                            className="h-full rounded-full bg-accent-brand"
-                            style={{ width: `${Math.min(100, Math.max(0, score))}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 lg:flex-col lg:items-stretch">

@@ -1,4 +1,6 @@
 import { demoStore } from './demoData';
+import { jobDetailFromApi, jobsListFromApi } from './jobs';
+import type { ApiJobDetailResponse, ApiListJobsResponse } from './jobs';
 import type {
   AiUsageResponse,
   CalendarReminder,
@@ -136,11 +138,14 @@ export const careerApi = {
     return requestWithFallback('/api/today', { method: 'GET' }, () => demoStore.getToday());
   },
 
-  listJobs(): Promise<JobsListResponse> {
-    return requestWithFallback('/api/jobs', { method: 'GET' }, () => {
+  async listJobs(): Promise<JobsListResponse> {
+    let fellBack = false;
+    const res = await requestWithFallback<unknown>('/api/jobs', { method: 'GET' }, () => {
+      fellBack = true;
       const jobs = demoStore.listJobs();
       return { jobs, total: jobs.length };
     });
+    return fellBack ? (res as JobsListResponse) : jobsListFromApi(res as ApiListJobsResponse);
   },
 
   quickAddJob(payload: QuickAddJobRequest): Promise<JobSummary> {
@@ -151,12 +156,19 @@ export const careerApi = {
     );
   },
 
-  getJob(id: string): Promise<JobDetail> {
-    return requestWithFallback(`/api/jobs/${encodeURIComponent(id)}`, { method: 'GET' }, () => {
-      const found = demoStore.getJob(id);
-      if (!found) throw new Error(`Job ${id} not found`);
-      return found;
-    });
+  async getJob(id: string): Promise<JobDetail> {
+    let fellBack = false;
+    const res = await requestWithFallback<unknown>(
+      `/api/jobs/${encodeURIComponent(id)}`,
+      { method: 'GET' },
+      () => {
+        fellBack = true;
+        const found = demoStore.getJob(id);
+        if (!found) throw new Error(`Job ${id} not found`);
+        return found;
+      },
+    );
+    return fellBack ? (res as JobDetail) : jobDetailFromApi(res as ApiJobDetailResponse);
   },
 
   /** `POST /api/triage/{id}`, then re-reads the job. */

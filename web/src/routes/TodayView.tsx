@@ -8,6 +8,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
+import { formatHydrogenScore } from '@/api/jobs';
 import { useQuickAddJobMutation, useTodayQuery } from '@/api/queries';
 import { Badge, Button, Card, SectionHeader } from '@/components/ui';
 
@@ -39,7 +40,7 @@ export function TodayView({
           setQuickUrl('');
           setQuickTitle('');
           setQuickCompany('');
-          setQuickFeedback(`Added "${created.title}" to Triage (hydrogen ${created.hydrogenScore}/100).`);
+          setQuickFeedback(`Added "${created.title}" to Triage (hydrogen ${formatHydrogenScore(created.hydrogenScore)}).`);
         },
       },
     );
@@ -258,7 +259,7 @@ export function TodayView({
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                      <Badge variant="brand">{job.hydrogenScore}/100</Badge>
+                      <Badge variant="brand">{formatHydrogenScore(job.hydrogenScore)}</Badge>
                       <Button size="sm" variant="ghost" onClick={() => onSelectRole(job.id)}>
                         <ArrowRight className="h-4 w-4" />
                       </Button>
