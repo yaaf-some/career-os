@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { JobPageHarness } from './jobPageHarness';
@@ -52,7 +52,7 @@ describe('TodayView Warm Paper 3-section briefing', () => {
   });
 });
 
-describe('TriageView Focus Paper Sheet & Fit Horizon', () => {
+describe('TriageView deck', () => {
   it('renders single-role Focus Sheet, supports Queue Browser, Bookmark, Undo & Skip', async () => {
     const onSelectRole = vi.fn();
     renderWithProviders(<TriageView onSelectRole={onSelectRole} undoDelayMs={50} />);
@@ -61,9 +61,9 @@ describe('TriageView Focus Paper Sheet & Fit Horizon', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Staff Systems Engineer — Agent Runtime')).toBeTruthy();
-      expect(screen.getByTestId('fit-horizon')).toBeTruthy();
-      expect(screen.getByText('93')).toBeTruthy();
-      expect(screen.getByText('Role 33/35')).toBeTruthy();
+      const card = within(screen.getByTestId('focus-card'));
+      expect(card.getByText('93')).toBeTruthy();
+      expect(card.getByText('Role 33/35')).toBeTruthy();
     });
 
     // Inspect opens RoleDetailSheet callback
@@ -106,11 +106,12 @@ describe('TriageView Focus Paper Sheet & Fit Horizon', () => {
     // The entrance animation lives on a wrapper so it cannot override the drag transform.
     expect(screen.getByTestId('focus-card').className).not.toContain('calm-rise');
 
+    // The demo store is shared by these tests, so the first card may be any company.
     drag(180, 'pointerCancel');
-    expect(screen.queryByText(/Saved Northstar Systems/i)).toBeNull();
+    expect(screen.queryByText(/^Saved /)).toBeNull();
 
     drag(180, 'pointerUp');
-    await waitFor(() => expect(screen.getByText(/Saved Northstar Systems/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/^Saved /)).toBeTruthy());
   });
 
   it('opens job page tabs cleanly', async () => {

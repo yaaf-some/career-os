@@ -288,6 +288,7 @@ export function jobSummaryFromApi(
     dealbreakerReason: tier1.dealbreakerReason,
     matchSummary: tier1.rationale,
     hasDescription: Boolean(job.jd_text?.trim()),
+    descriptionText: job.jd_text ?? '',
     hasDeepEval: extra?.hasDeepEval ?? false,
     gmailStatus: app?.gmail_thread_id ? 'awaiting_reply' : 'none',
     nextFollowUpAt: app?.next_followup_at ?? job.next_followup_at ?? null,

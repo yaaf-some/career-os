@@ -89,6 +89,8 @@ export interface JobSummary {
   dealbreakerReason?: string | null;
   matchSummary: string;
   hasDescription: boolean;
+  /** Cleaned posting text. Untrusted: render it as text only. */
+  descriptionText?: string;
   hasDeepEval: boolean;
   gmailStatus: GmailThreadStatus;
   nextFollowUpAt: string | null;
