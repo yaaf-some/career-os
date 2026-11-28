@@ -16,7 +16,7 @@ use crate::{
     },
     db::{new_id, now_iso},
     error::AppError,
-    routes::jobs::JobRecord,
+    routes::jobs::{JobRecord, JOB_COLUMNS},
     state::{AiUsageRecord, AppState},
 };
 
@@ -226,6 +226,7 @@ pub async fn rescore_jobs(
             updated_at = ?1
         WHERE triage_status IN ('pending_triage', 'skipped')
           AND id NOT IN (SELECT job_id FROM applications)
+          AND archived_at IS NULL
         "#
     } else {
         r#"
@@ -236,6 +237,7 @@ pub async fn rescore_jobs(
             updated_at = ?1
         WHERE triage_status = 'pending_triage'
           AND id NOT IN (SELECT job_id FROM applications)
+          AND archived_at IS NULL
         "#
     };
 
@@ -283,22 +285,16 @@ pub async fn evaluate_job(
             AI_DISABLED_MESSAGE.to_string(),
         ));
     }
-    let job = sqlx::query_as::<_, JobRecord>(
-        r#"
-        SELECT id, canonical_key, url, company, title, location, workplace_type,
-               yoe_min, yoe_max, yoe_label, salary_min, salary_max, salary_currency,
-               posted_at, source_type, source_id, jd_text, guard_flags_json,
-               triage_status, tier1_score, tier1_json, created_at, updated_at
-        FROM jobs WHERE id = ?1
-        "#,
-    )
+    let job = sqlx::query_as::<_, JobRecord>(sqlx::AssertSqlSafe(format!(
+        r#"SELECT {JOB_COLUMNS} FROM jobs WHERE id = ?1"#
+    )))
     .bind(&job_id)
     .fetch_optional(&state.pool)
     .await?
     .ok_or_else(|| AppError::NotFound(format!("job {job_id} not found")))?;
 
     let tier = select_eval_tier(req.tier, job.tier1_score);
-    let profile = crate::profile::load_profile(&state.config.data_dir);
+    let profile = crate::profile::load_effective_profile(&state.pool, &state.config.data_dir).await;
     let raw_docs = state.load_project_docs_raw().await;
     let compiled_dossier = profile.build_deep_eval_dossier(&raw_docs, 16_000);
     let profile_summary = compiled_dossier
@@ -434,6 +430,24 @@ pub async fn get_ai_usage(
         now,
     )))
 }
+
+pub fn router() -> axum::Router<AppState> {
+    axum::Router::new()
+        .route(
+            "/api/ai/score-pending",
+            axum::routing::post(score_pending_jobs),
+        )
+        .route("/api/ai/rescore", axum::routing::post(rescore_jobs))
+        .route(
+            "/api/ai/evaluate/{job_id}",
+            axum::routing::post(evaluate_job),
+        )
+        .route("/api/ai/usage", axum::routing::get(get_ai_usage))
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(score_pending_jobs, rescore_jobs, evaluate_job, get_ai_usage))]
+pub struct Doc;
 
 #[cfg(test)]
 mod tests {

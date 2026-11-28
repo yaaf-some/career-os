@@ -4,9 +4,9 @@ import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '@/components/ui';
 import { ThemeProvider } from '@/lib/theme';
-import { SettingsView } from '@/routes/SettingsView';
-import { SourcesView } from '@/routes/SourcesView';
-import { TrackerView } from '@/routes/TrackerView';
+import { SettingsView } from '@/features/settings/SettingsView';
+import { SourcesView } from '@/features/sources/SourcesView';
+import { TrackerView } from '@/features/jobs/PipelineView';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });

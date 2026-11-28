@@ -1,6 +1,7 @@
-import { Link, useRouterState } from '@tanstack/react-router';
+import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import {
   Briefcase,
+  FolderOpen,
   Inbox,
   Plus,
   Radio,
@@ -32,7 +33,7 @@ import { StatusFooter } from '@/components/StatusFooter';
 import { Kbd } from '@/components/ui';
 import { cn } from '@/lib/cn';
 
-export type NavPath = '/' | '/triage' | '/tracker' | '/sources' | '/settings';
+export type NavPath = '/' | '/triage' | '/today' | '/files' | '/sources' | '/settings';
 
 interface NavItem {
   to: NavPath;
@@ -41,19 +42,19 @@ interface NavItem {
 }
 
 const DESKTOP_NAV_ITEMS: readonly NavItem[] = [
-  { to: '/', label: 'Today', icon: Sun },
+  { to: '/', label: 'Jobs', icon: Briefcase },
   { to: '/triage', label: 'Triage', icon: Inbox },
-  { to: '/tracker', label: 'Tracker', icon: Briefcase },
+  { to: '/today', label: 'Today', icon: Sun },
+  { to: '/files', label: 'Files', icon: FolderOpen },
   { to: '/sources', label: 'Sources', icon: Radio },
   { to: '/settings', label: 'Settings', icon: SlidersHorizontal },
 ];
 
-const MOBILE_NAV_ITEMS: readonly NavItem[] = [
-  { to: '/', label: 'Today', icon: Sun },
-  { to: '/triage', label: 'Triage', icon: Inbox },
-  { to: '/tracker', label: 'Tracker', icon: Briefcase },
-  { to: '/settings', label: 'Settings', icon: SlidersHorizontal },
-];
+const MOBILE_NAV_ITEMS: readonly NavItem[] = DESKTOP_NAV_ITEMS.filter((i) => i.to !== '/sources');
+
+/** Job pages belong to the Jobs tab. */
+const isActive = (to: NavPath, pathname: string) =>
+  to === '/' ? pathname === '/' || pathname.startsWith('/jobs/') : pathname.startsWith(to);
 
 interface AppActionsContextValue {
   openQuickAdd: () => void;
@@ -71,6 +72,7 @@ export function useAppActions(): AppActionsContextValue {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const navigate = useNavigate();
   const healthQuery = useHealthQuery();
   const usageQuery = useAiUsageQuery();
   const googleStatusQuery = useGoogleAuthStatusQuery();
@@ -146,8 +148,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <nav className="space-y-1" aria-label="Primary navigation">
               {DESKTOP_NAV_ITEMS.map((item) => {
                 const Icon = item.icon;
-                const active =
-                  item.to === '/' ? pathname === '/' : pathname.startsWith(item.to);
+                const active = isActive(item.to, pathname);
                 return (
                   <Link
                     key={item.to}
@@ -195,19 +196,18 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         {/* Mobile Bottom Navigation (4-Tab Safe Area) */}
         <nav
-          className="pb-safe fixed inset-x-0 bottom-0 z-40 grid h-16 grid-cols-4 border-t border-[var(--wp-hairline)] bg-[var(--wp-surface)]/95 px-2 backdrop-blur-md md:hidden"
+          className="pb-safe fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-[var(--wp-hairline)] bg-[var(--wp-surface)]/95 px-2 backdrop-blur-md md:hidden"
           aria-label="Mobile navigation"
         >
           {MOBILE_NAV_ITEMS.map((item) => {
             const Icon = item.icon;
-            const active =
-              item.to === '/' ? pathname === '/' : pathname.startsWith(item.to);
+            const active = isActive(item.to, pathname);
             return (
               <Link
                 key={item.to}
                 to={item.to}
                 className={cn(
-                  'tap-control flex flex-col items-center justify-center gap-1 text-[11px] font-medium',
+                  'tap-control flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium',
                   active ? 'text-[var(--wp-accent)]' : 'text-[var(--wp-muted)]',
                 )}
               >
@@ -218,7 +218,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           })}
         </nav>
 
-        <QuickAddDialog open={quickAddOpen} onOpenChange={setQuickAddOpen} />
+        <QuickAddDialog
+          open={quickAddOpen}
+          onOpenChange={setQuickAddOpen}
+          onCreated={(jobId) => void navigate({ to: '/jobs/$jobId', params: { jobId } })}
+        />
         <CommandPalette
           open={commandOpen}
           onOpenChange={setCommandOpen}

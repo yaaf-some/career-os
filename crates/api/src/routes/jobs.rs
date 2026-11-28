@@ -13,6 +13,18 @@ use crate::{
     state::AppState,
 };
 
+/// Every `jobs` column a [`JobRecord`] needs. Use it instead of listing columns.
+pub const JOB_COLUMNS: &str = "id, canonical_key, url, company, title, location, workplace_type, \
+    yoe_min, yoe_max, yoe_label, salary_min, salary_max, salary_currency, posted_at, source_type, \
+    source_id, jd_text, guard_flags_json, triage_status, tier1_score, tier1_json, created_at, \
+    updated_at, archived_at";
+
+/// What the job list knows about each job beyond its own row.
+const JOB_LIST_EXTRAS: &str = "\
+    (SELECT stage FROM applications WHERE job_id = jobs.id) AS application_stage, \
+    (SELECT next_followup_at FROM applications WHERE job_id = jobs.id) AS next_followup_at, \
+    (SELECT json_group_array(tag) FROM (SELECT tag FROM job_tags WHERE job_id = jobs.id ORDER BY tag)) AS tags_json";
+
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct JobRecord {
     pub id: String,
@@ -38,6 +50,16 @@ pub struct JobRecord {
     pub tier1_json: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    pub archived_at: Option<String>,
+    /// Application stage; only filled by the job list.
+    #[sqlx(default)]
+    pub application_stage: Option<String>,
+    /// Only filled by the job list.
+    #[sqlx(default)]
+    pub next_followup_at: Option<String>,
+    /// JSON array of tags; only filled by the job list.
+    #[sqlx(default)]
+    pub tags_json: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
@@ -90,6 +112,8 @@ pub struct ListJobsQuery {
     pub search: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+    /// Archived jobs are left out unless this is true.
+    pub include_archived: Option<bool>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -202,6 +226,7 @@ pub async fn list_jobs(
 ) -> Result<Json<ListJobsResponse>, AppError> {
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
     let offset = query.offset.unwrap_or(0).max(0);
+    let include_archived = query.include_archived.unwrap_or(false);
     let search_pattern = query
         .search
         .as_deref()
@@ -216,36 +241,34 @@ pub async fn list_jobs(
           AND (?2 IS NULL OR source_type = ?2)
           AND (?3 IS NULL OR tier1_score >= ?3)
           AND (?4 IS NULL OR lower(title) LIKE ?4 OR lower(company) LIKE ?4)
+          AND (?5 OR archived_at IS NULL)
         "#,
     )
     .bind(&query.triage_status)
     .bind(&query.source_type)
     .bind(query.min_score)
     .bind(&search_pattern)
+    .bind(include_archived)
     .fetch_one(&state.pool)
     .await?;
 
-    let jobs = sqlx::query_as::<_, JobRecord>(
-        r#"
-        SELECT id, canonical_key, url, company, title, location, workplace_type,
-               yoe_min, yoe_max, yoe_label, salary_min, salary_max, salary_currency,
-               posted_at, source_type, source_id, jd_text, guard_flags_json,
-               triage_status, tier1_score, tier1_json, created_at, updated_at
-        FROM jobs
+    let jobs = sqlx::query_as::<_, JobRecord>(sqlx::AssertSqlSafe(format!(
+        r#"SELECT {JOB_COLUMNS}, {JOB_LIST_EXTRAS} FROM jobs
         WHERE (?1 IS NULL OR triage_status = ?1)
           AND (?2 IS NULL OR source_type = ?2)
           AND (?3 IS NULL OR tier1_score >= ?3)
           AND (?4 IS NULL OR lower(title) LIKE ?4 OR lower(company) LIKE ?4)
+          AND (?7 OR archived_at IS NULL)
         ORDER BY COALESCE(tier1_score, -1.0) DESC, created_at DESC
-        LIMIT ?5 OFFSET ?6
-        "#,
-    )
+        LIMIT ?5 OFFSET ?6"#
+    )))
     .bind(&query.triage_status)
     .bind(&query.source_type)
     .bind(query.min_score)
     .bind(&search_pattern)
     .bind(limit)
     .bind(offset)
+    .bind(include_archived)
     .fetch_all(&state.pool)
     .await?;
 
@@ -268,16 +291,10 @@ pub async fn get_job(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> Result<Json<JobDetailResponse>, AppError> {
-    let job = sqlx::query_as::<_, JobRecord>(
-        r#"
-        SELECT id, canonical_key, url, company, title, location, workplace_type,
-               yoe_min, yoe_max, yoe_label, salary_min, salary_max, salary_currency,
-               posted_at, source_type, source_id, jd_text, guard_flags_json,
-               triage_status, tier1_score, tier1_json, created_at, updated_at
-        FROM jobs
-        WHERE id = ?1
-        "#,
-    )
+    let job = sqlx::query_as::<_, JobRecord>(sqlx::AssertSqlSafe(format!(
+        r#"SELECT {JOB_COLUMNS} FROM jobs
+        WHERE id = ?1"#
+    )))
     .bind(&id)
     .fetch_optional(&state.pool)
     .await?
@@ -505,16 +522,10 @@ pub async fn quick_add_job(
         }
     }
 
-    let job = sqlx::query_as::<_, JobRecord>(
-        r#"
-        SELECT id, canonical_key, url, company, title, location, workplace_type,
-               yoe_min, yoe_max, yoe_label, salary_min, salary_max, salary_currency,
-               posted_at, source_type, source_id, jd_text, guard_flags_json,
-               triage_status, tier1_score, tier1_json, created_at, updated_at
-        FROM jobs
-        WHERE canonical_key = ?1
-        "#,
-    )
+    let job = sqlx::query_as::<_, JobRecord>(sqlx::AssertSqlSafe(format!(
+        r#"SELECT {JOB_COLUMNS} FROM jobs
+        WHERE canonical_key = ?1"#
+    )))
     .bind(&canonical_key)
     .fetch_one(&state.pool)
     .await?;
@@ -564,6 +575,20 @@ pub async fn ingest_jobs(
     }))
 }
 
+pub fn router() -> axum::Router<AppState> {
+    axum::Router::new()
+        .route(
+            "/api/jobs",
+            axum::routing::get(list_jobs).post(quick_add_job),
+        )
+        .route("/api/jobs/ingest", axum::routing::post(ingest_jobs))
+        .route("/api/jobs/{id}", axum::routing::get(get_job))
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(list_jobs, quick_add_job, ingest_jobs, get_job))]
+pub struct Doc;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -596,6 +621,10 @@ mod tests {
             ),
             created_at: "2026-11-21T09:00:00Z".into(),
             updated_at: "2026-11-21T09:05:00Z".into(),
+            archived_at: None,
+            application_stage: None,
+            next_followup_at: None,
+            tags_json: None,
         }
     }
 

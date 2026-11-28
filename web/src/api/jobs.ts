@@ -40,6 +40,12 @@ export interface ApiJobRecord {
   tier1_score: number | null;
   tier1_json: string | null;
   created_at: string;
+  posted_at?: string | null;
+  archived_at?: string | null;
+  /** The next three are only sent by the job list. */
+  application_stage?: string | null;
+  next_followup_at?: string | null;
+  tags_json?: string | null;
 }
 
 export interface ApiEvaluationRecord {
@@ -272,7 +278,11 @@ export function jobSummaryFromApi(
     source: job.source_type,
     url: job.url,
     triageStatus: TRIAGE_STATUS[job.triage_status] ?? 'pending',
-    stage: app ? stageFromApi(app.stage) : 'saved',
+    stage: app || job.application_stage ? stageFromApi(app?.stage ?? job.application_stage!) : 'saved',
+    inPipeline: Boolean(app || job.application_stage),
+    tags: strings(parseJson(job.tags_json ?? null)),
+    postedAt: job.posted_at ?? null,
+    archivedAt: job.archived_at ?? null,
     matchScore: job.tier1_score,
     scoreBreakdown: tier1.breakdown,
     dealbreakerReason: tier1.dealbreakerReason,
@@ -280,7 +290,7 @@ export function jobSummaryFromApi(
     hasDescription: Boolean(job.jd_text?.trim()),
     hasDeepEval: extra?.hasDeepEval ?? false,
     gmailStatus: app?.gmail_thread_id ? 'awaiting_reply' : 'none',
-    nextFollowUpAt: app?.next_followup_at ?? null,
+    nextFollowUpAt: app?.next_followup_at ?? job.next_followup_at ?? null,
     discoveredAt: job.created_at,
   };
 }

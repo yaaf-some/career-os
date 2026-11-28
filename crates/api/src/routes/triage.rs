@@ -63,6 +63,12 @@ async fn apply_triage_action(
     let target_status = action.target_status();
     let now = now_iso();
 
+    let previous: Option<String> =
+        sqlx::query_scalar("SELECT triage_status FROM jobs WHERE id = ?1")
+            .bind(job_id)
+            .fetch_optional(&state.pool)
+            .await?;
+
     let res = sqlx::query("UPDATE jobs SET triage_status = ?1, updated_at = ?2 WHERE id = ?3")
         .bind(target_status)
         .bind(&now)
@@ -72,6 +78,11 @@ async fn apply_triage_action(
 
     if res.rows_affected() == 0 {
         return Err(AppError::NotFound(format!("job {job_id} not found")));
+    }
+    if previous.as_deref() != Some(target_status) {
+        state
+            .record_job_event(job_id, "triage", previous.as_deref(), target_status)
+            .await?;
     }
 
     let application_id = if matches!(action, TriageAction::Shortlist) {
@@ -156,3 +167,13 @@ pub async fn triage_batch(
         results,
     }))
 }
+
+pub fn router() -> axum::Router<AppState> {
+    axum::Router::new()
+        .route("/api/triage/{id}", axum::routing::post(triage_job))
+        .route("/api/triage/batch", axum::routing::post(triage_batch))
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(triage_job, triage_batch))]
+pub struct Doc;

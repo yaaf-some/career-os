@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { careerApi, isDemoModeActive } from '@/api/client';
-import { RoleDetailSheet } from '@/components/RoleDetailSheet';
+import { JobPageHarness } from './jobPageHarness';
 import { ToastProvider } from '@/components/ui';
 import apiFixtures from './fixtures/jobs.json';
 
@@ -37,7 +37,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('JOB-12 tailor API & RoleDetailSheet', () => {
+describe('JOB-12 tailor API & job page', () => {
   it('tailorJob rejects 500 and 409 without falling back to demo data', async () => {
     vi.stubGlobal(
       'fetch',
@@ -137,9 +137,9 @@ describe('JOB-12 tailor API & RoleDetailSheet', () => {
       }),
     );
 
-    renderWithQuery(<RoleDetailSheet jobId="job-1" onClose={() => {}} />);
-    await waitFor(() => expect(screen.getByRole('tab', { name: 'Tailor docs' })).toBeTruthy());
-    fireEvent.click(screen.getByRole('tab', { name: 'Tailor docs' }));
+    renderWithQuery(<JobPageHarness jobId="job-1" />);
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Documents' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('tab', { name: 'Documents' }));
 
     const btn = await screen.findByRole('button', { name: /Tailor to Google Docs/ });
     expect((btn as HTMLButtonElement).disabled).toBe(false);
@@ -165,8 +165,8 @@ describe('JOB-12 tailor API & RoleDetailSheet', () => {
       }),
     );
 
-    renderWithQuery(<RoleDetailSheet jobId="job-1" onClose={() => {}} />);
-    fireEvent.click(await screen.findByRole('tab', { name: 'Tailor docs' }));
+    renderWithQuery(<JobPageHarness jobId="job-1" />);
+    fireEvent.click(await screen.findByRole('tab', { name: 'Documents' }));
     fireEvent.click(await screen.findByRole('button', { name: /Tailor to Google Docs/ }));
 
     const alert = await screen.findByRole('alert');

@@ -245,6 +245,32 @@ pub async fn google_auth_disconnect(
     Ok(Json(GoogleAuthDisconnectResponse { connected: false }))
 }
 
+pub fn router() -> axum::Router<AppState> {
+    axum::Router::new()
+        .route(
+            "/api/auth/google/status",
+            axum::routing::get(google_auth_status),
+        )
+        .route("/api/auth/google/url", axum::routing::get(google_auth_url))
+        .route(
+            "/api/auth/google/callback",
+            axum::routing::get(google_auth_callback),
+        )
+        .route(
+            "/api/auth/google/disconnect",
+            axum::routing::post(google_auth_disconnect),
+        )
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(
+    google_auth_status,
+    google_auth_url,
+    google_auth_callback,
+    google_auth_disconnect
+))]
+pub struct Doc;
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;

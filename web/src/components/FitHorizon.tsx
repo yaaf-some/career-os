@@ -27,7 +27,7 @@ export function FitHorizon({
             className={cn(
               'font-mono-meta font-medium',
               compact ? 'text-xl' : 'text-2xl',
-              highConviction ? 'text-[var(--wp-accent)]' : 'text-[var(--wp-ink)]',
+              highConviction ? 'text-[var(--wp-good)]' : 'text-[var(--wp-ink)]',
             )}
           >
             {score !== null ? Math.round(score) : '—'}
@@ -48,28 +48,35 @@ export function FitHorizon({
             aria-label="4-part fit breakdown"
           >
             <div
-              className="h-full rounded-l-full bg-[var(--wp-accent)]"
+              className="h-full rounded-l-full bg-[var(--fit-role)]"
               style={{ width: `${rolePct}%` }}
             />
             <div
-              className="h-full bg-[var(--wp-seg-2)]"
+              className="h-full bg-[var(--fit-level)]"
               style={{ width: `${levelPct}%` }}
             />
             <div
-              className="h-full bg-[var(--wp-seg-3)]"
+              className="h-full bg-[var(--fit-vibe)]"
               style={{ width: `${vibePct}%` }}
             />
             <div
-              className="h-full rounded-r-full bg-[var(--wp-seg-4)]"
+              className="h-full rounded-r-full bg-[var(--fit-logistics)]"
               style={{ width: `${logPct}%` }}
             />
           </div>
 
-          <div className="font-mono-meta flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs text-[var(--wp-muted)]">
-            <span>Role {breakdown.roleStack}/35</span>
-            <span>Level {breakdown.levelReachability}/25</span>
-            <span>Vibe {breakdown.vibeCulture}/25</span>
-            <span>Logistics {breakdown.logisticsComp}/15</span>
+          <div className="font-mono-meta flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs text-[var(--wp-secondary)]">
+            {[
+              ['Role', breakdown.roleStack, 35, 'var(--fit-role)'],
+              ['Level', breakdown.levelReachability, 25, 'var(--fit-level)'],
+              ['Vibe', breakdown.vibeCulture, 25, 'var(--fit-vibe)'],
+              ['Logistics', breakdown.logisticsComp, 15, 'var(--fit-logistics)'],
+            ].map(([label, value, max, color]) => (
+              <span key={label} className="inline-flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: String(color) }} />
+                <span>{`${label} ${value}/${max}`}</span>
+              </span>
+            ))}
           </div>
         </>
       ) : null}

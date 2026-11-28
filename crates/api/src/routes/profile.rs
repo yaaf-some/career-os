@@ -5,7 +5,7 @@ use utoipa::ToSchema;
 
 use crate::{
     error::AppError,
-    profile::{load_profile, ProfileFileStatus, ProfileTargetingSummary},
+    profile::{load_effective_profile, ProfileFileStatus, ProfileTargetingSummary},
     state::AppState,
 };
 
@@ -51,7 +51,7 @@ pub struct SyncProjectDocsResponse {
 pub async fn get_profile_status(
     State(state): State<AppState>,
 ) -> Result<Json<ProfileStatusResponse>, AppError> {
-    let profile = load_profile(&state.config.data_dir);
+    let profile = load_effective_profile(&state.pool, &state.config.data_dir).await;
     let targeting = profile.targeting_summary();
     let drive_projects_folder_configured = state
         .config
@@ -117,3 +117,19 @@ pub async fn sync_project_docs_now(
         skipped_unchanged: outcome.skipped_unchanged,
     }))
 }
+
+pub fn router() -> axum::Router<AppState> {
+    axum::Router::new()
+        .route(
+            "/api/profile/status",
+            axum::routing::get(get_profile_status),
+        )
+        .route(
+            "/api/profile/sync-docs",
+            axum::routing::post(sync_project_docs_now),
+        )
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(get_profile_status, sync_project_docs_now))]
+pub struct Doc;

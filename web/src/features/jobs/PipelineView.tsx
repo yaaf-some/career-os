@@ -43,8 +43,11 @@ function formatDateChip(iso: string | null): string {
 
 export function TrackerView({
   onSelectRole,
+  embedded = false,
 }: {
   onSelectRole: (jobId: string) => void;
+  /** Inside the Jobs page, which already has the title. */
+  embedded?: boolean;
 }) {
   const trackerQuery = useTrackerQuery();
   const updateMutation = useUpdateTrackerMutation();
@@ -77,7 +80,9 @@ export function TrackerView({
     <div className="mx-auto max-w-[680px] space-y-6" data-testid="tracker-view">
       <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
         <div>
-          <h1 className="text-base font-medium text-[var(--wp-ink)]">Tracker</h1>
+          {embedded ? null : (
+            <h1 className="text-base font-medium text-[var(--wp-ink)]">Tracker</h1>
+          )}
           <p className="mt-0.5 text-xs text-[var(--wp-muted)]">
             {entries.filter((e) => e.stage !== 'archived').length} active roles
           </p>
@@ -93,14 +98,16 @@ export function TrackerView({
               { value: 'archived', label: 'Archived' },
             ]}
           />
-          <button
-            type="button"
-            onClick={openQuickAdd}
-            aria-label="Add job posting"
-            className="tap-control flex h-9 w-9 items-center justify-center rounded-[10px] bg-[var(--wp-raised)] text-[var(--wp-ink)]"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
+          {embedded ? null : (
+            <button
+              type="button"
+              onClick={openQuickAdd}
+              aria-label="Add job posting"
+              className="tap-control flex h-9 w-9 items-center justify-center rounded-[10px] bg-[var(--wp-raised)] text-[var(--wp-ink)]"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
 

@@ -12,22 +12,16 @@ pub mod scheduler;
 pub mod state;
 pub mod sync;
 
-use axum::{
-    http::HeaderValue,
-    routing::{get, patch, post, put},
-    Router,
-};
+use axum::{http::HeaderValue, Router};
 use tower_http::{
     cors::{Any, CorsLayer},
     services::{ServeDir, ServeFile},
     trace::TraceLayer,
 };
-use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
     middleware::auth::{tailscale_auth_middleware, AuthPolicy},
-    openapi::ApiDoc,
     state::AppState,
 };
 
@@ -37,106 +31,8 @@ pub fn build_router(state: AppState) -> Router {
         state.config.exempt_local_google_callback,
     );
 
-    let api_router = Router::new()
-        .route("/healthz", get(routes::health::healthz))
-        .route(
-            "/api/jobs",
-            get(routes::jobs::list_jobs).post(routes::jobs::quick_add_job),
-        )
-        .route("/api/jobs/{id}", get(routes::jobs::get_job))
-        .route(
-            "/api/jobs/{id}/commute",
-            get(routes::commute::get_job_commute),
-        )
-        .route(
-            "/api/commute/preview",
-            post(routes::commute::preview_commute),
-        )
-        .route("/api/jobs/ingest", post(routes::jobs::ingest_jobs))
-        .route(
-            "/api/jobs/backfill-descriptions",
-            post(routes::descriptions::backfill_descriptions),
-        )
-        .route(
-            "/api/jobs/{id}/fetch-description",
-            post(routes::descriptions::fetch_description),
-        )
-        .route(
-            "/api/jobs/{id}/description",
-            put(routes::descriptions::set_description),
-        )
-        .route("/api/triage/{id}", post(routes::triage::triage_job))
-        .route("/api/triage/batch", post(routes::triage::triage_batch))
-        .route("/api/applications", get(routes::tracker::list_applications))
-        .route(
-            "/api/applications/{id}",
-            patch(routes::tracker::update_application),
-        )
-        .route("/api/tracker/stats", get(routes::tracker::tracker_stats))
-        .route(
-            "/api/tracker",
-            get(routes::tracker::get_tracker).patch(routes::tracker::patch_tracker),
-        )
-        .route(
-            "/api/jobs/{id}/email-draft",
-            post(routes::comms::save_email_draft),
-        )
-        .route(
-            "/api/jobs/{id}/calendar-reminder",
-            post(routes::comms::create_calendar_reminder),
-        )
-        .route("/api/jobs/{id}/tailor", post(routes::tailor::tailor_job))
-        .route("/api/today", get(routes::workspace::get_today))
-        .route("/api/sync/google", post(routes::workspace::sync_google_now))
-        .route(
-            "/api/gmail-threads/{id}/application",
-            put(routes::workspace::link_thread),
-        )
-        .route(
-            "/api/sources",
-            get(routes::sources::list_sources).post(routes::sources::create_source),
-        )
-        .route(
-            "/api/sources/{id}",
-            patch(routes::sources::update_source).delete(routes::sources::delete_source),
-        )
-        .route("/api/sources/scan", post(routes::sources::trigger_scan))
-        .route(
-            "/api/ai/score-pending",
-            post(routes::ai::score_pending_jobs),
-        )
-        .route("/api/ai/rescore", post(routes::ai::rescore_jobs))
-        .route("/api/ai/evaluate/{job_id}", post(routes::ai::evaluate_job))
-        .route("/api/ai/usage", get(routes::ai::get_ai_usage))
-        .route(
-            "/api/profile/status",
-            get(routes::profile::get_profile_status),
-        )
-        .route(
-            "/api/profile/sync-docs",
-            post(routes::profile::sync_project_docs_now),
-        )
-        .route(
-            "/api/auth/google/status",
-            get(routes::auth::google_auth_status),
-        )
-        .route("/api/auth/google/url", get(routes::auth::google_auth_url))
-        .route(
-            "/api/auth/google/callback",
-            get(routes::auth::google_auth_callback),
-        )
-        .route(
-            "/api/auth/google/disconnect",
-            post(routes::auth::google_auth_disconnect),
-        )
-        .route("/api/settings", get(routes::settings::list_settings))
-        .route("/api/settings/{key}", put(routes::settings::upsert_setting))
-        .route("/api/sync-runs", get(routes::settings::list_sync_runs))
-        .route(
-            "/api/integrations/linear",
-            get(routes::integrations::linear_status),
-        )
-        .merge(SwaggerUi::new("/docs").url("/api/openapi.json", ApiDoc::openapi()));
+    let api_router = routes::api_router()
+        .merge(SwaggerUi::new("/docs").url("/api/openapi.json", openapi::spec()));
 
     let mut router = if let Some(static_dir) = &state.config.static_dir {
         let index_path = format!("{}/index.html", static_dir.trim_end_matches('/'));
@@ -184,6 +80,8 @@ mod tests {
             scanner::ScannerClient,
         },
     };
+
+    use axum::routing::get;
 
     use super::*;
 
@@ -1100,5 +998,108 @@ mod tests {
             .contains("Reduced latency by 55%."));
 
         let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(test)]
+mod workspace_foundation_tests {
+    use crate::{
+        ai::MockAiProvider, config::AppConfig, db::init_pool, integrations::scanner::ScannedJob,
+        state::AppState,
+    };
+
+    #[tokio::test]
+    async fn list_reports_stage_and_tags_hides_archived_and_verdicts_leave_history() {
+        let state = AppState::for_test(
+            init_pool("sqlite::memory:").await.unwrap(),
+            AppConfig::default(),
+            std::sync::Arc::new(MockAiProvider),
+        );
+        let job = |n: u8| ScannedJob {
+            canonical_key: format!("k{n}"),
+            url: format!("https://example.com/jobs/{n}"),
+            company: "Example Co".into(),
+            title: "Platform Engineer".into(),
+            location: None,
+            workplace_type: None,
+            posted_at: None,
+            source_type: "manual".into(),
+            jd_text: None,
+        };
+        state
+            .ingest_scanned_jobs(&[job(1), job(2)], None)
+            .await
+            .unwrap();
+        let id: String = sqlx::query_scalar("SELECT id FROM jobs WHERE canonical_key = 'k1'")
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO job_tags (job_id, tag) VALUES (?1, 'remote, maybe'), (?1, 'a')")
+            .bind(&id)
+            .execute(&state.pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "UPDATE jobs SET archived_at = '2026-11-01T00:00:00Z' WHERE canonical_key = 'k2'",
+        )
+        .execute(&state.pool)
+        .await
+        .unwrap();
+
+        let app = crate::build_router(state.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
+            .await
+            .unwrap();
+        });
+        let client = reqwest::Client::new();
+        client
+            .post(format!("{base}/api/triage/{id}"))
+            .json(&serde_json::json!({ "action": "shortlist" }))
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+
+        let list: serde_json::Value = client
+            .get(format!("{base}/api/jobs"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(list["total"], 1);
+        assert_eq!(list["jobs"][0]["application_stage"], "shortlisted");
+        assert_eq!(list["jobs"][0]["tags_json"], r#"["a","remote, maybe"]"#);
+        let all: serde_json::Value = client
+            .get(format!("{base}/api/jobs?include_archived=true"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(all["total"], 2);
+
+        let events: Vec<(String, Option<String>, String)> =
+            sqlx::query_as("SELECT kind, from_value, to_value FROM job_events")
+                .fetch_all(&state.pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            events,
+            [(
+                "triage".into(),
+                Some("pending_scoring".into()),
+                "shortlisted".into()
+            )]
+        );
     }
 }

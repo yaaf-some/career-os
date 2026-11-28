@@ -14,7 +14,10 @@ use utoipa::ToSchema;
 use crate::{
     error::AppError,
     integrations::google_auth::load_google_token_row,
-    routes::{jobs::JobRecord, settings::SyncRunRecord},
+    routes::{
+        jobs::{JobRecord, JOB_COLUMNS},
+        settings::SyncRunRecord,
+    },
     scheduler::run_google_sync,
     state::AppState,
 };
@@ -125,18 +128,13 @@ pub async fn build_today(
     .fetch_all(pool)
     .await?;
 
-    let top_matches = sqlx::query_as::<_, JobRecord>(
-        r#"
-        SELECT id, canonical_key, url, company, title, location, workplace_type,
-               yoe_min, yoe_max, yoe_label, salary_min, salary_max, salary_currency,
-               posted_at, source_type, source_id, jd_text, guard_flags_json,
-               triage_status, tier1_score, tier1_json, created_at, updated_at
-        FROM jobs
+    let top_matches = sqlx::query_as::<_, JobRecord>(sqlx::AssertSqlSafe(format!(
+        r#"SELECT {JOB_COLUMNS} FROM jobs
         WHERE triage_status IN ('pending_triage', 'shortlisted') AND tier1_score IS NOT NULL
+          AND archived_at IS NULL
         ORDER BY tier1_score DESC
-        LIMIT 5
-        "#,
-    )
+        LIMIT 5"#
+    )))
     .fetch_all(pool)
     .await?;
 
@@ -363,3 +361,17 @@ pub(crate) mod tests {
         );
     }
 }
+
+pub fn router() -> axum::Router<AppState> {
+    axum::Router::new()
+        .route("/api/today", axum::routing::get(get_today))
+        .route("/api/sync/google", axum::routing::post(sync_google_now))
+        .route(
+            "/api/gmail-threads/{id}/application",
+            axum::routing::put(link_thread),
+        )
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(get_today, sync_google_now, link_thread))]
+pub struct Doc;

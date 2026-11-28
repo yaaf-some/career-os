@@ -36,7 +36,7 @@ export function TabsTab({
     <BaseTabs.Tab
       value={value}
       className={cn(
-        'border-b-2 border-transparent pb-2.5 text-[var(--wp-muted)] outline-none transition-colors hover:text-[var(--wp-ink)] data-[selected]:border-[var(--wp-accent)] data-[selected]:text-[var(--wp-ink)]',
+        'border-b-2 border-transparent pb-2.5 text-[var(--wp-muted)] outline-none transition-colors hover:text-[var(--wp-ink)] data-[active]:border-[var(--wp-accent)] data-[active]:text-[var(--wp-ink)]',
         className,
       )}
     >

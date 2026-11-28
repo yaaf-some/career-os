@@ -76,6 +76,17 @@ fn team_key_of(identifier: &str) -> Option<String> {
     ok.then(|| key.to_string())
 }
 
+pub fn router() -> axum::Router<AppState> {
+    axum::Router::new().route(
+        "/api/integrations/linear",
+        axum::routing::get(linear_status),
+    )
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(linear_status))]
+pub struct Doc;
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;

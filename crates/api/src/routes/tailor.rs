@@ -17,7 +17,7 @@ use crate::{
     db::{new_id, now_iso},
     error::AppError,
     integrations::drive::{google_doc_edit_url, markdown_to_doc_html},
-    routes::jobs::JobRecord,
+    routes::jobs::{JobRecord, JOB_COLUMNS},
     state::{AiUsageRecord, AppState},
 };
 
@@ -65,21 +65,15 @@ pub async fn tailor_job(
         ));
     }
 
-    let job = sqlx::query_as::<_, JobRecord>(
-        r#"
-        SELECT id, canonical_key, url, company, title, location, workplace_type,
-               yoe_min, yoe_max, yoe_label, salary_min, salary_max, salary_currency,
-               posted_at, source_type, source_id, jd_text, guard_flags_json,
-               triage_status, tier1_score, tier1_json, created_at, updated_at
-        FROM jobs WHERE id = ?1
-        "#,
-    )
+    let job = sqlx::query_as::<_, JobRecord>(sqlx::AssertSqlSafe(format!(
+        r#"SELECT {JOB_COLUMNS} FROM jobs WHERE id = ?1"#
+    )))
     .bind(&job_id)
     .fetch_optional(&state.pool)
     .await?
     .ok_or_else(|| AppError::NotFound(format!("job {job_id} not found")))?;
 
-    let profile = crate::profile::load_profile(&state.config.data_dir);
+    let profile = crate::profile::load_effective_profile(&state.pool, &state.config.data_dir).await;
     let raw_docs = state.load_project_docs_raw().await;
     let dossier = match profile.build_tailoring_dossier(&raw_docs, 24_000) {
         Some(d) => d,
@@ -261,6 +255,14 @@ pub async fn tailor_job(
         grounded_bullets: parsed.grounded_bullets,
     }))
 }
+
+pub fn router() -> axum::Router<AppState> {
+    axum::Router::new().route("/api/jobs/{id}/tailor", axum::routing::post(tailor_job))
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(tailor_job))]
+pub struct Doc;
 
 #[cfg(test)]
 mod tests {

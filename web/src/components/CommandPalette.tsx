@@ -2,6 +2,7 @@ import { useNavigate } from '@tanstack/react-router';
 import {
   Briefcase,
   CalendarCheck2,
+  FolderOpen,
   Inbox,
   Moon,
   Plus,
@@ -73,14 +74,25 @@ export function CommandPalette({
         },
       },
       {
-        id: 'nav-today',
-        label: 'Go to Today',
+        id: 'nav-jobs',
+        label: 'Go to Jobs',
         group: 'Navigate',
-        keywords: 'home briefing replies agenda',
-        icon: CalendarCheck2,
+        keywords: 'home list pipeline board tracker applications stages',
+        icon: Briefcase,
         run: () => {
           onOpenChange(false);
           void navigate({ to: '/' });
+        },
+      },
+      {
+        id: 'nav-today',
+        label: 'Go to Today',
+        group: 'Navigate',
+        keywords: 'briefing replies agenda',
+        icon: CalendarCheck2,
+        run: () => {
+          onOpenChange(false);
+          void navigate({ to: '/today' });
         },
       },
       {
@@ -95,14 +107,14 @@ export function CommandPalette({
         },
       },
       {
-        id: 'nav-tracker',
-        label: 'Go to Tracker',
+        id: 'nav-files',
+        label: 'Go to Your files',
         group: 'Navigate',
-        keywords: 'applications stages pipeline follow up',
-        icon: Briefcase,
+        keywords: 'files profile documents resume cover letter drive',
+        icon: FolderOpen,
         run: () => {
           onOpenChange(false);
-          void navigate({ to: '/tracker' });
+          void navigate({ to: '/files' });
         },
       },
       {

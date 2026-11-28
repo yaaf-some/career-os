@@ -270,6 +270,26 @@ pub async fn backfill_descriptions(
     Ok(Json(out))
 }
 
+pub fn router() -> axum::Router<AppState> {
+    axum::Router::new()
+        .route(
+            "/api/jobs/backfill-descriptions",
+            axum::routing::post(backfill_descriptions),
+        )
+        .route(
+            "/api/jobs/{id}/fetch-description",
+            axum::routing::post(fetch_description),
+        )
+        .route(
+            "/api/jobs/{id}/description",
+            axum::routing::put(set_description),
+        )
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(backfill_descriptions, fetch_description, set_description))]
+pub struct Doc;
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;

@@ -11,8 +11,8 @@ import {
   type ApiJobDetailResponse,
   type ApiListJobsResponse,
 } from '@/api/jobs';
-import { RoleDetailSheet } from '@/components/RoleDetailSheet';
-import { TriageView } from '@/routes/TriageView';
+import { JobPageHarness } from './jobPageHarness';
+import { TriageView } from '@/features/triage/TriageView';
 // Written by the API's `jobs_fixture_matches_web` test.
 import fixture from './fixtures/jobs.json';
 
@@ -254,26 +254,26 @@ describe('live API job routes', () => {
     expect(mapped.dealbreakerReason).toBe('Aerospace hardware role');
   });
 
-  it('sheet shows the live job detail and deep evaluation', async () => {
-    renderWithQuery(<RoleDetailSheet jobId="job-1" onClose={() => {}} />);
-    await waitFor(() => expect(screen.getByText('88')).toBeTruthy());
-    expect(screen.getByText('stage: interview')).toBeTruthy();
+  it('job page shows the live job detail and deep evaluation', async () => {
+    renderWithQuery(<JobPageHarness jobId="job-1" />);
+    await waitFor(() => expect(screen.getAllByText('88').length).toBeGreaterThan(0));
+    expect(screen.getAllByText('Interviewing').length).toBeGreaterThan(0);
     expect(screen.getByText('Strong platform match.')).toBeTruthy();
     expect(screen.getByText(/Build the platform\./)).toBeTruthy();
     expect(screen.queryByText('Key requirements')).toBeNull();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Deep analysis' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Fit' }));
     await waitFor(() => expect(screen.getByText('4.1 / 5 · Staff Platform Engineer')).toBeTruthy());
     expect(screen.getByText('claude · sonnet')).toBeTruthy();
     expect(screen.getByText('No Kubernetes operator experience.')).toBeTruthy();
     expect(screen.queryByText(/Confidence:/)).toBeNull();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Comms & reminders' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Activity' }));
     await waitFor(() => expect(screen.getByText('Example Co: next steps')).toBeTruthy());
     expect(screen.getByText('Needs reply')).toBeTruthy();
     expect(screen.getByText('Example Co interview')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Tailor docs' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Documents' }));
     const tailor = await screen.findByRole('button', { name: /Regenerate Docs/ });
     expect((tailor as HTMLButtonElement).disabled).toBe(false);
     expect(
