@@ -1,6 +1,6 @@
 # JOB-7 — Mac mini cutover: always-on stack, tailnet access, data migration, retire the old career-ops repo
 
-**Status:** Proposed 2026-11-28 (Yaaf: "Yes, start it"; open questions below)
+**Status:** Verified 2026-11-28 (PRs #20, #21, #22; host operations recorded in plan.md)
 **Issue:** JOB-7 (Linear, no description) · Parent JOB-1 · Branch `feat/job-7-cutover` · Also closes JOB-6 AC11 (live Google check)
 
 ## Problem / Context
@@ -79,9 +79,18 @@ Everything so far ran in throwaway compose projects on this M2 Mac mini (`your-m
 - [x] **AC4** A manual ATS scan runs. Jobs arrive and hydrogen scoring scores at least one batch through the bridge.
 - [x] **AC5** JOB-6 AC11: Google connected with `gmail.compose`, Sync now succeeded, at least one thread linked (or a manual link works), a draft appears in Gmail Drafts unsent, and a reminder appears in Calendar. Test items are deleted afterwards after asking Yaaf.
 - [x] **AC6** The nightly backup job is loaded. One manual run produces a `.backup` file that passes `PRAGMA integrity_check`. A restore into a throwaway volume boots the app with the same job count.
-- [ ] **AC7** the old career-ops repo is archived (if Q2 = yes).
+- [x] **AC7** the old career-ops repo is archived (if Q2 = yes).
 - [x] **AC9** Filtered scan: integration test against a fake sidecar (accepted, rejected and error paths; refuses without `SCANNER_URL`). A live run on a copy of the database ingests only filter-accepted postings.
-- [ ] **AC8** README runbook. Checks for the surfaces touched pass: scanner/script tests, `bash -n`, `plutil -lint`, PII grep.
+- [x] **AC8** README runbook. Checks for the surfaces touched pass: scanner/script tests, `bash -n`, `plutil -lint`, PII grep.
+
+## Decisions & Verification (2026-11-28)
+
+- **Q1:** Yaaf added the Google OAuth client to `.env` and the redirect URI in GCP. Google was connected and verified live (JOB-6 AC11).
+- **Q2:** archive approved; the old career-ops repo is archived (read-only, private, reversible). The private career-data repo is untouched.
+- **Q3:** Linear keys not set; Linear ops stay off. Optional; set them any time.
+- **AC1:** the stack ran from GHCR images throughout. Docker Desktop was quit twice and restarted; both containers came back healthy each time without manual steps.
+- **AC2 caveat:** auth was verified with `curl` (401, 403, 200) and the assets load over the tailnet. The page wasn't viewed in a real browser by the agent, because the in-app browser blocks the tailnet host. Yaaf has the URL.
+- **AC9 (filtered scanning):** the live scan of 57 sources kept 153 of 10,642 postings. Stale boards were fixed in both the database and the private data repo.
 
 ## Docs Impact
 
