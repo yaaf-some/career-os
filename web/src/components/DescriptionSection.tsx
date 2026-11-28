@@ -9,12 +9,17 @@ const FETCH_RESULT: Record<string, string> = {
   error: 'The job board did not answer. Try again in a moment, or paste the description.',
 };
 
+/** Past this length the text starts folded, so what follows stays within reach. */
+const FOLD_AT_CHARS = 1500;
+
 /** The posting text, with ways to fill it in. Mount with `key={jobId}`. */
 export function DescriptionSection({ jobId, text }: { jobId: string; text: string }) {
   const fetchMutation = useFetchDescriptionMutation();
   const setMutation = useSetDescriptionMutation();
   const [pasting, setPasting] = useState(false);
   const [draft, setDraft] = useState('');
+  const [expanded, setExpanded] = useState(false);
+  const foldable = text.length > FOLD_AT_CHARS;
 
   const status = fetchMutation.data?.status;
   const failure = fetchMutation.error ?? setMutation.error;
@@ -80,9 +85,26 @@ export function DescriptionSection({ jobId, text }: { jobId: string; text: strin
           </Button>
         </div>
       ) : (
-        <p className="whitespace-pre-line text-sm leading-relaxed text-[var(--wp-secondary)]">
-          {text || 'No description saved yet.'}
-        </p>
+        <>
+          <p
+            className={`whitespace-pre-line break-words text-[15px] leading-relaxed text-[var(--wp-secondary)] sm:text-sm ${
+              foldable && !expanded
+                ? 'max-h-96 overflow-hidden [mask-image:linear-gradient(to_bottom,black_75%,transparent)]'
+                : ''
+            }`}
+          >
+            {text || 'No description saved yet.'}
+          </p>
+          {foldable ? (
+            <Button
+              className="min-h-11 w-full"
+              aria-expanded={expanded}
+              onClick={() => setExpanded((open) => !open)}
+            >
+              {expanded ? 'Show less' : 'Show full description'}
+            </Button>
+          ) : null}
+        </>
       )}
     </PaperSheet>
   );
