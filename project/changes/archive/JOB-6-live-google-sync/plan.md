@@ -42,7 +42,7 @@ Branch per PR off `main`. Merge `origin/main` into a branch to catch up; never r
   - Vitest against the fixtures (AC8, AC9).
 
   Verify: `npm run typecheck && npm test && npm run build` in `web/`
-- [ ] **1.8 Docs + PR A** — `architecture.md`, `trust.md` §3, `glossary.md`, STATE; full checks; PII grep; open the PR; CI green; ask Yaaf to merge.
+- [x] **1.8 Docs + PR A** — `architecture.md`, `trust.md` §3, `glossary.md`, STATE; full checks; PII grep; open the PR; CI green; ask Yaaf to merge.
 
 ## PR B — Write side: Gmail drafts + Calendar reminders (`feat/job-6b-write`)
 
@@ -68,12 +68,12 @@ Branch per PR off `main`. Merge `origin/main` into a branch to catch up; never r
 - [x] **3.1** On a tracker stage change to `applied`, with `LINEAR_API_KEY` and `LINEAR_TEAM_ID` set and `linear_issue_id` empty, call `create_issue` (title "Applied: {title} @ {company}", job URL in the description) and store the id. Do nothing without the key (AC10).
 
   Verify: `cargo test -p career-os-api linear`
-- [ ] **3.2** Docs + PR C.
+- [x] **3.2** Docs + PR C.
 
 ## Verify & Archive
 
-- [ ] **4.1 AC11 live check on the M2** — with Yaaf, who signs in to Google: run sync, link, draft, reminder, Today, Tracker. Ask before deleting the test draft and event.
-- [ ] **4.2** `project-verify-archive`: tick the ACs, sync docs, archive the folder, update STATE.
+- [x] **4.1 AC11 live check on the M2** — with Yaaf, who signs in to Google: run sync, link, draft, reminder, Today, Tracker. Ask before deleting the test draft and event.
+- [x] **4.2** `project-verify-archive`: tick the ACs, sync docs, archive the folder, update STATE.
 
 ## Execution Notes
 

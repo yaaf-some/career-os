@@ -1,6 +1,6 @@
 # JOB-6 — Live Google sync: Today, Tracker, Gmail drafts, Calendar reminders, Linear ops
 
-**Status:** Approved 2026-11-27 (Q1 yes, Q2 yes, Google sync twice daily)
+**Status:** Verified 2026-11-28 (PRs #17, #18, #19; AC11 live on the M2, with one deviation noted below)
 **Issue:** JOB-6 (Linear, no description) · Parent JOB-1 · Branches `feat/job-6a-read` → `feat/job-6b-write` → `feat/job-6c-linear`
 
 ## Problem / Context
@@ -105,24 +105,40 @@ The Google plumbing exists but nothing reaches the user:
 
 ## Acceptance Criteria
 
-- [ ] **AC1** Linking: unit tests cover domain + company matches, subject matches, no match, picking the most recent of several applications, and a manual link surviving re-sync.
-- [ ] **AC2** `GET /api/today` and `GET /api/tracker`: integration tests on seeded data. A shared fixture (`web/src/__tests__/fixtures/today.json`, `tracker.json`) is written by Rust tests and read by web tests.
-- [ ] **AC3** `PATCH /api/tracker` updates stage, follow-up and notes, and creates the application when it's missing (integration test).
-- [ ] **AC4** `POST /api/jobs` adds a `pending_scoring` manual job; a duplicate URL returns the existing job (integration test).
-- [ ] **AC5** An email draft with `confirmed=true` calls Gmail `drafts.create`, then `drafts.update` on re-save. A wiremock test asserts no request to any `/send` path. When Google isn't connected, the draft is saved locally and the response is 409.
-- [ ] **AC6** A calendar reminder creates a Calendar event (wiremock), stores the linked row, and sets `next_followup_at` for `followup`.
-- [ ] **AC7** `POST /api/sync/google` records a `sync_runs` row. A concurrent call doesn't run a second sync (test). The scheduler runs Google sync every `GOOGLE_SYNC_INTERVAL_HOURS` (default 12) and hydrogen scoring hourly (config test).
-- [ ] **AC8** Web live mode shows the API error state, not demo data, for today, tracker, quick-add, draft and reminder failures (vitest with mocked fetch).
-- [ ] **AC9** Web mappers are tested against the shared fixtures. The drawer shows linked threads and reminders from the API.
-- [ ] **AC10** Moving an application to `applied` with `LINEAR_API_KEY` set creates exactly one Linear issue and stores its id. Without the key, nothing happens (wiremock).
-- [ ] **AC11** Live check on the M2:
+- [x] **AC1** Linking: unit tests cover domain + company matches, subject matches, no match, picking the most recent of several applications, and a manual link surviving re-sync.
+- [x] **AC2** `GET /api/today` and `GET /api/tracker`: integration tests on seeded data. A shared fixture (`web/src/__tests__/fixtures/today.json`, `tracker.json`) is written by Rust tests and read by web tests.
+- [x] **AC3** `PATCH /api/tracker` updates stage, follow-up and notes, and creates the application when it's missing (integration test).
+- [x] **AC4** `POST /api/jobs` adds a `pending_scoring` manual job; a duplicate URL returns the existing job (integration test).
+- [x] **AC5** An email draft with `confirmed=true` calls Gmail `drafts.create`, then `drafts.update` on re-save. A wiremock test asserts no request to any `/send` path. When Google isn't connected, the draft is saved locally and the response is 409.
+- [x] **AC6** A calendar reminder creates a Calendar event (wiremock), stores the linked row, and sets `next_followup_at` for `followup`.
+- [x] **AC7** `POST /api/sync/google` records a `sync_runs` row. A concurrent call doesn't run a second sync (test). The scheduler runs Google sync every `GOOGLE_SYNC_INTERVAL_HOURS` (default 12) and hydrogen scoring hourly (config test).
+- [x] **AC8** Web live mode shows the API error state, not demo data, for today, tracker, quick-add, draft and reminder failures (vitest with mocked fetch).
+- [x] **AC9** Web mappers are tested against the shared fixtures. The drawer shows linked threads and reminders from the API.
+- [x] **AC10** Moving an application to `applied` with `LINEAR_API_KEY` set creates exactly one Linear issue and stores its id. Without the key, nothing happens (wiremock).
+- [x] **AC11** Live check on the M2:
   1. Connect Google, reconsenting with the new scope.
   2. Run "Sync now" and confirm a real recruiter thread is linked to a seeded job.
   3. Save a draft and confirm it appears in Gmail Drafts unsent.
   4. Create a reminder and confirm it appears in Calendar.
   5. Confirm Today and Tracker show these.
   6. Clean up the test draft and event afterwards, after confirming with Yaaf.
-- [ ] **AC12** Full checks: Rust fmt, clippy and test; web typecheck, test and build; PII grep. Docs updated.
+- [x] **AC12** Full checks: Rust fmt, clippy and test; web typecheck, test and build; PII grep. Docs updated.
+
+## Verification (2026-11-28)
+
+- AC1–AC10 and AC12 were covered by tests and CI on PRs #17–#19 (merged).
+- **AC11, live on the M2:**
+  - Google was connected, with no missing scopes.
+  - Sync now succeeded (14 threads, 20 events, 6 s).
+  - A test Gmail draft (to `test@example.com`) appeared in Drafts with only the `DRAFT` label and was **not** in Sent, confirmed independently through the Gmail connector.
+  - A test Calendar reminder was created.
+  - All test items were deleted with Yaaf's OK. The test job was rejected and its tracker entry closed, since there is no job-delete API.
+  - **Deviation:** auto-linking couldn't be shown with real mail. There were no applications yet, and none of the synced threads or events named a tracked company. Linking (including manual links surviving a re-sync) is covered by unit and integration tests.
+- **Found during AC11 and fixed** (PR `fix/calendar-prune-and-job6-archive`):
+  - Events deleted or cancelled in Google stayed in the agenda forever.
+  - Event times were stored with the calendar's offset but compared as UTC.
+  - Sync overwrote the `kind` of reminders the app created.
+- **Known follow-up:** `needs_reply` is true for every inbox thread the sync matched (14 of 14). It's harmless today because Today only lists linked threads, but it needs a better heuristic.
 
 ## Docs Impact
 

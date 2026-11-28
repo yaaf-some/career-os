@@ -36,7 +36,7 @@ flowchart TB
   - the company name appears in the subject; or
   - the sender is the company's own domain, the job board's domain or a known ATS, **and** the company is named in the snippet.
 
-  An event is linked when its title names the company. When several applications match, the most recently updated wins. Manual links (`PUT /api/gmail-threads/{id}/application`, `link_source='manual'`) are never overwritten.
+  An event is linked when its title names the company. Event times are stored as UTC; events that Google no longer returns (deleted or cancelled) are pruned within the window the sync listed. When several applications match, the most recently updated wins. Manual links (`PUT /api/gmail-threads/{id}/application`, `link_source='manual'`) are never overwritten.
 - **Read surfaces:**
   - `GET /api/today`: linked replies that need an answer, the 7-day agenda, follow-ups due, and top-scored jobs still in triage.
   - `GET /api/tracker` and `PATCH /api/tracker`.

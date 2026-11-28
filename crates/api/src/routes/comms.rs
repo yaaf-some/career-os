@@ -271,6 +271,17 @@ mod tests {
                         "end": {"dateTime": "2026-12-01T17:30:00Z"}
                     }))
                     .into_response(),
+                    "GET /users/me/threads" => {
+                        axum::Json(serde_json::json!({"threads": []})).into_response()
+                    }
+                    "GET /calendars/primary/events" => axum::Json(serde_json::json!({"items": [{
+                        "id": "gcal-live",
+                        "summary": "Example Co onsite",
+                        "htmlLink": "https://calendar.example.com/event/gcal-live",
+                        "start": {"dateTime": "2099-01-05T19:00:00+02:00"},
+                        "end": {"dateTime": "2099-01-05T20:00:00+02:00"}
+                    }]}))
+                    .into_response(),
                     _ => StatusCode::NOT_FOUND.into_response(),
                 }
             }
@@ -476,5 +487,43 @@ mod tests {
         .await
         .unwrap_err();
         assert_eq!(err.status_and_code().1, "GOOGLE_NOT_CONNECTED");
+    }
+
+    #[tokio::test]
+    async fn sync_normalizes_times_and_prunes_events_deleted_in_google() {
+        let (base, _seen) = fake_google().await;
+        let st = state(&base, true).await;
+        sqlx::query(
+            "INSERT INTO calendar_events (id, gcal_event_id, kind, title, starts_at, ends_at) VALUES
+             ('stale','gcal-deleted','prep','Deleted in Google','2099-01-04T10:00:00Z','2099-01-04T10:30:00Z'),
+             ('past','gcal-past','interview','Last month','2000-01-01T10:00:00Z','2000-01-01T11:00:00Z')",
+        )
+        .execute(&st.pool)
+        .await
+        .unwrap();
+
+        st.sync_google_workspace().await.unwrap();
+
+        let rows: Vec<(String, String, String)> = sqlx::query_as(
+            "SELECT gcal_event_id, starts_at, ends_at FROM calendar_events ORDER BY gcal_event_id",
+        )
+        .fetch_all(&st.pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                (
+                    "gcal-live".into(),
+                    "2099-01-05T17:00:00Z".into(),
+                    "2099-01-05T18:00:00Z".into()
+                ),
+                (
+                    "gcal-past".into(),
+                    "2000-01-01T10:00:00Z".into(),
+                    "2000-01-01T11:00:00Z".into()
+                ),
+            ]
+        );
     }
 }

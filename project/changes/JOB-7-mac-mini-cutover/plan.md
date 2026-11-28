@@ -19,12 +19,12 @@ One branch, `feat/job-7-cutover`, carries the repo changes (scripts, plist examp
 ## Filtered scanning (PR B, `feat/job-7-filtered-scans`)
 - [x] **4.1** API: `SCANNER_URL` config; `scan_via_sidecar`; `run_ats_scan` → sidecar (ingest accepted, `filtered_audit` for rejected, `last_error` per source; 503 without the sidecar); `GET /api/sources` adds `matched_count` and `filtered_audit`. Tests against a fake sidecar.
 - [x] **4.2** Web: Sources page live (mappers, per-source scan switch, scan result and error, rejection log); importer imports all hosts.
-- [ ] **4.3** Live: enable sources and scan after merge and release.
+- [x] **4.3** Live: enable sources and scan after merge and release.
 
 ## Live
 - [x] **3.1 Import** — run the importer against the live API (AC3).
-- [ ] **3.2 Scan + score** — trigger a scan from Sources; confirm jobs arrive and hydrogen scoring runs (AC4).
-- [ ] **3.3 Google (JOB-6 AC11)** — once Yaaf has added the client and signed in: Sync now, linking, draft, reminder (AC5). Ask before deleting the test draft and event.
+- [x] **3.2 Scan + score** — trigger a scan from Sources; confirm jobs arrive and hydrogen scoring runs (AC4).
+- [x] **3.3 Google (JOB-6 AC11)** — once Yaaf has added the client and signed in: Sync now, linking, draft, reminder (AC5). Ask before deleting the test draft and event.
 - [ ] **3.4 Retire** — archive the old career-ops repo (Q2) (AC7).
 - [ ] **3.5 Close** — PR, CI, merge with OK; JOB-6 and JOB-7 verify-archive.
 
@@ -42,3 +42,7 @@ One branch, `feat/job-7-cutover`, carries the repo changes (scripts, plist examp
 - **2.3** Restore drill: tonight's backup was restored into a throwaway volume, and a throwaway app on it served 36 jobs and 56 sources, the same as live. The README restore step needed `chown 65532:65532` (the app runs as nonroot); fixed. The backup LaunchAgent is installed and kickstarted (exit 0, 03:30 daily).
 - **4.x** Scan on a **copy** of the live DB (branch build, separate port): 56 sources, 10,642 postings fetched, **10,477 filtered**, 153 ingested, in 59 s. 5 boards returned 404, so their slugs in the old data are stale (see `last_error`). The title filter is coarse: aerospace roles like "Fuel/Radar Systems Engineer" pass "Systems Engineer". Hydrogen scoring ranks those low; filter tuning is a follow-up.
 - `ls` is aliased in the user's shell; use `/bin/ls` in scripts.
+- **Docker Desktop quit twice (2026-11-28, 07:26 and 07:39)**, both times a clean UI quit (`app.exit(104)` right after the dashboard window closed), not a crash. On Yaaf's "resume with docker" it was restarted. Both containers came back healthy by themselves each time (restart policy), which covers the Docker-restart part of AC1.
+- **4.3 live scan:** #21 image pulled; the importer added the Paylocity company (57 sources); all enabled. Scan: 10,642 fetched, 10,477 filtered, **153 ingested** (65 s), 5 errors. All 179 pending jobs were scored right away at Yaaf's request (18 claude batches): 97 to triage, 92 skipped; 9 scored ≥80.
+- **Stale boards fixed:** three companies moved to Ashby (one under a different slug), one merged into another company's Greenhouse board, and one is on Ashby without public API access (disabled, with a note). The fixed four rescanned cleanly (+4 jobs, scored). The private data repo's `portals.yml` was updated and pushed, so a re-import stays a no-op.
+- **3.3 / JOB-6 AC11:** Google client added by Yaaf; app restarted; connected; Sync now OK; test draft (Drafts only, not sent) and test reminder created, then deleted. See the JOB-6 archive for details and the calendar bugs found and fixed.
