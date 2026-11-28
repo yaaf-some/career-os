@@ -15,6 +15,8 @@ import type {
   JobSummary,
   PipelineStage,
   ScoreBreakdown,
+  TailorEvidenceBullet,
+  TailorResponse,
   TodayResponse,
   TrackerEntry,
   TrackerResponse,
@@ -99,11 +101,41 @@ export interface ApiEmailDraftRecord {
   updated_at: string;
 }
 
+export interface ApiTailorEvidenceBullet {
+  id: string;
+  source_file: string;
+  section: string;
+  text: string;
+  relevance_note: string;
+}
+
+export interface ApiTailorRunSummary {
+  id: string;
+  tier: string;
+  provider: string;
+  model: string;
+  grounded_bullets: ApiTailorEvidenceBullet[];
+  created_at: string;
+}
+
+export interface ApiTailorJobResponse {
+  job_id: string;
+  tailor_run_id: string;
+  tier: string;
+  provider: string;
+  model: string;
+  resume_doc_url: string;
+  cover_letter_doc_url: string;
+  generated_at: string;
+  grounded_bullets: ApiTailorEvidenceBullet[];
+}
+
 export interface ApiJobDetailResponse {
   job: ApiJobRecord;
   evaluations: ApiEvaluationRecord[];
   application: ApiApplicationRecord | null;
   drive_artifacts: ApiDriveArtifactRecord[];
+  latest_tailor?: ApiTailorRunSummary | null;
   gmail_threads: ApiGmailThreadRecord[];
   calendar_events: ApiCalendarEventRecord[];
   email_draft: ApiEmailDraftRecord | null;
@@ -349,6 +381,28 @@ function artifactUrl(
   return match?.drive_url ?? null;
 }
 
+function tailorBulletsFromApi(bullets: ApiTailorEvidenceBullet[] | undefined): TailorEvidenceBullet[] {
+  return (bullets ?? []).map((b) => ({
+    id: b.id,
+    sourceFile: b.source_file,
+    section: b.section,
+    text: b.text,
+    relevanceNote: b.relevance_note,
+  }));
+}
+
+export function tailorResponseFromApi(res: ApiTailorJobResponse): TailorResponse {
+  return {
+    jobId: res.job_id,
+    tailor: {
+      resumeDocUrl: res.resume_doc_url,
+      coverLetterDocUrl: res.cover_letter_doc_url,
+      generatedAt: res.generated_at,
+      groundedBullets: tailorBulletsFromApi(res.grounded_bullets),
+    },
+  };
+}
+
 export function jobDetailFromApi(res: ApiJobDetailResponse): JobDetail {
   const deep = newestDeepEval(res.evaluations);
   const arts = res.drive_artifacts;
@@ -359,6 +413,7 @@ export function jobDetailFromApi(res: ApiJobDetailResponse): JobDetail {
     .map((a) => a.created_at)
     .sort()
     .at(-1);
+  const latestTailor = res.latest_tailor ?? null;
   return {
     ...jobSummaryFromApi(res.job, {
       application: res.application,
@@ -379,8 +434,8 @@ export function jobDetailFromApi(res: ApiJobDetailResponse): JobDetail {
     tailor: {
       resumeDocUrl,
       coverLetterDocUrl,
-      generatedAt: generated ?? null,
-      groundedBullets: [],
+      generatedAt: generated ?? latestTailor?.created_at ?? null,
+      groundedBullets: tailorBulletsFromApi(latestTailor?.grounded_bullets),
     },
     gmailStatus: gmailStatusFrom(
       res.gmail_threads.map((t) => ({ needsReply: t.needs_reply })),

@@ -73,6 +73,7 @@ pub fn build_router(state: AppState) -> Router {
             "/api/jobs/{id}/calendar-reminder",
             post(routes::comms::create_calendar_reminder),
         )
+        .route("/api/jobs/{id}/tailor", post(routes::tailor::tailor_job))
         .route("/api/today", get(routes::workspace::get_today))
         .route("/api/sync/google", post(routes::workspace::sync_google_now))
         .route(

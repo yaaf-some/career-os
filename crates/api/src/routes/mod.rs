@@ -8,6 +8,7 @@ pub mod jobs;
 pub mod profile;
 pub mod settings;
 pub mod sources;
+pub mod tailor;
 pub mod tracker;
 pub mod triage;
 pub mod workspace;

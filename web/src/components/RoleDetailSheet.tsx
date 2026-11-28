@@ -8,7 +8,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { describeAiError, describeGoogleError } from '@/api/client';
+import { describeAiError, describeGoogleError, describeTailorError } from '@/api/client';
 import {
   useCalendarReminderMutation,
   useEvaluateJobMutation,
@@ -36,9 +36,6 @@ import {
   useToast,
 } from '@/components/ui';
 
-/** The tailor backend isn't built yet (separate issue); only the demo can run it. */
-const tailorAvailable = () => import.meta.env.VITE_DEMO_MODE === 'true';
-
 export function RoleDetailSheet({
   jobId,
   onClose,
@@ -47,7 +44,6 @@ export function RoleDetailSheet({
   onClose: () => void;
 }) {
   const detailQuery = useJobDetailQuery(jobId);
-  const TAILOR_AVAILABLE = tailorAvailable();
   const evaluateMutation = useEvaluateJobMutation();
   const tailorMutation = useTailorJobMutation();
   const triageMutation = useTriageMutation();
@@ -535,25 +531,43 @@ export function RoleDetailSheet({
                   <div>
                     <h3 className="text-sm font-medium">Tailor Resume &amp; Cover Letter</h3>
                     <p className="text-xs text-[var(--wp-muted)]">
-                      Strictly grounded in <code className="font-mono-meta">Experience List.md</code>.
+                      Strictly grounded in <code className="font-mono-meta">profile/</code> &amp;
+                      synced project docs.
                     </p>
                   </div>
                   <Button
                     size="sm"
                     variant="primary"
-                    disabled={!TAILOR_AVAILABLE || tailorMutation.isPending}
-                    onClick={() => tailorMutation.mutate(job.id)}
+                    disabled={tailorMutation.isPending}
+                    onClick={() =>
+                      tailorMutation.mutate(job.id, {
+                        onSuccess: () =>
+                          showToast({
+                            tone: 'success',
+                            message: `Tailored Google Docs ready for ${job.company}`,
+                          }),
+                      })
+                    }
                   >
                     <FileText className="h-3.5 w-3.5" />
                     <span>
-                      {!TAILOR_AVAILABLE
-                        ? 'Tailoring: not available yet'
-                        : tailorMutation.isPending
-                          ? 'Generating Docs…'
+                      {tailorMutation.isPending
+                        ? 'Generating Docs…'
+                        : job.tailor.resumeDocUrl || job.tailor.coverLetterDocUrl
+                          ? 'Regenerate Docs'
                           : 'Tailor to Google Docs'}
                     </span>
                   </Button>
                 </div>
+
+                {tailorMutation.isError ? (
+                  <p
+                    role="alert"
+                    className="rounded-[10px] bg-[var(--wp-bad-soft)] px-3 py-2 text-xs text-[var(--wp-bad)]"
+                  >
+                    {describeTailorError(tailorMutation.error)}
+                  </p>
+                ) : null}
 
                 <PaperSheet className="space-y-2 p-4">
                   <div className="flex items-center gap-1.5 text-xs font-medium text-[var(--wp-muted)]">
@@ -589,18 +603,19 @@ export function RoleDetailSheet({
                     </div>
                   ) : (
                     <p className="text-sm text-[var(--wp-muted)]">
-                      Not yet tailored. Generate Google Docs drafts grounded in Experience List.md.
+                      Not yet tailored. Generate Google Docs drafts grounded in your profile &amp;
+                      synced project docs.
                     </p>
                   )}
                 </PaperSheet>
 
                 <PaperSheet className="space-y-2.5 p-4">
                   <div className="text-xs font-medium text-[var(--wp-muted)]">
-                    Grounded Evidence from Experience List.md
+                    Grounded Evidence
                   </div>
                   {job.tailor.groundedBullets.length === 0 ? (
                     <p className="text-sm text-[var(--wp-muted)]">
-                      Tailor to map matching bullets from Experience List.md.
+                      Tailor to map matching bullets from your profile &amp; synced project docs.
                     </p>
                   ) : (
                     job.tailor.groundedBullets.map((b) => (

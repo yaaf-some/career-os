@@ -103,7 +103,15 @@ describe('API job shape → web (fixture shared with crates/api)', () => {
       resumeDocUrl: 'https://docs.example.com/resume-1',
       coverLetterDocUrl: null,
       generatedAt: '2026-11-22T12:00:00Z',
-      groundedBullets: [],
+      groundedBullets: [
+        {
+          id: 'b1',
+          sourceFile: 'profile/experience.md',
+          section: 'Platform',
+          text: 'Owned multi-cluster Kubernetes reliability and CI/CD pipelines.',
+          relevanceNote: 'Matches platform reliability requirements.',
+        },
+      ],
     });
     // Comms: a linked thread needs a reply, so that wins over the saved draft.
     expect(d.gmailStatus).toBe('reply_received');
@@ -266,7 +274,10 @@ describe('live API job routes', () => {
     expect(screen.getByText('Example Co interview')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Tailor docs' }));
-    const tailor = await screen.findByRole('button', { name: /Tailoring: not available yet/ });
-    expect((tailor as HTMLButtonElement).disabled).toBe(true);
+    const tailor = await screen.findByRole('button', { name: /Regenerate Docs/ });
+    expect((tailor as HTMLButtonElement).disabled).toBe(false);
+    expect(
+      screen.getByText('Owned multi-cluster Kubernetes reliability and CI/CD pipelines.'),
+    ).toBeTruthy();
   });
 });

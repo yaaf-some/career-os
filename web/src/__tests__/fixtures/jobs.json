@@ -107,6 +107,22 @@
       "yoe_label": "8+ years",
       "yoe_max": null,
       "yoe_min": 8
+    },
+    "latest_tailor": {
+      "created_at": "2026-11-22T12:00:00Z",
+      "grounded_bullets": [
+        {
+          "id": "b1",
+          "relevance_note": "Matches platform reliability requirements.",
+          "section": "Platform",
+          "source_file": "profile/experience.md",
+          "text": "Owned multi-cluster Kubernetes reliability and CI/CD pipelines."
+        }
+      ],
+      "id": "tailor-1",
+      "model": "opus",
+      "provider": "claude",
+      "tier": "deep"
     }
   },
   "list": {
