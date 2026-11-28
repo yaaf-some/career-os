@@ -1,43 +1,43 @@
 # Project State (Elephant Handoff — career-os)
 
-**Last updated:** 2026-11-28 · **Linear:** team `JOB` (`Yaaf-Career`), project Mac Mini Rebuild (v1)
-**Host:** **M2 Mac mini** (arm64). Installed: claude, agy, Rust 1.100, Docker Desktop. **ai-bridge live under launchd** (`~/.local/bin/career-os-ai-bridge`, `~/Library/LaunchAgents/com.career-os.ai-bridge.plist`).
+**Last updated:** 2026-11-28 · **Linear:** team `JOB` (`Mac Mini Rebuild (v1)`)
+**Host:** **M2 Mac mini** (arm64). Installed: `claude`, `agy`, Rust 1.100, Docker Desktop. **ai-bridge live under launchd** (`~/.local/bin/career-os-ai-bridge`, `~/Library/LaunchAgents/com.career-os.ai-bridge.plist`).
 
 ## Current Focus
 
-- **`JOB-7` Verified + archived 2026-11-28** (`project/changes/archive/JOB-7-mac-mini-cutover/`): always-on compose `career-os`, tailnet `:8080`, nightly backups, old repo archived.
-- **`JOB-8` Verified + archived 2026-11-28** (`project/changes/archive/JOB-8-profile-scoring-drive-sync/`): #24/#25/#26 merged; profile loader, 4-dim breakdown, profile scanner filters, `drive.readonly` Project Docs sync, Maps (`routes_api`), and Linear (`JOB`) live on M2.
-- **Exact Next Concrete Step:** review & approve proposed specs for **`JOB-9`** (auto AI capability tiers + equal Claude/Gemini balancing) and **`JOB-10`** (ADHD-friendly Calm Native iOS/macOS UI overhaul), then execute `JOB-9` PR A.
+- **`JOB-9` Verified & Archived** (`project/changes/archive/JOB-9-auto-ai-routing/`): PR 9A (#28) & PR 9B (#29) merged to `main` (`0fa3b52`); host `ai-bridge` rebuilt/restarted (`cli_smoke` 2/2 passed), `career-os-app` container deployed (migration `0006` live), equal `claude`/`agy` `auto` alternation + `balanced`/`deep` tier routing verified live.
+- **Exact Next Concrete Step:** once the `JOB-9` archive PR (`docs/job-9-verify-archive`) is merged and `JOB-9` closed in Linear, refine `project/changes/JOB-10-calm-native-ui/{spec.md,plan.md}` from the approved Warm Paper + Terracotta mobile-first prototype and start executing `JOB-10`.
 
-## Done This Session
+## Active Branches / In-Flight Work
 
-- JOB-5/6/7 (#12–#23): tool-less host `ai-bridge` + Usage Bar, live Google Workspace sync/drafts/calendar, M2 Docker cutover + filtered ATS scanner.
-- JOB-8 (#24–#26): `/data/profile` loader (`~/career-data`), scanner pre-filters, 4-dim breakdown, `drive.readonly` `project_docs` sync, bulk rescore (`100` -> `54` triage), Maps & Linear live.
+- `main` (`0fa3b52`): `JOB-9` shipped (automatic `fast`/`balanced`/`deep` tiers, `>= 75` escalation, equal quota-aware `claude`/`agy` `auto` balancing, migration `0006`, unified `ai_routing`).
+- `docs/job-9-verify-archive`: archives `JOB-9` and updates `project/STATE.md` (awaiting owner approval to merge).
+- `JOB-10` design prototype approved ("looks good for now"): Warm Paper + Terracotta mobile-first ADHD-friendly Calm Native direction (`job10-paper-mobile-prototype.html` artifact); ready to refine spec & execute next.
 
 ## Container Baseline
 
-- `app`: node:26 alpine (web) → `cargo-chef:0.1.78-rust-1.100.0-slim-trixie` → `distroless/cc-debian13:nonroot`, ~51 MB; `scanner`: node:26 alpine, ~188 MB, `USER 10001:10001`. Bases digest-pinned (Dependabot).
-- Hermetic build (Swagger UI vendored), `--healthcheck`, SIGTERM graceful, compose `read_only`/`cap_drop: [ALL]`/`no-new-privileges`.
-- GHCR **linux/arm64 only**; PR CI container jobs on `ubuntu-24.04-arm` (hadolint v2.15.1, Trivy, smoke tests).
+- `app`: `node:26` alpine -> `cargo-chef:0.1.78-rust-1.100.0-slim-trixie` -> `distroless/cc-debian13:nonroot` (~51 MB); `scanner`: `node:26` alpine (~188 MB, `USER 10001:10001`). Digest-pinned, hermetic Swagger UI, `read_only`/`cap_drop: [ALL]`, GHCR `linux/arm64` only.
 
-## Upcoming
+## Upcoming Priorities
 
-1. **`JOB-9` (Proposed):** `project/changes/JOB-9-auto-ai-routing/` — replace Antigravity codenames with automatic `fast`/`balanced`/`deep` tiers (`>= 75` escalation) + quota-aware equal Claude/Gemini routing.
-2. **`JOB-10` (Proposed):** `project/changes/JOB-10-calm-native-ui/` — ADHD-friendly Calm Native iOS/macOS UX/UI overhaul (`@base-ui/react` + `coss ui` primitives + TanStack Table, Focus Triage, `⌘K`).
-3. Remaining follow-ups: web demo-fallback hides 404/5xx on settings/commute; Linear Settings display; OAuth callback shows raw JSON; `needs_reply` inbox filter; Ashby board with no public API.
-4. Future build candidate: `/api/jobs/{id}/tailor` (resume/cover-letter Docs grounded in `DATA_DIR` + `project_docs`).
+1. Merge `JOB-9` archive PR and close `JOB-9` in Linear.
+2. Execute **`JOB-10`** (`project/changes/JOB-10-calm-native-ui/`): Warm Paper mobile-first ADHD-friendly UI overhaul (`@base-ui/react` + `coss ui` primitives, calm motion, Focus Triage, `⌘K`).
+3. Follow-ups: web demo-fallback hiding 404/5xx on settings/commute; Linear Settings display; OAuth callback raw JSON; `needs_reply` inbox filter; Ashby board with no public API.
+4. Future candidate: `/api/jobs/{id}/tailor` (resume/cover-letter Docs grounded in `DATA_DIR` + `project_docs`).
 
 ## Recent Decisions
 
-- ADR-001 split-plane; ADR-002 tool-less bridge (agy: custom agent + deny hook + deny settings + watchdog; prompts on stdin). Re-run `cli_smoke -- --ignored` after claude/agy upgrades.
+- ADR-001 split-plane; ADR-002 tool-less bridge (`agy` custom agent + deny hook + deny settings + watchdog; stdin prompts; re-run `cli_smoke -- --ignored` after CLI upgrades).
+- `JOB-9` shipped & verified live: capability tiers (`fast`/`balanced`/`deep`, `>= 75.0` escalation, legacy `hydrogen`/`neon`/`carbon` aliases) and unified `ai_routing` (`auto|prefer_claude|prefer_agy`) synced to `docs/architecture.md` & `docs/glossary.md`.
 - GCP stays in Testing mode; `GOOGLE_DRIVE_PROJECTS_FOLDER_ID` scoped strictly to folder reads; Cloudflare untouched.
 
 ## Standing Gotchas
 
-- **Live instance:** compose project `career-os` (`docker compose -p career-os …`); localhost calls need `Tailscale-User-Login`. Verify live API with `curl`.
-- **Stacked PRs + squash merges:** merge `origin/main` (keep branch superset on conflict); **never force-push, never rebase pushed branches, never merge without Yaaf's OK.**
-- `gh pr edit` fails (Projects classic GraphQL) → use `gh api -X PATCH repos/<owner>/<repo>/pulls/<n>`.
-- Auto mode blocks: `~/.claude/settings.json`, `automerge` label. Ask Yaaf for those.
-- Dependabot: cargo patch group, web minor/patch group; 0.x/major need manual migration. Pin Docker tags numerically (`26.13 > 26.9`). Node 26 LTS only; Rust `cargo` on Homebrew PATH.
-- agy `-p` ignores plain stdin; `permissions.deny` skips `search_web` (PreToolUse hook blocks it).
-- Zero PII/secrets in this public repo. Keep replies short (ADHD): answer/action first, clickable links.
+- **Live instance:** compose project `career-os` (`docker compose -p career-os ...`); localhost calls need `Tailscale-User-Login`. Verify live API with `curl`.
+- **Stacked PRs + squash merges:** merge `origin/main` (keep branch superset on conflict); **never force-push, never rebase pushed branches, never merge without explicit owner OK.**
+- SQLite migrations changing `CHECK` constraints (`evaluations`, `ai_usage_events`) require table recreation (`0006_normalize_ai_tiers.sql` pattern).
+- `gh pr edit` fails (Projects classic GraphQL) -> use `gh api -X PATCH repos/<owner>/<repo>/pulls/<n>`.
+- Auto mode blocks `~/.claude/settings.json` and `automerge` label — ask owner.
+- Dependabot: pin Docker tags numerically (`26.13 > 26.9`); Node 26 LTS; Rust `cargo` on `/opt/homebrew/opt/rustup/bin`.
+- `agy -p` ignores plain stdin; `permissions.deny` skips `search_web` (PreToolUse hook blocks it).
+- Zero PII/secrets in this public repo. Keep replies short (ADHD-friendly): answer/action first, clickable links.
