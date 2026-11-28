@@ -1,6 +1,6 @@
 # JOB-10 — Warm Paper Calm Native UX & Mobile-First UI Overhaul
 
-**Status:** In Progress (PR 10A open, PR 10B) (Warm Paper + Terracotta mobile-first prototype approved; awaiting final spec/plan OK to start PR 10A)
+**Status:** In Progress (PRs 10A–10C open) (Warm Paper + Terracotta mobile-first prototype approved; awaiting final spec/plan OK to start PR 10A)
 **Issue:** JOB-10 · Target Branches: `feat/job-10a-design-system-shell`, `feat/job-10b-focus-triage-today`, `feat/job-10c-tracker-sources-settings`
 
 ## Problem / Context

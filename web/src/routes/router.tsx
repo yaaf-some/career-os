@@ -81,10 +81,14 @@ const sourcesRoute = createRoute({
   component: SourcesView,
 });
 
+function SettingsRouteComponent() {
+  return <SettingsView onOpenSources={() => void router.navigate({ to: '/sources' })} />;
+}
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
-  component: SettingsView,
+  component: SettingsRouteComponent,
 });
 
 const routeTree = rootRoute.addChildren([

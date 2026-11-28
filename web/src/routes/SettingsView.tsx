@@ -1,54 +1,68 @@
-import {
-  Car,
-  Clock,
-  Cpu,
-  ExternalLink,
-  FileText,
-  FolderSync,
-  Kanban,
-  KeyRound,
-  MapPin,
-  RefreshCw,
-  ShieldCheck,
-  Train,
-} from 'lucide-react';
+import { ChevronRight, Clock, ExternalLink, FolderSync, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { describeAiError, describeGoogleError } from '@/api/client';
 import {
+  useAiUsageQuery,
   useCommutePreviewMutation,
   useGoogleAuthMutation,
   useGoogleAuthStatusQuery,
   useProfileStatusQuery,
   useRescoreJobsMutation,
   useSettingsQuery,
+  useSourcesQuery,
   useSyncProjectDocsMutation,
   useUpdateSettingsMutation,
 } from '@/api/queries';
 import type { AiRoutingMode } from '@/api/types';
 import { CommuteBadgeDisplay } from '@/components/CommuteBadge';
 import { GoogleSyncPanel } from '@/components/GoogleSyncPanel';
-import { Badge, Button, Card, SectionHeader } from '@/components/ui';
-import { cn } from '@/lib/cn';
+import {
+  Badge,
+  Button,
+  Input,
+  InsetGroup,
+  Meter,
+  PaperSheet,
+  SegmentedControl,
+  Skeleton,
+  Switch,
+  useToast,
+} from '@/components/ui';
+import { useTheme, type ThemePreference } from '@/lib/theme';
+import { formatAntigravityStatus, formatUsagePercent, getUsageSeverity } from '@/lib/usage';
 
-const ROUTING_MODE_OPTIONS: readonly { value: AiRoutingMode; label: string }[] = [
-  { value: 'auto', label: 'Auto — Balance Claude & Gemini' },
-  { value: 'prefer_claude', label: 'Prefer Claude' },
-  { value: 'prefer_agy', label: 'Prefer Gemini (agy)' },
+const THEME_OPTIONS: readonly { value: ThemePreference; label: string }[] = [
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+  { value: 'system', label: 'System' },
 ];
 
-export function SettingsView() {
+const ROUTING_OPTIONS: readonly { value: AiRoutingMode; label: string }[] = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'prefer_claude', label: 'Claude' },
+  { value: 'prefer_agy', label: 'Gemini' },
+];
+
+export function SettingsView({ onOpenSources }: { onOpenSources?: () => void }) {
   const settingsQuery = useSettingsQuery();
   const googleStatusQuery = useGoogleAuthStatusQuery();
   const profileStatusQuery = useProfileStatusQuery();
+  const usageQuery = useAiUsageQuery();
+  const sourcesQuery = useSourcesQuery();
+
   const updateMutation = useUpdateSettingsMutation();
   const googleAuthMutation = useGoogleAuthMutation();
   const commutePreviewMutation = useCommutePreviewMutation();
   const syncDocsMutation = useSyncProjectDocsMutation();
   const rescoreMutation = useRescoreJobsMutation();
 
+  const { preference, setPreference } = useTheme();
+  const { showToast } = useToast();
+
   const settings = settingsQuery.data;
   const googleStatus = googleStatusQuery.data;
   const profileStatus = profileStatusQuery.data;
+  const usage = usageQuery.data;
 
   const [homeArea, setHomeArea] = useState('West Los Angeles, CA');
   const [travelMode, setTravelMode] = useState<'drive' | 'transit'>('drive');
@@ -60,184 +74,111 @@ export function SettingsView() {
     if (settings?.defaultTravelMode) setTravelMode(settings.defaultTravelMode);
   }, [settings?.homeLocationArea, settings?.defaultTravelMode]);
 
+  const claude5hPct = usage?.claude5h?.percentUsed ?? 0;
+  const claude7dPct = usage?.claude7d?.percentUsed ?? 0;
+  const claude5hSeverity = getUsageSeverity(usage?.claude5h?.percentUsed);
+  const agStatus = usage ? formatAntigravityStatus(usage.antigravity) : null;
+
   return (
-    <div className="space-y-6" data-testid="settings-view">
-      <SectionHeader
-        title="Settings"
-        subtitle="Configure AI routing preference, Google OAuth 7-day Testing-mode reconnect, LA Commute & Maps, and Linear JOB operations."
-      />
+    <div className="mx-auto max-w-[680px] space-y-6" data-testid="settings-view">
+      <div className="pt-1">
+        <h1 className="text-base font-medium text-[var(--wp-ink)]">Settings</h1>
+        <p className="mt-0.5 text-xs text-[var(--wp-muted)]">
+          Appearance, AI routing, profile sync, and integrations
+        </p>
+      </div>
+
+      {/* 1. Appearance */}
+      <InsetGroup label="Appearance">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5">
+          <div>
+            <div className="text-sm font-medium text-[var(--wp-ink)]">Theme</div>
+            <div className="text-xs text-[var(--wp-muted)]">
+              Warm Paper light or Warm Charcoal dark
+            </div>
+          </div>
+          <SegmentedControl
+            ariaLabel="Appearance theme"
+            value={preference}
+            onValueChange={(next) => {
+              setPreference(next);
+              showToast({ message: `Theme set to ${next}` });
+            }}
+            options={THEME_OPTIONS}
+          />
+        </div>
+      </InsetGroup>
 
       {settingsQuery.isLoading || !settings ? (
-        <Card className="p-6 text-sm text-muted-foreground">Loading settings…</Card>
+        <div className="space-y-4">
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-44 w-full" />
+        </div>
       ) : (
-        <div className="grid gap-5 lg:grid-cols-2">
-          {/* Unified AI Routing */}
-          <Card className="p-4 space-y-4">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <Cpu className="h-4 w-4 text-accent-brand" />
-              <span>AI Routing &amp; Capability Tiers</span>
-            </div>
-
-            <div className="space-y-3 text-sm">
-              <label className="block">
-                <span className="text-xs font-medium text-muted-foreground">
-                  Provider Routing Preference
-                </span>
-                <select
-                  aria-label="AI routing mode"
-                  value={settings.aiRoutingMode}
-                  onChange={(e) =>
-                    updateMutation.mutate({
-                      aiRoutingMode: e.target.value as AiRoutingMode,
-                    })
-                  }
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                >
-                  {ROUTING_MODE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <div className="rounded-lg border border-border p-3 text-xs text-muted-foreground space-y-1">
-                <div className="font-medium text-foreground">Automatic Task Routing</div>
-                <p>
-                  Triage scoring &amp; project-doc digests use <strong>Fast</strong>; A–G analysis
-                  uses <strong>Balanced</strong> and auto-escalates to <strong>Deep</strong> on
-                  matches &ge; 75. Failover between Claude and Gemini stays active automatically.
+        <div className="space-y-6">
+          {/* 2. AI Routing & Provider Health */}
+          <InsetGroup label="AI routing">
+            <div className="space-y-3 px-4 py-4">
+              <div>
+                <div className="text-sm font-medium text-[var(--wp-ink)]">Provider balance</div>
+                <p className="mt-0.5 text-xs text-[var(--wp-muted)]">
+                  Fast scores batches · Balanced runs A–G · matches &ge; 75 escalate to Deep.
                 </p>
               </div>
-            </div>
-          </Card>
-
-          {/* Google OAuth Integration */}
-          <Card className="p-4 space-y-4">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-sm font-semibold">
-                <KeyRound className="h-4 w-4 text-accent-brand" />
-                <span>Google Workspace OAuth</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Badge variant="neutral">
-                  {googleStatus?.authMode === 'testing' ? 'Testing (7d)' : googleStatus?.authMode ?? 'Testing (7d)'}
-                </Badge>
-                <Badge
-                  variant={
-                    googleStatus?.connected
-                      ? googleStatus.needsReconnect
-                        ? 'warning'
-                        : 'success'
-                      : 'danger'
-                  }
-                >
-                  {googleStatus?.connected
-                    ? googleStatus.needsReconnect
-                      ? 'Reconnect Soon'
-                      : 'Connected'
-                    : 'Not Connected'}
-                </Badge>
-              </div>
-            </div>
-
-            <p className="text-sm text-muted-foreground">
-              Kept intentionally in GCP Testing mode for local self-hosted privacy — re-sign-in is
-              required once every 7 days for Gmail drafts, Calendar agenda/reminders, and Google Docs
-              export.
-            </p>
-
-            {googleStatus ? (
-              <div className="rounded-lg border border-border bg-secondary/40 p-3 text-xs space-y-1">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="inline-flex items-center gap-1 text-muted-foreground">
-                    <Clock className="h-3.5 w-3.5" />
-                    7-day window remaining
-                  </span>
-                  <span className="font-mono font-semibold text-foreground">
-                    {googleStatus.hoursRemaining !== null
-                      ? `${googleStatus.hoursRemaining.toFixed(1)}h`
-                      : 'Not connected'}
-                  </span>
-                </div>
-                {googleStatus.testingExpiresAt ? (
-                  <div className="text-muted-foreground">
-                    Expires: {new Date(googleStatus.testingExpiresAt).toLocaleString()}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
-            {googleStatus?.connected && googleStatus.missingScopes.length > 0 ? (
-              <p
-                role="status"
-                className="rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
-              >
-                Reconnect Google to grant new access:{' '}
-                {googleStatus.missingScopes.map((s) => s.split('/').pop()).join(', ')} (Gmail drafts
-                are saved for you to send; Career OS never sends mail).
-              </p>
-            ) : null}
-
-            <GoogleSyncPanel connected={Boolean(googleStatus?.connected)} />
-
-            <div className="flex flex-wrap gap-1.5">
-              {settings.googleScopes.map((scope) => (
-                <Badge key={scope} variant="neutral">
-                  <ShieldCheck className="h-3 w-3 text-emerald-500" />
-                  <span>{scope}</span>
-                </Badge>
-              ))}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="primary"
-                disabled={googleAuthMutation.isPending}
-                onClick={() =>
-                  googleAuthMutation.mutate(undefined, {
-                    onSuccess: (res) => {
-                      if (res.authUrl && typeof window !== 'undefined') {
-                        window.open(res.authUrl, '_blank', 'noopener,noreferrer');
-                      }
+              <SegmentedControl
+                ariaLabel="AI routing mode"
+                fullWidth
+                value={settings.aiRoutingMode}
+                onValueChange={(mode) =>
+                  updateMutation.mutate(
+                    { aiRoutingMode: mode },
+                    {
+                      onSuccess: () =>
+                        showToast({ tone: 'success', message: `AI routing set to ${mode}` }),
                     },
-                  })
+                  )
                 }
-              >
-                {googleAuthMutation.isPending
-                  ? 'Starting OAuth…'
-                  : googleStatus?.connected
-                    ? 'Reconnect Google OAuth'
-                    : 'Connect Google OAuth'}
-              </Button>
-              {googleAuthMutation.data ? (
-                <a
-                  href={googleAuthMutation.data.authUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-xs font-medium text-accent-brand underline"
-                >
-                  <span>Open OAuth Consent Window</span>
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              ) : null}
+                options={ROUTING_OPTIONS}
+              />
             </div>
-          </Card>
 
-          {/* Candidate Profile & Project Docs (Read-Only) */}
-          <Card className="p-4 space-y-4 lg:col-span-2" data-testid="profile-status-card">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-sm font-semibold">
-                <FileText className="h-4 w-4 text-accent-brand" />
-                <span>Candidate Profile & Project Docs (Read-Only)</span>
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5">
+            <div className="grid gap-4 px-4 py-4 sm:grid-cols-2">
+              <Meter
+                label="Claude 5h"
+                value={claude5hPct}
+                valueText={
+                  usage?.configured ? formatUsagePercent(usage.claude5h?.percentUsed) : 'Unconfigured'
+                }
+                tone={
+                  claude5hSeverity === 'critical'
+                    ? 'bad'
+                    : claude5hSeverity === 'warn'
+                      ? 'warn'
+                      : 'good'
+                }
+              />
+              <Meter
+                label="Claude 7d"
+                value={claude7dPct}
+                valueText={
+                  usage?.configured
+                    ? `${formatUsagePercent(usage.claude7d?.percentUsed)} · Gemini ${agStatus?.label ?? 'Ready'}`
+                    : '—'
+                }
+                tone="accent"
+              />
+            </div>
+          </InsetGroup>
+
+          {/* 3. Candidate Profile & Project Docs */}
+          <section className="space-y-2" data-testid="profile-status-card">
+            <div className="flex items-center justify-between px-1 text-xs font-medium text-[var(--wp-muted)]">
+              <span>Candidate profile &amp; project docs</span>
+              <div className="flex items-center gap-1.5">
                 <Badge variant={profileStatus?.loaded ? 'success' : 'warning'}>
                   {profileStatus?.loaded ? 'Profile Loaded' : 'Fallback Summary'}
                 </Badge>
-                <Badge
-                  variant={profileStatus?.driveProjectsFolderConfigured ? 'success' : 'neutral'}
-                >
+                <Badge variant={profileStatus?.driveProjectsFolderConfigured ? 'success' : 'neutral'}>
                   {profileStatus?.driveProjectsFolderConfigured
                     ? 'Drive Folder Configured'
                     : 'Drive Folder Unset'}
@@ -245,328 +186,433 @@ export function SettingsView() {
               </div>
             </div>
 
-            <p className="text-xs text-muted-foreground">
-              Mounted read-only from <code className="rounded bg-secondary px-1">{profileStatus?.dataDir ?? '/data'}</code>
-              . Edit files in your private data repo or add Google Docs to your Project Reports Drive
-              folder.
-            </p>
+            <PaperSheet className="divide-y divide-[var(--wp-hairline)] overflow-hidden">
+              <div className="space-y-3 px-4 py-4">
+                <p className="text-xs text-[var(--wp-muted)]">
+                  Mounted read-only from{' '}
+                  <code className="font-mono-meta rounded bg-[var(--wp-raised)] px-1.5 py-0.5">
+                    {profileStatus?.dataDir ?? '/data'}
+                  </code>
+                  .
+                </p>
 
-            {profileStatus?.targeting ? (
-              <div className="grid gap-2 rounded-lg border border-border bg-secondary/30 p-3 text-xs sm:grid-cols-3">
-                <div>
-                  <div className="text-muted-foreground">Target Roles</div>
-                  <div className="mt-0.5 font-medium">
-                    {profileStatus.targeting.primaryRoles.join(', ') || 'Unspecified'}
+                {profileStatus?.targeting ? (
+                  <div className="grid gap-3 rounded-[12px] bg-[var(--wp-raised)]/60 p-3 text-xs sm:grid-cols-3">
+                    <div>
+                      <div className="text-[var(--wp-muted)]">Target Roles</div>
+                      <div className="mt-0.5 font-medium text-[var(--wp-ink)]">
+                        {profileStatus.targeting.primaryRoles.join(', ') || 'Unspecified'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[var(--wp-muted)]">Scoring Weights</div>
+                      <div className="font-mono-meta mt-0.5 font-medium text-[var(--wp-ink)]">
+                        Role {profileStatus.targeting.weights.role_stack} · Lvl{' '}
+                        {profileStatus.targeting.weights.level_reachability} · Vibe{' '}
+                        {profileStatus.targeting.weights.vibe_culture} · Log{' '}
+                        {profileStatus.targeting.weights.logistics_comp}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[var(--wp-muted)]">Guardrails</div>
+                      <div className="mt-0.5 font-medium text-[var(--wp-ink)]">
+                        Max {profileStatus.targeting.maxYoe ?? '–'} YOE ·{' '}
+                        {profileStatus.targeting.dealbreakerCount} dealbreakers ·{' '}
+                        {profileStatus.targeting.boostCount} boosts
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground">Scoring Weights</div>
-                  <div className="mt-0.5 font-mono font-medium">
-                    Role {profileStatus.targeting.weights.role_stack} · Lvl{' '}
-                    {profileStatus.targeting.weights.level_reachability} · Vibe{' '}
-                    {profileStatus.targeting.weights.vibe_culture} · Log{' '}
-                    {profileStatus.targeting.weights.logistics_comp}
+                ) : null}
+
+                {profileStatus && profileStatus.files.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {profileStatus.files.map((f) => (
+                      <Badge
+                        key={f.path}
+                        variant={
+                          f.status === 'verified'
+                            ? 'success'
+                            : f.status === 'draft'
+                              ? 'warning'
+                              : 'neutral'
+                        }
+                      >
+                        <span>{f.path}</span>
+                        <span className="opacity-75">({f.status})</span>
+                      </Badge>
+                    ))}
                   </div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground">Guardrails</div>
-                  <div className="mt-0.5 font-medium">
-                    Max {profileStatus.targeting.maxYoe ?? '–'} YOE ·{' '}
-                    {profileStatus.targeting.dealbreakerCount} dealbreakers ·{' '}
-                    {profileStatus.targeting.boostCount} boosts
-                  </div>
-                </div>
+                ) : null}
               </div>
-            ) : null}
 
-            {profileStatus && profileStatus.files.length > 0 ? (
-              <div className="space-y-1.5">
-                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Local Profile Files
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {profileStatus.files.map((f) => (
-                    <Badge
-                      key={f.path}
-                      variant={
-                        f.status === 'verified'
-                          ? 'success'
-                          : f.status === 'draft'
-                            ? 'warning'
-                            : 'neutral'
-                      }
-                    >
-                      <span>{f.path}</span>
-                      <span className="opacity-75">({f.status})</span>
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Synced Google Drive Project Docs ({profileStatus?.projectDocs.length ?? 0})
-                </div>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={
-                    !googleStatus?.connected ||
-                    !profileStatus?.driveProjectsFolderConfigured ||
-                    syncDocsMutation.isPending
-                  }
-                  onClick={() => syncDocsMutation.mutate()}
-                >
-                  <FolderSync
-                    className={
-                      syncDocsMutation.isPending ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'
+              <div className="space-y-3 px-4 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-[var(--wp-secondary)]">
+                    Synced Google Drive Project Docs ({profileStatus?.projectDocs.length ?? 0})
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={
+                      !googleStatus?.connected ||
+                      !profileStatus?.driveProjectsFolderConfigured ||
+                      syncDocsMutation.isPending
                     }
-                  />
-                  <span>{syncDocsMutation.isPending ? 'Syncing Docs…' : 'Sync Project Docs'}</span>
-                </Button>
+                    onClick={() =>
+                      syncDocsMutation.mutate(undefined, {
+                        onSuccess: (res) =>
+                          showToast({
+                            tone: 'success',
+                            message: `Synced ${res.docsSynced} · Digested ${res.docsDigested}`,
+                          }),
+                      })
+                    }
+                  >
+                    <FolderSync
+                      className={
+                        syncDocsMutation.isPending ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'
+                      }
+                    />
+                    <span>{syncDocsMutation.isPending ? 'Syncing Docs…' : 'Sync Project Docs'}</span>
+                  </Button>
+                </div>
+
+                {profileStatus && profileStatus.projectDocs.length > 0 ? (
+                  <ul className="space-y-1.5 text-xs">
+                    {profileStatus.projectDocs.map((doc) => (
+                      <li
+                        key={doc.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-[var(--wp-hairline)] px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          {doc.driveUrl ? (
+                            <a
+                              href={doc.driveUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 font-medium hover:text-[var(--wp-accent)]"
+                            >
+                              <span className="truncate">{doc.title}</span>
+                              <ExternalLink className="h-3 w-3 shrink-0" />
+                            </a>
+                          ) : (
+                            <span className="font-medium">{doc.title}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={doc.digested ? 'success' : 'neutral'}>
+                            {doc.digested ? 'Digested' : 'Raw cached'}
+                          </Badge>
+                          {doc.modifiedTime ? (
+                            <span className="font-mono-meta text-[var(--wp-muted)]">
+                              {new Date(doc.modifiedTime).toLocaleDateString()}
+                            </span>
+                          ) : null}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-[var(--wp-muted)]">
+                    No Google Docs synced yet. Add Docs to your Project Reports folder and click Sync
+                    Project Docs.
+                  </p>
+                )}
+
+                {syncDocsMutation.data ? (
+                  <p className="text-xs text-[var(--wp-good)]">
+                    Synced {syncDocsMutation.data.docsSynced} · Digested{' '}
+                    {syncDocsMutation.data.docsDigested} · Unchanged{' '}
+                    {syncDocsMutation.data.skippedUnchanged}
+                  </p>
+                ) : null}
+                {syncDocsMutation.isError ? (
+                  <p role="alert" className="text-xs text-[var(--wp-bad)]">
+                    {describeGoogleError(syncDocsMutation.error)}
+                  </p>
+                ) : null}
               </div>
 
-              {profileStatus && profileStatus.projectDocs.length > 0 ? (
-                <ul className="space-y-1.5 text-xs">
-                  {profileStatus.projectDocs.map((doc) => (
-                    <li
-                      key={doc.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3 py-2"
-                    >
-                      <div className="min-w-0">
-                        {doc.driveUrl ? (
-                          <a
-                            href={doc.driveUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 font-medium hover:text-accent-brand"
-                          >
-                            <span className="truncate">{doc.title}</span>
-                            <ExternalLink className="h-3 w-3 shrink-0" />
-                          </a>
-                        ) : (
-                          <span className="font-medium">{doc.title}</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={doc.digested ? 'success' : 'neutral'}>
-                          {doc.digested ? 'Digested' : 'Raw cached'}
-                        </Badge>
-                        {doc.modifiedTime ? (
-                          <span className="text-muted-foreground">
-                            {new Date(doc.modifiedTime).toLocaleDateString()}
-                          </span>
-                        ) : null}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  No Google Docs synced yet. Add Docs to your Project Reports folder and click Sync
-                  Project Docs.
-                </p>
-              )}
+              <div className="space-y-2 px-4 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <label className="inline-flex items-center gap-2.5 text-[var(--wp-secondary)]">
+                    <Switch
+                      checked={includeSkippedRescore}
+                      onCheckedChange={setIncludeSkippedRescore}
+                      ariaLabel="Include previously skipped jobs when rescoring"
+                    />
+                    <span>Include previously skipped jobs when rescoring</span>
+                  </label>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={rescoreMutation.isPending}
+                    onClick={() =>
+                      rescoreMutation.mutate(
+                        { includeSkipped: includeSkippedRescore, scoreLimit: 10 },
+                        {
+                          onSuccess: (res) =>
+                            showToast({
+                              tone: 'success',
+                              message: `Reset ${res.resetCount} · Scored ${res.scored}`,
+                            }),
+                        },
+                      )
+                    }
+                  >
+                    <RefreshCw
+                      className={
+                        rescoreMutation.isPending ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'
+                      }
+                    />
+                    <span>
+                      {rescoreMutation.isPending ? 'Rescoring…' : 'Rescore Pending Jobs'}
+                    </span>
+                  </Button>
+                </div>
+                {rescoreMutation.data ? (
+                  <p className="text-xs text-[var(--wp-good)]">
+                    Reset {rescoreMutation.data.resetCount} unapplied jobs · Scored{' '}
+                    {rescoreMutation.data.scored} immediately (hourly scheduler finishes any
+                    remainder).
+                  </p>
+                ) : null}
+                {rescoreMutation.isError ? (
+                  <p role="alert" className="text-xs text-[var(--wp-bad)]">
+                    {describeAiError(rescoreMutation.error)}
+                  </p>
+                ) : null}
+              </div>
+            </PaperSheet>
+          </section>
 
-              {syncDocsMutation.data ? (
-                <p className="text-xs text-emerald-700 dark:text-emerald-400">
-                  Synced {syncDocsMutation.data.docsSynced} · Digested{' '}
-                  {syncDocsMutation.data.docsDigested} · Unchanged{' '}
-                  {syncDocsMutation.data.skippedUnchanged}
-                </p>
-              ) : null}
-              {syncDocsMutation.isError ? (
-                <p role="alert" className="text-xs text-destructive">
-                  {describeGoogleError(syncDocsMutation.error)}
-                </p>
-              ) : null}
-            </div>
-
-            {profileStatus && profileStatus.warnings.length > 0 ? (
-              <ul className="list-disc space-y-0.5 pl-4 text-xs text-amber-700 dark:text-amber-300">
-                {profileStatus.warnings.map((w) => (
-                  <li key={w}>{w}</li>
-                ))}
-              </ul>
-            ) : null}
-
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3 text-xs">
-              <label className="inline-flex items-center gap-2 text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={includeSkippedRescore}
-                  onChange={(e) => setIncludeSkippedRescore(e.target.checked)}
-                />
-                <span>Include previously skipped jobs when rescoring</span>
-              </label>
-              <Button
-                size="sm"
-                variant="primary"
-                disabled={rescoreMutation.isPending}
-                onClick={() =>
-                  rescoreMutation.mutate({
-                    includeSkipped: includeSkippedRescore,
-                    scoreLimit: 10,
-                  })
-                }
+          {/* 4. Job Boards Link */}
+          <InsetGroup label="Job boards">
+            {onOpenSources ? (
+              <button
+                type="button"
+                onClick={onOpenSources}
+                className="tap-control flex w-full items-center justify-between px-4 py-3.5 text-left hover:bg-[var(--wp-raised)]/45"
               >
-                <RefreshCw
-                  className={rescoreMutation.isPending ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'}
-                />
-                <span>
-                  {rescoreMutation.isPending ? 'Rescoring…' : 'Rescore Pending Jobs'}
-                </span>
-              </Button>
-            </div>
-            {rescoreMutation.data ? (
-              <p className="text-xs text-emerald-700 dark:text-emerald-400">
-                Reset {rescoreMutation.data.resetCount} unapplied jobs · Scored{' '}
-                {rescoreMutation.data.scored} immediately (hourly scheduler finishes any remainder).
-              </p>
-            ) : null}
-            {rescoreMutation.isError ? (
-              <p role="alert" className="text-xs text-destructive">
-                {describeAiError(rescoreMutation.error)}
-              </p>
-            ) : null}
-          </Card>
+                <div>
+                  <div className="text-sm font-medium text-[var(--wp-ink)]">
+                    Manage ATS &amp; Reddit boards
+                  </div>
+                  <div className="text-xs text-[var(--wp-muted)]">
+                    {sourcesQuery.data?.sources.length ?? 0} configured · profile-filtered
+                  </div>
+                </div>
+                <ChevronRight className="h-4 w-4 text-[var(--wp-muted)]" />
+              </button>
+            ) : (
+              <a
+                href="/sources"
+                className="tap-control flex w-full items-center justify-between px-4 py-3.5 text-left hover:bg-[var(--wp-raised)]/45"
+              >
+                <div>
+                  <div className="text-sm font-medium text-[var(--wp-ink)]">
+                    Manage ATS &amp; Reddit boards
+                  </div>
+                  <div className="text-xs text-[var(--wp-muted)]">
+                    {sourcesQuery.data?.sources.length ?? 0} configured · profile-filtered
+                  </div>
+                </div>
+                <ChevronRight className="h-4 w-4 text-[var(--wp-muted)]" />
+              </a>
+            )}
+          </InsetGroup>
 
-          {/* LA Commute & Google Maps/Places */}
-          <Card className="p-4 space-y-4 lg:col-span-2" data-testid="la-commute-card">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-sm font-semibold">
-                <MapPin className="h-4 w-4 text-accent-brand" />
-                <span>LA Commute & Maps Distance (Maps + Places API)</span>
+          {/* 5. Google Workspace OAuth */}
+          <InsetGroup
+            label="Google Workspace OAuth"
+            trailing={
+              googleStatus?.connected
+                ? googleStatus.needsReconnect
+                  ? 'Reconnect soon'
+                  : 'Connected'
+                : 'Not connected'
+            }
+          >
+            <div className="space-y-3 px-4 py-4">
+              <p className="text-xs text-[var(--wp-muted)]">
+                Kept in GCP Testing mode for privacy — weekly sign-in powers Gmail drafts, Calendar
+                reminders, and Google Docs export.
+              </p>
+
+              {googleStatus ? (
+                <div className="flex items-center justify-between rounded-[10px] bg-[var(--wp-raised)]/60 px-3 py-2 text-xs">
+                  <span className="inline-flex items-center gap-1.5 text-[var(--wp-secondary)]">
+                    <Clock className="h-3.5 w-3.5" />
+                    <span>7-day window remaining</span>
+                  </span>
+                  <span className="font-mono-meta font-medium text-[var(--wp-ink)]">
+                    {googleStatus.hoursRemaining !== null
+                      ? `${googleStatus.hoursRemaining.toFixed(1)}h`
+                      : 'Not connected'}
+                  </span>
+                </div>
+              ) : null}
+
+              {googleStatus?.connected && googleStatus.missingScopes.length > 0 ? (
+                <p
+                  role="status"
+                  className="rounded-[10px] bg-[var(--wp-warn-soft)] px-3 py-2 text-xs text-[var(--wp-warn)]"
+                >
+                  Reconnect Google to grant new access:{' '}
+                  {googleStatus.missingScopes.map((s) => s.split('/').pop()).join(', ')}.
+                </p>
+              ) : null}
+
+              <GoogleSyncPanel connected={Boolean(googleStatus?.connected)} />
+
+              <div className="flex flex-wrap gap-1.5">
+                {settings.googleScopes.map((scope) => (
+                  <Badge key={scope} variant="neutral">
+                    <ShieldCheck className="h-3 w-3 text-[var(--wp-good)]" />
+                    <span>{scope}</span>
+                  </Badge>
+                ))}
               </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={googleAuthMutation.isPending}
+                  onClick={() =>
+                    googleAuthMutation.mutate(undefined, {
+                      onSuccess: (res) => {
+                        if (res.authUrl && typeof window !== 'undefined') {
+                          window.open(res.authUrl, '_blank', 'noopener,noreferrer');
+                        }
+                      },
+                    })
+                  }
+                >
+                  {googleAuthMutation.isPending
+                    ? 'Starting OAuth…'
+                    : googleStatus?.connected
+                      ? 'Reconnect Google OAuth'
+                      : 'Connect Google OAuth'}
+                </Button>
+                {googleAuthMutation.data ? (
+                  <a
+                    href={googleAuthMutation.data.authUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-[var(--wp-accent)] underline"
+                  >
+                    <span>Open OAuth Consent Window</span>
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                ) : null}
+              </div>
+            </div>
+          </InsetGroup>
+
+          {/* 6. LA Commute & Maps */}
+          <section className="space-y-2" data-testid="la-commute-card">
+            <div className="flex items-center justify-between px-1 text-xs font-medium text-[var(--wp-muted)]">
+              <span>LA commute &amp; Maps</span>
               <Badge variant={settings.mapsConfigured ? 'success' : 'neutral'}>
                 {settings.mapsConfigured ? 'Maps + Places Ready' : 'Configure API Key'}
               </Badge>
             </div>
-
-            <p className="text-sm text-muted-foreground">
-              Estimates travel time and mileage from your Los Angeles neighborhood (neighborhood/city
-              only — never store a street address) to hybrid or on-site roles. Remote roles bypass
-              lookup automatically.
-            </p>
-
-            <div className="grid gap-3 md:grid-cols-3">
-              <label className="space-y-1 text-xs">
-                <span className="font-medium text-muted-foreground">Home Area (Neighborhood)</span>
-                <input
-                  type="text"
-                  value={homeArea}
-                  onChange={(e) => setHomeArea(e.target.value)}
-                  placeholder="West Los Angeles, CA"
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                />
-              </label>
-
-              <div className="space-y-1 text-xs">
-                <span className="font-medium text-muted-foreground">Default Travel Mode</span>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setTravelMode('drive')}
-                    className={cn(
-                      'inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium',
-                      travelMode === 'drive'
-                        ? 'border-accent-brand bg-accent-brand/10 text-foreground'
-                        : 'border-border text-muted-foreground hover:bg-accent/60',
-                    )}
-                  >
-                    <Car className="h-4 w-4" />
-                    <span>Drive</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTravelMode('transit')}
-                    className={cn(
-                      'inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium',
-                      travelMode === 'transit'
-                        ? 'border-accent-brand bg-accent-brand/10 text-foreground'
-                        : 'border-border text-muted-foreground hover:bg-accent/60',
-                    )}
-                  >
-                    <Train className="h-4 w-4" />
-                    <span>Transit</span>
-                  </button>
-                </div>
-              </div>
-
-              <label className="space-y-1 text-xs">
-                <span className="font-medium text-muted-foreground">Preview Destination</span>
-                <div className="flex gap-2">
-                  <input
+            <PaperSheet className="space-y-3 p-4">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <label className="space-y-1 text-xs">
+                  <span className="font-medium text-[var(--wp-secondary)]">Home area</span>
+                  <Input
                     type="text"
-                    value={previewDestination}
-                    onChange={(e) => setPreviewDestination(e.target.value)}
-                    placeholder="Santa Monica, CA"
-                    className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                    value={homeArea}
+                    onChange={(e) => setHomeArea(e.target.value)}
+                    placeholder="West Los Angeles, CA"
                   />
-                  <Button
-                    variant="secondary"
-                    disabled={commutePreviewMutation.isPending || !previewDestination.trim()}
-                    onClick={() => {
-                      updateMutation.mutate({
-                        homeLocationArea: homeArea,
-                        defaultTravelMode: travelMode,
-                      });
-                      commutePreviewMutation.mutate({
-                        originArea: homeArea,
-                        destination: previewDestination,
-                        travelMode,
-                      });
-                    }}
-                  >
-                    {commutePreviewMutation.isPending ? 'Checking…' : 'Preview'}
-                  </Button>
+                </label>
+
+                <div className="space-y-1 text-xs">
+                  <span className="block font-medium text-[var(--wp-secondary)]">Travel mode</span>
+                  <SegmentedControl
+                    ariaLabel="Default travel mode"
+                    fullWidth
+                    value={travelMode}
+                    onValueChange={setTravelMode}
+                    options={[
+                      { value: 'drive', label: 'Drive' },
+                      { value: 'transit', label: 'Transit' },
+                    ]}
+                  />
                 </div>
-              </label>
-            </div>
 
-            {commutePreviewMutation.data ? (
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-secondary/40 p-3 text-xs">
-                <CommuteBadgeDisplay commute={commutePreviewMutation.data} />
-                {commutePreviewMutation.data.resolvedAddress ? (
-                  <span className="text-muted-foreground">
-                    Resolved: {commutePreviewMutation.data.resolvedAddress}
-                  </span>
-                ) : null}
+                <label className="space-y-1 text-xs">
+                  <span className="font-medium text-[var(--wp-secondary)]">Preview</span>
+                  <div className="flex gap-2">
+                    <Input
+                      type="text"
+                      value={previewDestination}
+                      onChange={(e) => setPreviewDestination(e.target.value)}
+                      placeholder="Santa Monica, CA"
+                    />
+                    <Button
+                      variant="secondary"
+                      disabled={commutePreviewMutation.isPending || !previewDestination.trim()}
+                      onClick={() => {
+                        updateMutation.mutate({
+                          homeLocationArea: homeArea,
+                          defaultTravelMode: travelMode,
+                        });
+                        commutePreviewMutation.mutate({
+                          originArea: homeArea,
+                          destination: previewDestination,
+                          travelMode,
+                        });
+                      }}
+                    >
+                      {commutePreviewMutation.isPending ? '…' : 'Preview'}
+                    </Button>
+                  </div>
+                </label>
               </div>
-            ) : null}
-          </Card>
 
-          {/* Linear JOB Ops Widget */}
-          <Card className="p-4 space-y-3 lg:col-span-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm font-semibold">
-                <Kanban className="h-4 w-4 text-accent-brand" />
-                <span>Linear {settings.linearTeamKey} Ops</span>
-              </div>
-              <Badge variant={settings.linearConnected ? 'success' : 'neutral'}>
-                {settings.linearConnected ? `Team ${settings.linearTeamKey} Synced` : 'Offline'}
-              </Badge>
-            </div>
-
-            <div className="grid gap-2 sm:grid-cols-3">
-              {settings.linearIssues.map((issue) => (
-                <div key={issue.key} className="rounded-lg border border-border p-3 text-sm">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-xs font-semibold text-accent-brand">
-                      {issue.key}
+              {commutePreviewMutation.data ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] bg-[var(--wp-raised)]/60 p-3 text-xs">
+                  <CommuteBadgeDisplay commute={commutePreviewMutation.data} />
+                  {commutePreviewMutation.data.resolvedAddress ? (
+                    <span className="text-[var(--wp-muted)]">
+                      Resolved: {commutePreviewMutation.data.resolvedAddress}
                     </span>
-                    <Badge variant="neutral">{issue.state}</Badge>
-                  </div>
-                  <div className="mt-1.5 font-medium">{issue.title}</div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    Priority: {issue.priority}
-                  </div>
+                  ) : null}
                 </div>
-              ))}
-            </div>
-          </Card>
+              ) : null}
+            </PaperSheet>
+          </section>
+
+          {/* 7. Linear Integration */}
+          <InsetGroup
+            label={`Linear ${settings.linearTeamKey}`}
+            trailing={settings.linearConnected ? 'Connected' : 'Offline'}
+          >
+            {settings.linearIssues.length === 0 ? (
+              <div className="px-4 py-3 text-xs text-[var(--wp-muted)]">
+                No synced Linear issues yet.
+              </div>
+            ) : (
+              settings.linearIssues.map((issue) => (
+                <div
+                  key={issue.key}
+                  className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-[var(--wp-ink)]">{issue.title}</div>
+                    <div className="font-mono-meta text-xs text-[var(--wp-muted)]">
+                      {issue.key} · Priority {issue.priority}
+                    </div>
+                  </div>
+                  <Badge variant="neutral">{issue.state}</Badge>
+                </div>
+              ))
+            )}
+          </InsetGroup>
         </div>
       )}
     </div>

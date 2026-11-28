@@ -20,7 +20,7 @@ flowchart LR
 
 - **Single-user zero-trust ingress:** Binds exclusively to `127.0.0.1:8080` and authenticates requests via Tailscale identity headers (`ALLOWED_TAILSCALE_USER`).
 - **Rust + SQLite WAL backend:** Fast, low-footprint Axum service with encrypted OAuth token storage (`TOKEN_ENCRYPTION_KEY`) and structured pipeline/application state.
-- **React 19 PWA:** Mobile-friendly interface served statically by Axum (`STATIC_DIR=/app/static`).
+- **React 19 PWA:** Mobile-first Warm Paper Calm Native interface (`@base-ui/react` + `@tanstack/react-table`) served statically by Axum (`STATIC_DIR=/app/static`), featuring Focus Triage Paper Sheet with 4-Part Fit Horizon & drag/Undo, `⌘K` Command Palette + Quick Capture, grouped Tracker, and Light/Dark/System themes.
 - **Isolated scanner sidecar:** Internal-only Node.js container (`scanner:8081`) for zero-LLM-cost portal and ATS scraping.
 - **Host AI bridge:** Small Rust `launchd` service that runs your local `claude` / `agy` CLI with tools disabled, reachable from the app at `host.docker.internal:8787`.
 - **Source-of-truth discipline:** Fact-grounded resume and outreach generation with strict separation between system code and private candidate data.
