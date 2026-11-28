@@ -24,9 +24,10 @@
     <!-- Same value as AI_BRIDGE_TOKEN in the app's .env. -->
     <key>AI_BRIDGE_TOKEN</key>
     <string>&lt;generate: openssl rand -hex 32&gt;</string>
-    <!-- Default primary CLI (claude | agy); requests may override per tier. -->
-    <key>AI_BRIDGE_PRIMARY</key>
-    <string>claude</string>
+    <!-- Routing mode (auto | prefer_claude | prefer_agy). auto balances equally across claude & agy. -->
+    <key>AI_BRIDGE_ROUTING_MODE</key>
+    <string>auto</string>
+    <!-- Optional model overrides: AI_BRIDGE_{CLAUDE,AGY}_{FAST,BALANCED,DEEP}_MODEL (legacy HYDROGEN/NEON/CARBON still accepted). -->
     <key>AI_BRIDGE_MAX_CONCURRENCY</key>
     <string>2</string>
     <!-- Written by the Claude Code statusLine command (see README). -->
