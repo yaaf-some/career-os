@@ -59,10 +59,10 @@ export interface AiUsageResponse {
 }
 
 export interface ScoreBreakdown {
-  skills: number;
-  level: number;
-  domain: number;
-  logistics: number;
+  roleStack: number;
+  levelReachability: number;
+  vibeCulture: number;
+  logisticsComp: number;
 }
 
 export interface JobSummary {
@@ -78,8 +78,10 @@ export interface JobSummary {
   stage: PipelineStage;
   /** 0–100; null until the hydrogen tier has scored the job. */
   hydrogenScore: number | null;
-  /** Null when the source gives a single score only (the live API). */
+  /** Null for legacy scored rows without a 4-dimension breakdown. */
   scoreBreakdown: ScoreBreakdown | null;
+  /** Set when a hard dealbreaker triggered during Hydrogen scoring. */
+  dealbreakerReason?: string | null;
   hydrogenSummary: string;
   hasNeonEval: boolean;
   gmailStatus: GmailThreadStatus;
@@ -354,4 +356,66 @@ export interface CommutePreviewRequest {
   originArea?: string;
   destination: string;
   travelMode?: 'drive' | 'transit';
+}
+
+export interface ScoringWeights {
+  role_stack: number;
+  level_reachability: number;
+  vibe_culture: number;
+  logistics_comp: number;
+}
+
+export interface ProfileFileStatus {
+  name: string;
+  path: string;
+  status: string;
+  updatedAt: string | null;
+  useIn: string[];
+}
+
+export interface ProfileTargetingSummary {
+  primaryRoles: string[];
+  secondaryRoles: string[];
+  levelLabel: string | null;
+  maxYoe: number | null;
+  weights: ScoringWeights;
+  dealbreakerCount: number;
+  boostCount: number;
+}
+
+export interface ProjectDocSummary {
+  id: string;
+  title: string;
+  driveUrl: string | null;
+  modifiedTime: string | null;
+  digested: boolean;
+  syncedAt: string;
+}
+
+export interface ProfileStatusResponse {
+  loaded: boolean;
+  dataDir: string;
+  driveProjectsFolderConfigured: boolean;
+  files: ProfileFileStatus[];
+  targeting: ProfileTargetingSummary | null;
+  projectDocs: ProjectDocSummary[];
+  warnings: string[];
+}
+
+export interface SyncProjectDocsResponse {
+  docsSynced: number;
+  docsDigested: number;
+  skippedUnchanged: number;
+}
+
+export interface RescoreRequest {
+  includeSkipped?: boolean;
+  scoreLimit?: number;
+}
+
+export interface RescoreResponse {
+  resetCount: number;
+  scored: number;
+  provider: string | null;
+  model: string | null;
 }

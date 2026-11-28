@@ -88,6 +88,9 @@ export function TriageView({
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant="brand">hydrogen {formatHydrogenScore(job.hydrogenScore)}</Badge>
                     <Badge variant={STATUS_BADGE[job.triageStatus]}>{job.triageStatus}</Badge>
+                    {job.dealbreakerReason ? (
+                      <Badge variant="danger">Dealbreaker: {job.dealbreakerReason}</Badge>
+                    ) : null}
                     <span className="text-xs text-muted-foreground">{job.source}</span>
                   </div>
 
@@ -115,21 +118,23 @@ export function TriageView({
                     <div className="grid grid-cols-2 gap-2 pt-1 sm:grid-cols-4">
                       {(
                         [
-                          ['Skills', job.scoreBreakdown.skills],
-                          ['Level', job.scoreBreakdown.level],
-                          ['Domain', job.scoreBreakdown.domain],
-                          ['Logistics', job.scoreBreakdown.logistics],
+                          ['Role & Stack', job.scoreBreakdown.roleStack, 35],
+                          ['Level', job.scoreBreakdown.levelReachability, 25],
+                          ['Vibe & Culture', job.scoreBreakdown.vibeCulture, 25],
+                          ['Logistics', job.scoreBreakdown.logisticsComp, 15],
                         ] as const
-                      ).map(([label, score]) => (
+                      ).map(([label, score, max]) => (
                         <div key={label} className="rounded-lg bg-secondary/60 px-2.5 py-1.5">
                           <div className="flex items-center justify-between text-[11px] text-muted-foreground">
                             <span>{label}</span>
-                            <span className="font-semibold text-foreground tabular-nums">{score}</span>
+                            <span className="font-semibold text-foreground tabular-nums">
+                              {score}/{max}
+                            </span>
                           </div>
                           <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-background">
                             <div
                               className="h-full rounded-full bg-accent-brand"
-                              style={{ width: `${Math.min(100, Math.max(0, score))}%` }}
+                              style={{ width: `${Math.min(100, Math.max(0, (score / max) * 100))}%` }}
                             />
                           </div>
                         </div>

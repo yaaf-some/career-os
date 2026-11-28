@@ -6,6 +6,7 @@ import type {
   CreateSourceRequest,
   GmailDraft,
   QuickAddJobRequest,
+  RescoreRequest,
   TriageActionRequest,
   UpdateSettingsRequest,
   UpdateTrackerRequest,
@@ -23,6 +24,7 @@ export const queryKeys = {
   sources: ['sources'] as const,
   settings: ['settings'] as const,
   syncRuns: ['sync-runs'] as const,
+  profileStatus: ['profile', 'status'] as const,
 };
 
 export function useHealthQuery() {
@@ -272,5 +274,33 @@ export function useJobCommuteQuery(jobId: string | null, enabled = true) {
 export function useCommutePreviewMutation() {
   return useMutation({
     mutationFn: (payload: CommutePreviewRequest) => careerApi.previewCommute(payload),
+  });
+}
+
+export function useProfileStatusQuery() {
+  return useQuery({
+    queryKey: queryKeys.profileStatus,
+    queryFn: () => careerApi.getProfileStatus(),
+  });
+}
+
+export function useSyncProjectDocsMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => careerApi.syncProjectDocs(),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.profileStatus });
+    },
+  });
+}
+
+export function useRescoreJobsMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: RescoreRequest) => careerApi.rescoreJobs(payload),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.jobs });
+      void qc.invalidateQueries({ queryKey: queryKeys.today });
+    },
   });
 }

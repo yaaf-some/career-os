@@ -14,6 +14,7 @@ import type {
   JobsListResponse,
   JobSummary,
   PipelineStage,
+  ScoreBreakdown,
   TodayResponse,
   TrackerEntry,
   TrackerResponse,
@@ -179,13 +180,48 @@ function parseJson(raw: string | null): unknown {
   }
 }
 
-function hydrogenRationale(job: ApiJobRecord): string {
+function hydrogenTier1Fields(job: ApiJobRecord): {
+  rationale: string;
+  breakdown: ScoreBreakdown | null;
+  dealbreakerReason: string | null;
+} {
   const parsed = parseJson(job.tier1_json);
-  if (parsed && typeof parsed === 'object' && 'rationale' in parsed) {
-    const r = (parsed as { rationale: unknown }).rationale;
-    if (typeof r === 'string') return r;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { rationale: '', breakdown: null, dealbreakerReason: null };
   }
-  return '';
+  const obj = parsed as Record<string, unknown>;
+  const rationale = typeof obj.rationale === 'string' ? obj.rationale : '';
+
+  let breakdown: ScoreBreakdown | null = null;
+  if (obj.breakdown && typeof obj.breakdown === 'object' && !Array.isArray(obj.breakdown)) {
+    const b = obj.breakdown as Record<string, unknown>;
+    if (
+      typeof b.role_stack === 'number' &&
+      typeof b.level_reachability === 'number' &&
+      typeof b.vibe_culture === 'number' &&
+      typeof b.logistics_comp === 'number'
+    ) {
+      breakdown = {
+        roleStack: Math.round(b.role_stack),
+        levelReachability: Math.round(b.level_reachability),
+        vibeCulture: Math.round(b.vibe_culture),
+        logisticsComp: Math.round(b.logistics_comp),
+      };
+    }
+  }
+
+  let dealbreakerReason: string | null = null;
+  if (obj.dealbreaker && typeof obj.dealbreaker === 'object' && !Array.isArray(obj.dealbreaker)) {
+    const db = obj.dealbreaker as Record<string, unknown>;
+    if (db.triggered === true) {
+      dealbreakerReason =
+        typeof db.reason === 'string' && db.reason.trim()
+          ? db.reason.trim()
+          : 'Dealbreaker triggered';
+    }
+  }
+
+  return { rationale, breakdown, dealbreakerReason };
 }
 
 export function jobSummaryFromApi(
@@ -193,6 +229,7 @@ export function jobSummaryFromApi(
   extra?: { application?: ApiApplicationRecord | null; hasNeonEval?: boolean },
 ): JobSummary {
   const app = extra?.application ?? null;
+  const tier1 = hydrogenTier1Fields(job);
   return {
     id: job.id,
     title: job.title,
@@ -205,9 +242,9 @@ export function jobSummaryFromApi(
     triageStatus: TRIAGE_STATUS[job.triage_status] ?? 'pending',
     stage: app ? stageFromApi(app.stage) : 'saved',
     hydrogenScore: job.tier1_score,
-    // The hydrogen tier returns one score, not a per-dimension breakdown.
-    scoreBreakdown: null,
-    hydrogenSummary: hydrogenRationale(job),
+    scoreBreakdown: tier1.breakdown,
+    dealbreakerReason: tier1.dealbreakerReason,
+    hydrogenSummary: tier1.rationale,
     hasNeonEval: extra?.hasNeonEval ?? false,
     gmailStatus: app?.gmail_thread_id ? 'awaiting_reply' : 'none',
     nextFollowUpAt: app?.next_followup_at ?? null,

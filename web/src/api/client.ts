@@ -31,10 +31,14 @@ import type {
   JobSource,
   JobsListResponse,
   JobSummary,
+  ProfileStatusResponse,
   QuickAddJobRequest,
+  RescoreRequest,
+  RescoreResponse,
   ScanSourcesResponse,
   SettingsState,
   SourcesResponse,
+  SyncProjectDocsResponse,
   SyncRun,
   TailorResponse,
   TodayResponse,
@@ -80,6 +84,8 @@ export function describeGoogleError(err: unknown): string {
         return 'Reconnect Google in Settings to allow Gmail drafts and Calendar events.';
       case 'SYNC_IN_PROGRESS':
         return 'A sync is already running.';
+      case 'DRIVE_FOLDER_NOT_CONFIGURED':
+        return 'Set GOOGLE_DRIVE_PROJECTS_FOLDER_ID in .env to sync Project Reports.';
       default:
         return err.message;
     }
@@ -541,6 +547,33 @@ export const careerApi = {
       authUrl: String(raw.url ?? raw.authUrl ?? ''),
       state: String(raw.state ?? ''),
     };
+  },
+
+  getProfileStatus(): Promise<ProfileStatusResponse> {
+    return requestWithFallback(
+      '/api/profile/status',
+      { method: 'GET' },
+      () => demoStore.getProfileStatus(),
+      LIVE_ONLY,
+    );
+  },
+
+  syncProjectDocs(): Promise<SyncProjectDocsResponse> {
+    return requestWithFallback(
+      '/api/profile/sync-docs',
+      { method: 'POST' },
+      () => demoStore.syncProjectDocs(),
+      LIVE_ONLY,
+    );
+  },
+
+  rescoreJobs(payload: RescoreRequest = {}): Promise<RescoreResponse> {
+    return requestWithFallback(
+      '/api/ai/rescore',
+      { method: 'POST', body: JSON.stringify(payload) },
+      () => demoStore.rescoreJobs(payload),
+      LIVE_ONLY,
+    );
   },
 
   async getJobCommute(id: string): Promise<CommuteInfo> {
