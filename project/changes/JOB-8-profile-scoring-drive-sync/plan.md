@@ -58,19 +58,19 @@ Branch per PR off `main`. Merge `origin/main` into a branch to catch up; never r
 
 ## PR C — Web UI Breakdown, Read-Only Profile Panel & Docs (`feat/job-8c-web-profile-breakdown`)
 
-- [ ] **3.1 Web types, mappers & fixtures** — `web/src/api/types.ts`, `web/src/api/jobs.ts`, `web/src/api/queries.ts`, `web/src/__tests__/fixtures/jobs.json`, `web/src/api/demoData.ts`:
+- [x] **3.1 Web types, mappers & fixtures** — `web/src/api/types.ts`, `web/src/api/jobs.ts`, `web/src/api/queries.ts`, `web/src/api/client.ts`, `web/src/api/demoData.ts`:
   - Update `ScoreBreakdown` to `roleStack`, `levelReachability`, `vibeCulture`, `logisticsComp` + optional `dealbreakerReason`.
   - Parse `tier1_json.breakdown` and `dealbreaker` in `jobSummaryFromApi` (keeping `null` when absent for old scored rows).
   - Add `ProfileStatusResponse` and React Query hooks (`useProfileStatusQuery`, `useSyncProjectDocsMutation`, `useRescoreJobsMutation`).
   - Verify: `cd web && npm run typecheck && npm test`
 
-- [ ] **3.2 Breakdown & Profile UI** — `web/src/components/RoleDetailDrawer.tsx`, `web/src/routes/TriageView.tsx`, `web/src/routes/SettingsView.tsx`:
+- [x] **3.2 Breakdown & Profile UI** — `web/src/components/RoleDetailDrawer.tsx`, `web/src/routes/TriageView.tsx`, `web/src/routes/SettingsView.tsx`:
   - Render 4-dimension breakdown bars and dealbreaker warning badge in `TriageView.tsx` and `RoleDetailDrawer.tsx`.
   - Add read-only **Candidate Profile & Project Docs** card in `SettingsView.tsx` showing file statuses (`verified`/`draft`/`tbd`), synced Drive Docs + digest status, **Sync Project Docs**, and **Rescore Pending Jobs** buttons.
   - Add Vitest unit tests covering breakdown rendering, backward compatibility with legacy `tier1_json`, and Settings profile panel actions.
   - Verify: `cd web && npm run typecheck && npm test && npm run build`
 
-- [ ] **3.3 Config templates & living docs** — `.env.example`, `docker-compose.yml`, `README.md`, `docs/architecture.md`, `docs/trust.md`, `docs/glossary.md`, `project/STATE.md`:
+- [x] **3.3 Config templates & living docs** — `.env.example`, `docker-compose.yml`, `README.md`, `docs/architecture.md`, `docs/trust.md`, `docs/glossary.md`:
   - Document `GOOGLE_DRIVE_PROJECTS_FOLDER_ID`, `DATA_DIR` profile layout, `drive.readonly` folder scoping, and rescore workflow.
   - Run PII grep and full workspace checks across Rust, Web, and Scanner.
 

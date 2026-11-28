@@ -167,8 +167,13 @@ export function RoleDetailDrawer({
                 <div className="flex-1 overflow-y-auto p-5">
                   <Tabs.Panel value="jd" className="space-y-4">
                     <Card className="p-4">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Hydrogen Triage Summary
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Hydrogen Triage Summary
+                        </div>
+                        {job.dealbreakerReason ? (
+                          <Badge variant="danger">Dealbreaker: {job.dealbreakerReason}</Badge>
+                        ) : null}
                       </div>
                       <p className="mt-1.5 text-sm">
                         {job.hydrogenSummary || (
@@ -177,10 +182,19 @@ export function RoleDetailDrawer({
                       </p>
                       {job.scoreBreakdown ? (
                         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                          {Object.entries(job.scoreBreakdown).map(([k, val]) => (
-                            <div key={k} className="rounded-lg bg-secondary/70 p-2">
-                              <div className="text-[11px] uppercase text-muted-foreground">{k}</div>
-                              <div className="text-sm font-semibold tabular-nums">{val}/100</div>
+                          {(
+                            [
+                              ['Role & Stack', job.scoreBreakdown.roleStack, 35],
+                              ['Level', job.scoreBreakdown.levelReachability, 25],
+                              ['Vibe & Culture', job.scoreBreakdown.vibeCulture, 25],
+                              ['Logistics', job.scoreBreakdown.logisticsComp, 15],
+                            ] as const
+                          ).map(([label, val, max]) => (
+                            <div key={label} className="rounded-lg bg-secondary/70 p-2">
+                              <div className="text-[11px] uppercase text-muted-foreground">{label}</div>
+                              <div className="text-sm font-semibold tabular-nums">
+                                {val}/{max}
+                              </div>
                             </div>
                           ))}
                         </div>

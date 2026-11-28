@@ -200,9 +200,43 @@ describe('live API job routes', () => {
     expect(screen.getByText('Backend Engineer')).toBeTruthy();
     expect(screen.getByText('hydrogen 88/100')).toBeTruthy();
     expect(screen.getByText('hydrogen unscored')).toBeTruthy();
-    expect(screen.queryByText('Skills')).toBeNull();
+    expect(screen.queryByText('Role & Stack')).toBeNull();
     const titles = screen.getAllByRole('button', { name: /Engineer$/ }).map((b) => b.textContent);
     expect(titles).toEqual(['Staff Platform Engineer', 'Backend Engineer']);
+  });
+
+  it('maps 4-dimension breakdown and dealbreaker badge from tier1_json', () => {
+    const job = apiList.jobs[0];
+    const mapped = jobsListFromApi({
+      jobs: [
+        {
+          ...job,
+          tier1_score: 32,
+          tier1_json: JSON.stringify({
+            job_id: job.id,
+            score: 32,
+            breakdown: {
+              role_stack: 12,
+              level_reachability: 10,
+              vibe_culture: 5,
+              logistics_comp: 5,
+            },
+            dealbreaker: { triggered: true, reason: 'Aerospace hardware role' },
+            recommended_status: 'skipped',
+            rationale: 'Hardware Systems Engineer mismatch.',
+          }),
+        },
+      ],
+      total: 1,
+    }).jobs[0];
+
+    expect(mapped.scoreBreakdown).toEqual({
+      roleStack: 12,
+      levelReachability: 10,
+      vibeCulture: 5,
+      logisticsComp: 5,
+    });
+    expect(mapped.dealbreakerReason).toBe('Aerospace hardware role');
   });
 
   it('drawer shows the live job detail and neon evaluation', async () => {

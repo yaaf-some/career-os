@@ -11,9 +11,13 @@ import type {
   JobDetail,
   JobSource,
   JobSummary,
+  ProfileStatusResponse,
   QuickAddJobRequest,
+  RescoreRequest,
+  RescoreResponse,
   ScanSourcesResponse,
   SettingsState,
+  SyncProjectDocsResponse,
   TailorResponse,
   TodayResponse,
   TrackerResponse,
@@ -66,10 +70,10 @@ const INITIAL_JOBS: JobDetail[] = [
     stage: 'saved',
     hydrogenScore: 93,
     scoreBreakdown: {
-      skills: 95,
-      level: 92,
-      domain: 96,
-      logistics: 88,
+      roleStack: 33,
+      levelReachability: 23,
+      vibeCulture: 24,
+      logisticsComp: 13,
     },
     hydrogenSummary:
       'Strong overlap in Rust orchestration, deterministic tool-use sandboxing, and TypeScript control planes.',
@@ -182,10 +186,10 @@ const INITIAL_JOBS: JobDetail[] = [
     stage: 'screen',
     hydrogenScore: 89,
     scoreBreakdown: {
-      skills: 91,
-      level: 88,
-      domain: 86,
-      logistics: 92,
+      roleStack: 31,
+      levelReachability: 22,
+      vibeCulture: 22,
+      logisticsComp: 14,
     },
     hydrogenSummary: 'Clean platform infra scope with strong emphasis on CI/CD speed and edge deployments.',
     hasNeonEval: true,
@@ -265,10 +269,10 @@ const INITIAL_JOBS: JobDetail[] = [
     stage: 'saved',
     hydrogenScore: 84,
     scoreBreakdown: {
-      skills: 87,
-      level: 85,
-      domain: 88,
-      logistics: 76,
+      roleStack: 30,
+      levelReachability: 21,
+      vibeCulture: 22,
+      logisticsComp: 11,
     },
     hydrogenSummary: 'Strong AI workflow product match; verify remote flexibility vs hybrid expectation.',
     hasNeonEval: false,
@@ -314,10 +318,10 @@ const INITIAL_JOBS: JobDetail[] = [
     stage: 'applied',
     hydrogenScore: 81,
     scoreBreakdown: {
-      skills: 84,
-      level: 82,
-      domain: 78,
-      logistics: 84,
+      roleStack: 29,
+      levelReachability: 20,
+      vibeCulture: 19,
+      logisticsComp: 13,
     },
     hydrogenSummary: 'Solid search/indexing backend role; awaiting initial recruiter response.',
     hasNeonEval: false,
@@ -553,7 +557,7 @@ class DemoStore {
       triageStatus: 'pending',
       stage: 'saved',
       hydrogenScore: 82,
-      scoreBreakdown: { skills: 84, level: 82, domain: 80, logistics: 82 },
+      scoreBreakdown: { roleStack: 29, levelReachability: 21, vibeCulture: 20, logisticsComp: 12 },
       hydrogenSummary: 'Queued via Quick Add URL and scored by hydrogen triage.',
       hasNeonEval: false,
       gmailStatus: 'none',
@@ -606,28 +610,28 @@ class DemoStore {
         {
           block: 'A',
           title: 'Role & Archetype Fit',
-          rating: `${job.scoreBreakdown?.domain ?? '–'}/100`,
+          rating: `${job.scoreBreakdown?.vibeCulture ?? '–'}/25`,
           summary: `Strong alignment with target systems/platform engineering scope at ${job.company}.`,
           highlights: ['Core IC technical ownership', 'Clear architectural mandate'],
         },
         {
           block: 'B',
           title: 'Technical Stack Match',
-          rating: `${job.scoreBreakdown?.skills ?? '–'}/100`,
+          rating: `${job.scoreBreakdown?.roleStack ?? '–'}/35`,
           summary: 'Verified overlap with Experience List.md capabilities without unbacked claims.',
           highlights: ['Typed APIs & Rust/TS runtime', 'Automated testing & telemetry'],
         },
         {
           block: 'C',
           title: 'Scope & Leveling',
-          rating: `${job.scoreBreakdown?.level ?? '–'}/100`,
+          rating: `${job.scoreBreakdown?.levelReachability ?? '–'}/25`,
           summary: 'Appropriate senior/staff autonomy and cross-functional impact.',
           highlights: ['Architecture ownership', 'Zero inflated leadership claims'],
         },
         {
           block: 'D',
           title: 'Compensation & Logistics',
-          rating: `${job.scoreBreakdown?.logistics ?? '–'}/100`,
+          rating: `${job.scoreBreakdown?.logisticsComp ?? '–'}/15`,
           summary: `Remote policy: ${job.remotePolicy}.`,
           highlights: [job.compensation ?? 'Compensation band pending confirmation'],
         },
@@ -901,6 +905,71 @@ class DemoStore {
       estimateSource: 'routes_api',
       cached: false,
       mapsUrl,
+    };
+  }
+
+  getProfileStatus(): ProfileStatusResponse {
+    return {
+      loaded: true,
+      dataDir: '/data',
+      driveProjectsFolderConfigured: true,
+      files: [
+        {
+          name: 'targeting',
+          path: 'profile/targeting.yml',
+          status: 'verified',
+          updatedAt: '2026-11-28',
+          useIn: ['scanner', 'hydrogen', 'neon'],
+        },
+        {
+          name: 'psych-and-vibe',
+          path: 'profile/psych-and-vibe.md',
+          status: 'verified',
+          updatedAt: '2026-11-28',
+          useIn: ['hydrogen', 'neon', 'cover_letter'],
+        },
+      ],
+      targeting: {
+        primaryRoles: ['Platform Engineer', 'DevOps Engineer'],
+        secondaryRoles: ['Site Reliability Engineer'],
+        levelLabel: 'Junior-Mid',
+        maxYoe: 4,
+        weights: {
+          role_stack: 35,
+          level_reachability: 25,
+          vibe_culture: 25,
+          logistics_comp: 15,
+        },
+        dealbreakerCount: 4,
+        boostCount: 5,
+      },
+      projectDocs: [
+        {
+          id: 'demo-doc-1',
+          title: 'Platform Preview Architecture Report',
+          driveUrl: 'https://docs.google.com/document/d/demo-doc-1/edit',
+          modifiedTime: '2026-11-28T10:00:00Z',
+          digested: true,
+          syncedAt: '2026-11-28T12:00:00Z',
+        },
+      ],
+      warnings: [],
+    };
+  }
+
+  syncProjectDocs(): SyncProjectDocsResponse {
+    return { docsSynced: 1, docsDigested: 1, skippedUnchanged: 0 };
+  }
+
+  rescoreJobs(req: RescoreRequest): RescoreResponse {
+    const eligible = this.jobs.filter(
+      (j) => j.triageStatus === 'pending' || (req.includeSkipped && j.triageStatus === 'skipped'),
+    ).length;
+    return {
+      resetCount: eligible,
+      scored: Math.min(eligible, req.scoreLimit ?? 0),
+      provider: 'mock',
+      model: 'mock-hydrogen',
     };
   }
 }

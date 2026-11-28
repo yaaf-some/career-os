@@ -1,11 +1,28 @@
 import { Switch } from '@base-ui/react/switch';
-import { Car, Clock, Cpu, ExternalLink, Kanban, KeyRound, MapPin, ShieldCheck, Train } from 'lucide-react';
+import {
+  Car,
+  Clock,
+  Cpu,
+  ExternalLink,
+  FileText,
+  FolderSync,
+  Kanban,
+  KeyRound,
+  MapPin,
+  RefreshCw,
+  ShieldCheck,
+  Train,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { describeAiError, describeGoogleError } from '@/api/client';
 import {
   useCommutePreviewMutation,
   useGoogleAuthMutation,
   useGoogleAuthStatusQuery,
+  useProfileStatusQuery,
+  useRescoreJobsMutation,
   useSettingsQuery,
+  useSyncProjectDocsMutation,
   useUpdateSettingsMutation,
 } from '@/api/queries';
 import type { CliTierModel } from '@/api/types';
@@ -22,16 +39,21 @@ const CLI_OPTIONS: readonly { value: CliTierModel; label: string }[] = [
 export function SettingsView() {
   const settingsQuery = useSettingsQuery();
   const googleStatusQuery = useGoogleAuthStatusQuery();
+  const profileStatusQuery = useProfileStatusQuery();
   const updateMutation = useUpdateSettingsMutation();
   const googleAuthMutation = useGoogleAuthMutation();
   const commutePreviewMutation = useCommutePreviewMutation();
+  const syncDocsMutation = useSyncProjectDocsMutation();
+  const rescoreMutation = useRescoreJobsMutation();
 
   const settings = settingsQuery.data;
   const googleStatus = googleStatusQuery.data;
+  const profileStatus = profileStatusQuery.data;
 
   const [homeArea, setHomeArea] = useState('West Los Angeles, CA');
   const [travelMode, setTravelMode] = useState<'drive' | 'transit'>('drive');
   const [previewDestination, setPreviewDestination] = useState('Santa Monica, CA');
+  const [includeSkippedRescore, setIncludeSkippedRescore] = useState(false);
 
   useEffect(() => {
     if (settings?.homeLocationArea) setHomeArea(settings.homeLocationArea);
@@ -239,6 +261,215 @@ export function SettingsView() {
                 </a>
               ) : null}
             </div>
+          </Card>
+
+          {/* Candidate Profile & Project Docs (Read-Only) */}
+          <Card className="p-4 space-y-4 lg:col-span-2" data-testid="profile-status-card">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <FileText className="h-4 w-4 text-accent-brand" />
+                <span>Candidate Profile & Project Docs (Read-Only)</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Badge variant={profileStatus?.loaded ? 'success' : 'warning'}>
+                  {profileStatus?.loaded ? 'Profile Loaded' : 'Fallback Summary'}
+                </Badge>
+                <Badge
+                  variant={profileStatus?.driveProjectsFolderConfigured ? 'success' : 'neutral'}
+                >
+                  {profileStatus?.driveProjectsFolderConfigured
+                    ? 'Drive Folder Configured'
+                    : 'Drive Folder Unset'}
+                </Badge>
+              </div>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Mounted read-only from <code className="rounded bg-secondary px-1">{profileStatus?.dataDir ?? '/data'}</code>
+              . Edit files in your private data repo or add Google Docs to your Project Reports Drive
+              folder.
+            </p>
+
+            {profileStatus?.targeting ? (
+              <div className="grid gap-2 rounded-lg border border-border bg-secondary/30 p-3 text-xs sm:grid-cols-3">
+                <div>
+                  <div className="text-muted-foreground">Target Roles</div>
+                  <div className="mt-0.5 font-medium">
+                    {profileStatus.targeting.primaryRoles.join(', ') || 'Unspecified'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Scoring Weights</div>
+                  <div className="mt-0.5 font-mono font-medium">
+                    Role {profileStatus.targeting.weights.role_stack} · Lvl{' '}
+                    {profileStatus.targeting.weights.level_reachability} · Vibe{' '}
+                    {profileStatus.targeting.weights.vibe_culture} · Log{' '}
+                    {profileStatus.targeting.weights.logistics_comp}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Guardrails</div>
+                  <div className="mt-0.5 font-medium">
+                    Max {profileStatus.targeting.maxYoe ?? '–'} YOE ·{' '}
+                    {profileStatus.targeting.dealbreakerCount} dealbreakers ·{' '}
+                    {profileStatus.targeting.boostCount} boosts
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {profileStatus && profileStatus.files.length > 0 ? (
+              <div className="space-y-1.5">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Local Profile Files
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {profileStatus.files.map((f) => (
+                    <Badge
+                      key={f.path}
+                      variant={
+                        f.status === 'verified'
+                          ? 'success'
+                          : f.status === 'draft'
+                            ? 'warning'
+                            : 'neutral'
+                      }
+                    >
+                      <span>{f.path}</span>
+                      <span className="opacity-75">({f.status})</span>
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Synced Google Drive Project Docs ({profileStatus?.projectDocs.length ?? 0})
+                </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={
+                    !googleStatus?.connected ||
+                    !profileStatus?.driveProjectsFolderConfigured ||
+                    syncDocsMutation.isPending
+                  }
+                  onClick={() => syncDocsMutation.mutate()}
+                >
+                  <FolderSync
+                    className={
+                      syncDocsMutation.isPending ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'
+                    }
+                  />
+                  <span>{syncDocsMutation.isPending ? 'Syncing Docs…' : 'Sync Project Docs'}</span>
+                </Button>
+              </div>
+
+              {profileStatus && profileStatus.projectDocs.length > 0 ? (
+                <ul className="space-y-1.5 text-xs">
+                  {profileStatus.projectDocs.map((doc) => (
+                    <li
+                      key={doc.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        {doc.driveUrl ? (
+                          <a
+                            href={doc.driveUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 font-medium hover:text-accent-brand"
+                          >
+                            <span className="truncate">{doc.title}</span>
+                            <ExternalLink className="h-3 w-3 shrink-0" />
+                          </a>
+                        ) : (
+                          <span className="font-medium">{doc.title}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={doc.digested ? 'success' : 'neutral'}>
+                          {doc.digested ? 'Digested' : 'Raw cached'}
+                        </Badge>
+                        {doc.modifiedTime ? (
+                          <span className="text-muted-foreground">
+                            {new Date(doc.modifiedTime).toLocaleDateString()}
+                          </span>
+                        ) : null}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No Google Docs synced yet. Add Docs to your Project Reports folder and click Sync
+                  Project Docs.
+                </p>
+              )}
+
+              {syncDocsMutation.data ? (
+                <p className="text-xs text-emerald-700 dark:text-emerald-400">
+                  Synced {syncDocsMutation.data.docsSynced} · Digested{' '}
+                  {syncDocsMutation.data.docsDigested} · Unchanged{' '}
+                  {syncDocsMutation.data.skippedUnchanged}
+                </p>
+              ) : null}
+              {syncDocsMutation.isError ? (
+                <p role="alert" className="text-xs text-destructive">
+                  {describeGoogleError(syncDocsMutation.error)}
+                </p>
+              ) : null}
+            </div>
+
+            {profileStatus && profileStatus.warnings.length > 0 ? (
+              <ul className="list-disc space-y-0.5 pl-4 text-xs text-amber-700 dark:text-amber-300">
+                {profileStatus.warnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            ) : null}
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3 text-xs">
+              <label className="inline-flex items-center gap-2 text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={includeSkippedRescore}
+                  onChange={(e) => setIncludeSkippedRescore(e.target.checked)}
+                />
+                <span>Include previously skipped jobs when rescoring</span>
+              </label>
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={rescoreMutation.isPending}
+                onClick={() =>
+                  rescoreMutation.mutate({
+                    includeSkipped: includeSkippedRescore,
+                    scoreLimit: 10,
+                  })
+                }
+              >
+                <RefreshCw
+                  className={rescoreMutation.isPending ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'}
+                />
+                <span>
+                  {rescoreMutation.isPending ? 'Rescoring…' : 'Rescore Pending Jobs'}
+                </span>
+              </Button>
+            </div>
+            {rescoreMutation.data ? (
+              <p className="text-xs text-emerald-700 dark:text-emerald-400">
+                Reset {rescoreMutation.data.resetCount} unapplied jobs · Scored{' '}
+                {rescoreMutation.data.scored} immediately (hourly scheduler finishes any remainder).
+              </p>
+            ) : null}
+            {rescoreMutation.isError ? (
+              <p role="alert" className="text-xs text-destructive">
+                {describeAiError(rescoreMutation.error)}
+              </p>
+            ) : null}
           </Card>
 
           {/* LA Commute & Google Maps/Places */}
