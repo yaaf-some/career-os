@@ -2,7 +2,7 @@
 
 - **agy:** The Antigravity CLI. One of the two CLIs the ai-bridge can run (the other is Claude Code, `claude`).
 - **ai-bridge:** Rust HTTP daemon (`crates/ai-bridge`) on the macOS host, managed by `launchd` (`127.0.0.1:8787`). Accepts authenticated prompts from `career-os-api` via `host.docker.internal` and runs `claude` or `agy` with no tools (see ADR-002).
-- **ai_routing:** Setting (`PUT /api/settings/ai_routing`) choosing the primary CLI for hydrogen and neon (carbon follows neon) and whether failover is allowed.
+- **ai_routing:** Unified routing preference (`PUT /api/settings/ai_routing`): `{ "mode": "auto" | "prefer_claude" | "prefer_agy" }`. In `auto` (default), `ai-bridge` balances equally across `claude` and `agy` while avoiding cooldowns and high Claude quota (`>= 85%`), with automatic failover.
 - **ALLOWED_TAILSCALE_USER:** Environment variable specifying the single Tailscale user login email authorized to access `career-os-api`.
 - **ATS (Applicant Tracking System):** External recruiting platform (e.g., Greenhouse, Lever, Ashby) queried by `scanner` for open roles.
 - **career-os-api:** The Rust/Axum backend binary compiled in the `rust-builder` stage of `Dockerfile` and executed inside the distroless container.
@@ -10,9 +10,9 @@
 - **Disabled AI mode:** API state when no bridge URL + token is set and demo mode is off: AI routes return 503 and the scheduler skips scoring (no silent mock).
 - **Elephant / Goldfish workflow:** Cross-session project discipline where `project/STATE.md` holds compact handoff context (Elephant) while implementation tasks execute in focused, bounded contexts (Goldfish).
 - **Failover:** The bridge retrying on the other CLI after the primary is rate-limited, times out, is missing, or attempts a tool. Generic CLI errors do not fail over.
-- **hydrogen / neon / carbon:** AI tiers: hydrogen = fast batch triage scoring, neon = deep single-job evaluation, carbon = reserved heavier tier.
+- **fast / balanced / deep tiers:** Automatic task-based capability tiers inside Career OS: `fast` = batch triage scoring & Project Card digests, `balanced` = A–G deep job analysis (default) & drafts, `deep` = high-conviction A–G deep analysis (auto-escalated at score &ge; 75) & future tailoring.
 - **Linking:** Matching a synced Gmail thread or Calendar event to an application by company name and sender domain (`crates/api/src/sync/link.rs`). `link_source` is `auto` (recomputed each sync) or `manual` (set via `PUT /api/gmail-threads/{id}/application`, never overwritten).
-- **project_docs:** SQLite cache of user-authored Google Docs exported from `GOOGLE_DRIVE_PROJECTS_FOLDER_ID` along with Hydrogen-compiled Project Card digests (`digest_json`) refreshed only when `modifiedTime` changes.
+- **project_docs:** SQLite cache of user-authored Google Docs exported from `GOOGLE_DRIVE_PROJECTS_FOLDER_ID` along with `fast`-tier compiled Project Card digests (`digest_json`) refreshed only when `modifiedTime` changes.
 - **scanner:** The isolated `node:26-alpine` sidecar container (`scanner.Dockerfile`, port `8081`) dedicated to deterministic job-portal fetching and liveness checks.
 - **Statusline file:** JSON that Claude Code's `statusLine` command writes to `CLAUDE_STATUSLINE_PATH`; the bridge reads its `rate_limits` for the 5 h / 7 d Usage Bar windows.
 - **Sync now / sync interval:** Google sync runs every `GOOGLE_SYNC_INTERVAL_HOURS` (default 12); Settings → Sync now calls `POST /api/sync/google`.

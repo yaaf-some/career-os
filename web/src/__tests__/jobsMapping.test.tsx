@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { careerApi } from '@/api/client';
 import {
   evalBlocksFromJson,
-  formatHydrogenScore,
+  formatMatchScore,
   jobDetailFromApi,
   jobsListFromApi,
   type ApiJobDetailResponse,
@@ -57,38 +57,38 @@ describe('API job shape → web (fixture shared with crates/api)', () => {
       source: 'ats_board',
       triageStatus: 'pending',
       stage: 'saved',
-      hydrogenScore: 87.5,
+      matchScore: 87.5,
       scoreBreakdown: null,
-      hydrogenSummary: 'Strong platform match.',
+      matchSummary: 'Strong platform match.',
       discoveredAt: '2026-11-21T09:00:00Z',
     });
     expect(jobs[1]).toMatchObject({
       triageStatus: 'pending',
-      hydrogenScore: null,
-      hydrogenSummary: '',
+      matchScore: null,
+      matchSummary: '',
       compensation: null,
       location: '',
       remotePolicy: 'unknown',
     });
-    expect(formatHydrogenScore(jobs[0].hydrogenScore)).toBe('88/100');
-    expect(formatHydrogenScore(jobs[1].hydrogenScore)).toBe('unscored');
+    expect(formatMatchScore(jobs[0].matchScore)).toBe('88/100');
+    expect(formatMatchScore(jobs[1].matchScore)).toBe('unscored');
   });
 
-  it('maps detail from job, newest neon eval, application and artifacts', () => {
+  it('maps detail from job, newest deep eval, application and artifacts', () => {
     const d = jobDetailFromApi(apiDetail);
     expect(d.stage).toBe('interview');
     expect(d.nextFollowUpAt).toBe('2026-11-30T00:00:00Z');
-    expect(d.hasNeonEval).toBe(true);
+    expect(d.hasDeepEval).toBe(true);
     expect(d.descriptionText).toContain('Build the platform.');
     expect(d.requirements).toEqual([]);
-    expect(d.neonEval).toMatchObject({
+    expect(d.deepEval).toMatchObject({
       overallVerdict: '4.1 / 5 · Staff Platform Engineer',
       confidence: null,
       evaluatedAt: '2026-11-22T10:00:00Z',
       provider: 'claude',
       model: 'sonnet',
     });
-    expect(d.neonEval?.blocks).toEqual([
+    expect(d.deepEval?.blocks).toEqual([
       { block: 'A', title: 'Fit', rating: '', summary: 'Strong fit on platform work.', highlights: [] },
       {
         block: 'B',
@@ -157,8 +157,8 @@ describe('API job shape → web (fixture shared with crates/api)', () => {
     expect(noApp).toMatchObject({
       stage: 'saved',
       nextFollowUpAt: null,
-      hasNeonEval: false,
-      neonEval: null,
+      hasDeepEval: false,
+      deepEval: null,
       gmailStatus: 'none',
       gmailThreads: [],
     });
@@ -191,15 +191,15 @@ describe('live API job routes', () => {
     const list = await careerApi.listJobs();
     expect(list.jobs.map((j) => j.id)).toEqual(['job-1', 'job-2']);
     const detail = await careerApi.getJob('job-1');
-    expect(detail.neonEval?.provider).toBe('claude');
+    expect(detail.deepEval?.provider).toBe('claude');
   });
 
   it('TriageView renders live jobs, unscored last, without fake breakdowns', async () => {
     renderWithQuery(<TriageView onSelectRole={() => {}} />);
     await waitFor(() => expect(screen.getByText('Staff Platform Engineer')).toBeTruthy());
     expect(screen.getByText('Backend Engineer')).toBeTruthy();
-    expect(screen.getByText('hydrogen 88/100')).toBeTruthy();
-    expect(screen.getByText('hydrogen unscored')).toBeTruthy();
+    expect(screen.getByText('Match 88/100')).toBeTruthy();
+    expect(screen.getByText('Match unscored')).toBeTruthy();
     expect(screen.queryByText('Role & Stack')).toBeNull();
     const titles = screen.getAllByRole('button', { name: /Engineer$/ }).map((b) => b.textContent);
     expect(titles).toEqual(['Staff Platform Engineer', 'Backend Engineer']);
@@ -239,15 +239,15 @@ describe('live API job routes', () => {
     expect(mapped.dealbreakerReason).toBe('Aerospace hardware role');
   });
 
-  it('drawer shows the live job detail and neon evaluation', async () => {
+  it('drawer shows the live job detail and deep evaluation', async () => {
     renderWithQuery(<RoleDetailDrawer jobId="job-1" onClose={() => {}} />);
-    await waitFor(() => expect(screen.getByText('hydrogen 88/100')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Match 88/100')).toBeTruthy());
     expect(screen.getByText('stage: interview')).toBeTruthy();
     expect(screen.getByText('Strong platform match.')).toBeTruthy();
     expect(screen.getByText(/Build the platform\./)).toBeTruthy();
     expect(screen.queryByText('Key Requirements')).toBeNull();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Neon Eval (A–G)' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Deep Analysis (A–G)' }));
     await waitFor(() => expect(screen.getByText('4.1 / 5 · Staff Platform Engineer')).toBeTruthy());
     expect(screen.getByText('claude · sonnet')).toBeTruthy();
     expect(screen.getByText('No Kubernetes operator experience.')).toBeTruthy();

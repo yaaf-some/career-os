@@ -57,7 +57,7 @@ describe('TodayView state rendering', () => {
 });
 
 describe('TriageView state rendering', () => {
-  it('renders hydrogen-scored inbox jobs and updates status on triage action', async () => {
+  it('renders scored inbox jobs and updates status on triage action', async () => {
     const onSelectRole = vi.fn();
     renderWithQuery(<TriageView onSelectRole={onSelectRole} />);
 
@@ -65,7 +65,7 @@ describe('TriageView state rendering', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Staff Systems Engineer — Agent Runtime')).toBeTruthy();
-      expect(screen.getByText('hydrogen 93/100')).toBeTruthy();
+      expect(screen.getByText('Match 93/100')).toBeTruthy();
     });
 
     const inspectButtons = screen.getAllByRole('button', { name: /inspect/i });

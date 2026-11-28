@@ -1,4 +1,3 @@
-import { Switch } from '@base-ui/react/switch';
 import {
   Car,
   Clock,
@@ -25,15 +24,16 @@ import {
   useSyncProjectDocsMutation,
   useUpdateSettingsMutation,
 } from '@/api/queries';
-import type { CliTierModel } from '@/api/types';
+import type { AiRoutingMode } from '@/api/types';
 import { CommuteBadgeDisplay } from '@/components/CommuteBadge';
 import { GoogleSyncPanel } from '@/components/GoogleSyncPanel';
 import { Badge, Button, Card, SectionHeader } from '@/components/ui';
 import { cn } from '@/lib/cn';
 
-const CLI_OPTIONS: readonly { value: CliTierModel; label: string }[] = [
-  { value: 'claude', label: 'Claude Code' },
-  { value: 'agy', label: 'Antigravity' },
+const ROUTING_MODE_OPTIONS: readonly { value: AiRoutingMode; label: string }[] = [
+  { value: 'auto', label: 'Auto — Balance Claude & Gemini' },
+  { value: 'prefer_claude', label: 'Prefer Claude' },
+  { value: 'prefer_agy', label: 'Prefer Gemini (agy)' },
 ];
 
 export function SettingsView() {
@@ -64,35 +64,36 @@ export function SettingsView() {
     <div className="space-y-6" data-testid="settings-view">
       <SectionHeader
         title="Settings"
-        subtitle="Configure hydrogen/neon CLI priority, Google OAuth 7-day Testing-mode reconnect, LA Commute & Maps, and Linear JOB operations."
+        subtitle="Configure AI routing preference, Google OAuth 7-day Testing-mode reconnect, LA Commute & Maps, and Linear JOB operations."
       />
 
       {settingsQuery.isLoading || !settings ? (
         <Card className="p-6 text-sm text-muted-foreground">Loading settings…</Card>
       ) : (
         <div className="grid gap-5 lg:grid-cols-2">
-          {/* CLI Routing & Failover */}
+          {/* Unified AI Routing */}
           <Card className="p-4 space-y-4">
             <div className="flex items-center gap-2 text-sm font-semibold">
               <Cpu className="h-4 w-4 text-accent-brand" />
-              <span>Model Tier Routing (hydrogen & neon)</span>
+              <span>AI Routing &amp; Capability Tiers</span>
             </div>
 
             <div className="space-y-3 text-sm">
               <label className="block">
                 <span className="text-xs font-medium text-muted-foreground">
-                  hydrogen (Fast Triage) Primary CLI
+                  Provider Routing Preference
                 </span>
                 <select
-                  value={settings.hydrogenPrimaryCli}
+                  aria-label="AI routing mode"
+                  value={settings.aiRoutingMode}
                   onChange={(e) =>
                     updateMutation.mutate({
-                      hydrogenPrimaryCli: e.target.value as CliTierModel,
+                      aiRoutingMode: e.target.value as AiRoutingMode,
                     })
                   }
                   className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
                 >
-                  {CLI_OPTIONS.map((opt) => (
+                  {ROUTING_MODE_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>
                       {opt.label}
                     </option>
@@ -100,53 +101,13 @@ export function SettingsView() {
                 </select>
               </label>
 
-              <label className="block">
-                <span className="text-xs font-medium text-muted-foreground">
-                  neon (Deep Eval A–G & Tailoring) Primary CLI
-                </span>
-                <select
-                  value={settings.neonPrimaryCli}
-                  onChange={(e) =>
-                    updateMutation.mutate({
-                      neonPrimaryCli: e.target.value as CliTierModel,
-                    })
-                  }
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                >
-                  {CLI_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <div className="flex items-center justify-between rounded-lg border border-border p-3">
-                <div>
-                  <div className="font-medium">Auto-Failover</div>
-                  <div className="text-xs text-muted-foreground">
-                    Retry on the other CLI when the primary is rate-limited, times out, is
-                    missing, or tries to use a tool.
-                  </div>
-                </div>
-                <Switch.Root
-                  checked={settings.autoFailover}
-                  onCheckedChange={(checked) =>
-                    updateMutation.mutate({ autoFailover: checked })
-                  }
-                  aria-label="Toggle auto-failover"
-                  className={cn(
-                    'relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border border-border transition-colors',
-                    settings.autoFailover ? 'bg-accent-brand' : 'bg-secondary',
-                  )}
-                >
-                  <Switch.Thumb
-                    className={cn(
-                      'inline-block h-4 w-4 rounded-full bg-white shadow-xs transition-transform',
-                      settings.autoFailover ? 'translate-x-5' : 'translate-x-1',
-                    )}
-                  />
-                </Switch.Root>
+              <div className="rounded-lg border border-border p-3 text-xs text-muted-foreground space-y-1">
+                <div className="font-medium text-foreground">Automatic Task Routing</div>
+                <p>
+                  Triage scoring &amp; project-doc digests use <strong>Fast</strong>; A–G analysis
+                  uses <strong>Balanced</strong> and auto-escalates to <strong>Deep</strong> on
+                  matches &ge; 75. Failover between Claude and Gemini stays active automatically.
+                </p>
               </div>
             </div>
           </Card>

@@ -269,7 +269,7 @@ pub struct TrackerEntry {
     pub title: String,
     /// DB stage (`shortlisted|applied|recruiter|interviewing|offer|closed`).
     pub stage: String,
-    pub hydrogen_score: Option<f64>,
+    pub match_score: Option<f64>,
     pub thread_subject: Option<String>,
     pub thread_count: i64,
     pub threads_need_reply: bool,
@@ -307,7 +307,7 @@ pub async fn list_tracker_entries(pool: &sqlx::SqlitePool) -> Result<Vec<Tracker
     Ok(sqlx::query_as::<_, TrackerEntry>(
         r#"
         SELECT a.id AS application_id, j.id AS job_id, j.company, j.title, a.stage,
-               j.tier1_score AS hydrogen_score,
+               j.tier1_score AS match_score,
                (SELECT t.subject FROM gmail_threads t WHERE t.application_id = a.id
                 ORDER BY t.last_message_at DESC LIMIT 1) AS thread_subject,
                (SELECT COUNT(*) FROM gmail_threads t WHERE t.application_id = a.id) AS thread_count,

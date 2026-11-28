@@ -7,7 +7,7 @@ use utoipa::ToSchema;
 
 use crate::profile::yaml::parse_yaml_to_json;
 
-/// Weights for the 4-dimension Hydrogen 0–100 scoring rubric.
+/// Weights for the 4-dimension fast triage 0–100 scoring rubric.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 pub struct ScoringWeights {
     pub role_stack: u32,
@@ -630,8 +630,8 @@ impl LoadedProfile {
         })
     }
 
-    /// Builds a compact digest (~2,500–4,500 chars) for Hydrogen batch scoring.
-    pub fn build_hydrogen_digest(&self, cached_doc_digests: &[String]) -> Option<String> {
+    /// Builds a compact digest (~2,500–4,500 chars) for fast batch triage scoring.
+    pub fn build_triage_digest(&self, cached_doc_digests: &[String]) -> Option<String> {
         if !self.loaded {
             return None;
         }
@@ -769,8 +769,8 @@ impl LoadedProfile {
         Some(truncate_chars(&sections.join("\n\n"), 5_500))
     }
 
-    /// Builds a rich verified dossier for Neon deep evaluation (bounded by `max_chars`).
-    pub fn build_neon_dossier(
+    /// Builds a rich verified dossier for deep job evaluation (bounded by `max_chars`).
+    pub fn build_deep_eval_dossier(
         &self,
         cached_docs: &[(String, String)],
         max_chars: usize,
@@ -787,7 +787,7 @@ impl LoadedProfile {
                 .to_string(),
         );
 
-        if let Some(summary) = self.build_hydrogen_digest(&[]) {
+        if let Some(summary) = self.build_triage_digest(&[]) {
             parts.push(summary);
         }
 
@@ -857,8 +857,8 @@ mod tests {
         let missing = std::env::temp_dir().join(format!("missing-{}", uuid::Uuid::new_v4()));
         let loaded = load_profile(&missing);
         assert!(!loaded.loaded);
-        assert!(loaded.build_hydrogen_digest(&[]).is_none());
-        assert!(loaded.build_neon_dossier(&[], 4000).is_none());
+        assert!(loaded.build_triage_digest(&[]).is_none());
+        assert!(loaded.build_deep_eval_dossier(&[], 4000).is_none());
         assert_eq!(loaded.scoring_weights(), ScoringWeights::default());
         assert_eq!(loaded.to_portals_config(45)["max_posting_age_days"], 45);
     }
@@ -961,7 +961,7 @@ not_my_lane:
         );
 
         let h_digest = loaded
-            .build_hydrogen_digest(&["Doc Card: Migration notes".to_string()])
+            .build_triage_digest(&["Doc Card: Migration notes".to_string()])
             .unwrap();
         assert!(h_digest.contains("Platform Engineer"));
         assert!(h_digest.contains("Aerospace hardware Systems Engineer"));
@@ -970,13 +970,13 @@ not_my_lane:
         assert!(!h_digest.contains("Secret TBD Project"));
         assert!(!h_digest.contains("Secret hobby placeholder"));
 
-        let neon = loaded
-            .build_neon_dossier(&[("Report 1".into(), "Full report body".into())], 10_000)
+        let deep_dossier = loaded
+            .build_deep_eval_dossier(&[("Report 1".into(), "Full report body".into())], 10_000)
             .unwrap();
-        assert!(neon.contains("Example Co"));
-        assert!(neon.contains("Full report body"));
-        assert!(!neon.contains("secret undecided timeline"));
-        assert!(!neon.contains("Secret hobby placeholder"));
+        assert!(deep_dossier.contains("Example Co"));
+        assert!(deep_dossier.contains("Full report body"));
+        assert!(!deep_dossier.contains("secret undecided timeline"));
+        assert!(!deep_dossier.contains("Secret hobby placeholder"));
 
         let _ = fs::remove_dir_all(root);
     }

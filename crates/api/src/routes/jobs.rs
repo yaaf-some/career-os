@@ -567,7 +567,7 @@ mod tests {
         EvaluationRecord {
             id: id.into(),
             job_id: "job-1".into(),
-            tier: "neon".into(),
+            tier: "balanced".into(),
             model: "sonnet".into(),
             provider: Some("claude".into()),
             overall_score: Some(4.1),

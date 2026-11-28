@@ -55,7 +55,7 @@
         "provider": "claude",
         "report_md": "## Summary\n\nGood fit.",
         "rubric_score": null,
-        "tier": "neon"
+        "tier": "balanced"
       },
       {
         "archetype": "Staff Platform Engineer",
@@ -68,7 +68,7 @@
         "provider": "claude",
         "report_md": "## Summary\n\nGood fit.",
         "rubric_score": null,
-        "tier": "neon"
+        "tier": "balanced"
       }
     ],
     "gmail_threads": [

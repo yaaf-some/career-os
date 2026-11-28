@@ -100,15 +100,12 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="border-t border-border p-3 text-xs text-muted-foreground">
-          <div className="font-medium text-foreground">Tiers</div>
+          <div className="font-medium text-foreground">AI Routing</div>
           <div className="mt-1 flex items-center justify-between">
-            <span>hydrogen</span>
-            <span className="rounded bg-secondary px-1.5 py-0.5 text-[11px]">Fast Triage</span>
+            <span>Fast / Balanced / Deep</span>
+            <span className="rounded bg-secondary px-1.5 py-0.5 text-[11px]">Auto</span>
           </div>
-          <div className="mt-1 flex items-center justify-between">
-            <span>neon</span>
-            <span className="rounded bg-secondary px-1.5 py-0.5 text-[11px]">Deep Eval A–G</span>
-          </div>
+          <div className="mt-1 text-[11px]">Claude &amp; Gemini balanced with failover</div>
         </div>
       </aside>
 

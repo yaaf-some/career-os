@@ -19,13 +19,13 @@
   },
   "dbStatsByTier": [
     {
-      "tier": "hydrogen",
+      "tier": "fast",
       "totalCalls": 12,
       "successfulCalls": 11,
       "avgLatencyMs": 8400.0
     },
     {
-      "tier": "neon",
+      "tier": "balanced",
       "totalCalls": 3,
       "successfulCalls": 3,
       "avgLatencyMs": 41000.0
