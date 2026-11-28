@@ -180,6 +180,17 @@ export function useCreateSourceMutation() {
   });
 }
 
+export function useSetSourceEnabledMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      careerApi.setSourceEnabled(id, enabled),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.sources });
+    },
+  });
+}
+
 export function useScanSourcesMutation() {
   const qc = useQueryClient();
   return useMutation({

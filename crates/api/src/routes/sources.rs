@@ -9,8 +9,13 @@ use utoipa::ToSchema;
 use crate::{
     db::{new_id, now_iso},
     error::AppError,
+    integrations::scanner::{canonicalize_url_key, scan_via_sidecar, ScannedJob, SidecarSource},
     state::AppState,
 };
+
+/// Postings older than this are dropped by the scanner (same as the old
+/// career-ops `max_posting_age_days`).
+const MAX_POSTING_AGE_DAYS: u32 = 45;
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct SourceRecord {
@@ -24,11 +29,30 @@ pub struct SourceRecord {
     pub last_scanned_at: Option<String>,
     pub last_error: Option<String>,
     pub created_at: String,
+    /// Jobs ingested from this source (only filled by `GET /api/sources`).
+    #[sqlx(default)]
+    pub matched_count: i64,
+}
+
+/// A posting the scanner's filters rejected.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+pub struct FilteredAuditRecord {
+    pub id: String,
+    pub url: String,
+    pub company: String,
+    pub title: String,
+    pub location: Option<String>,
+    pub reason_code: String,
+    pub reason_detail: Option<String>,
+    pub source_type: String,
+    pub created_at: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ListSourcesResponse {
     pub sources: Vec<SourceRecord>,
+    /// Most recent 100 postings rejected by the scanner's filters.
+    pub filtered_audit: Vec<FilteredAuditRecord>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -62,6 +86,8 @@ pub struct TriggerScanResponse {
     pub sources_scanned: usize,
     pub items_fetched: i64,
     pub items_ingested: i64,
+    /// Postings the scanner's filters rejected (see `filtered_audit`).
+    pub items_filtered: i64,
     pub items_errored: i64,
 }
 
@@ -78,16 +104,31 @@ pub async fn list_sources(
 ) -> Result<Json<ListSourcesResponse>, AppError> {
     let sources = sqlx::query_as::<_, SourceRecord>(
         r#"
-        SELECT id, company, provider, careers_url, board_id, enabled, notes,
-               last_scanned_at, last_error, created_at
-        FROM sources
-        ORDER BY company ASC
+        SELECT s.id, s.company, s.provider, s.careers_url, s.board_id, s.enabled, s.notes,
+               s.last_scanned_at, s.last_error, s.created_at,
+               (SELECT COUNT(*) FROM jobs j WHERE j.source_id = s.id) AS matched_count
+        FROM sources s
+        ORDER BY s.company ASC
         "#,
     )
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(Json(ListSourcesResponse { sources }))
+    let filtered_audit = sqlx::query_as::<_, FilteredAuditRecord>(
+        r#"
+        SELECT id, url, company, title, location, reason_code, reason_detail, source_type, created_at
+        FROM filtered_audit
+        ORDER BY created_at DESC
+        LIMIT 100
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(ListSourcesResponse {
+        sources,
+        filtered_audit,
+    }))
 }
 
 #[utoipa::path(
@@ -273,45 +314,20 @@ pub async fn run_ats_scan(
     .fetch_all(&state.pool)
     .await?;
 
-    let mut items_fetched = 0_i64;
-    let mut items_ingested = 0_i64;
-    let mut items_errored = 0_i64;
-
-    for src in &sources {
-        let Some(board_id) = src.board_id.as_deref() else {
-            continue;
-        };
-        let scan_now = now_iso();
-        match state
-            .scanner
-            .scan_ats_board(&src.provider, &src.company, board_id)
-            .await
-        {
-            Ok(jobs) => {
-                items_fetched += jobs.len() as i64;
-                let ingest = state.ingest_scanned_jobs(&jobs, Some(&src.id)).await?;
-                items_ingested += ingest.ingested;
-                sqlx::query(
-                    "UPDATE sources SET last_scanned_at = ?1, last_error = NULL WHERE id = ?2",
-                )
-                .bind(&scan_now)
-                .bind(&src.id)
-                .execute(&state.pool)
-                .await?;
-            }
-            Err(err) => {
-                items_errored += 1;
-                sqlx::query(
-                    "UPDATE sources SET last_scanned_at = ?1, last_error = ?2 WHERE id = ?3",
-                )
-                .bind(&scan_now)
-                .bind(err.to_string())
-                .bind(&src.id)
-                .execute(&state.pool)
-                .await?;
-            }
-        }
-    }
+    let Some(sidecar_url) = state.config.scanner_url.as_deref() else {
+        let msg = "SCANNER_URL is not set; ATS scans need the scanner sidecar's filters";
+        sqlx::query(
+            "UPDATE sync_runs SET status = 'failed', error_message = ?1, finished_at = ?2 WHERE id = ?3",
+        )
+        .bind(msg)
+        .bind(now_iso())
+        .bind(&sync_run_id)
+        .execute(&state.pool)
+        .await?;
+        return Err(AppError::ServiceUnavailable(msg.into()));
+    };
+    let (items_fetched, items_ingested, items_filtered, items_errored) =
+        scan_sources_filtered(state, &sources, sidecar_url).await?;
 
     let status = if items_errored == 0 {
         "succeeded"
@@ -324,7 +340,8 @@ pub async fn run_ats_scan(
     sqlx::query(
         r#"
         UPDATE sync_runs
-        SET status = ?1, items_fetched = ?2, items_ingested = ?3, items_errored = ?4, finished_at = ?5
+        SET status = ?1, items_fetched = ?2, items_ingested = ?3, items_errored = ?4, finished_at = ?5,
+            items_filtered = ?7
         WHERE id = ?6
         "#,
     )
@@ -334,6 +351,7 @@ pub async fn run_ats_scan(
     .bind(items_errored)
     .bind(now_iso())
     .bind(&sync_run_id)
+    .bind(items_filtered)
     .execute(&state.pool)
     .await?;
 
@@ -342,6 +360,242 @@ pub async fn run_ats_scan(
         sources_scanned: sources.len(),
         items_fetched,
         items_ingested,
+        items_filtered,
         items_errored,
     })
+}
+
+/// Scans all given sources through the scanner sidecar in one request.
+/// Accepted postings are ingested; rejected ones are recorded in
+/// `filtered_audit` with the filter's reason; per-source fetch errors are
+/// stored on the source. Returns (fetched, ingested, filtered, errored).
+async fn scan_sources_filtered(
+    state: &AppState,
+    sources: &[SourceRecord],
+    sidecar_url: &str,
+) -> Result<(i64, i64, i64, i64), AppError> {
+    let entries: Vec<SidecarSource> = sources
+        .iter()
+        .map(|s| SidecarSource::new(&s.company, &s.careers_url, &s.provider))
+        .collect();
+    let result = scan_via_sidecar(
+        state.scanner.http(),
+        sidecar_url,
+        &entries,
+        MAX_POSTING_AGE_DAYS,
+    )
+    .await?;
+
+    let by_company: std::collections::HashMap<String, &SourceRecord> = sources
+        .iter()
+        .map(|s| (s.company.to_lowercase(), s))
+        .collect();
+    let fetched = (result.accepted.len() + result.rejected.len()) as i64;
+    let filtered = result.rejected.len() as i64;
+    let errored = result.errors.len() as i64;
+
+    // Ingest per source so jobs keep their source_id.
+    let mut grouped: std::collections::HashMap<Option<String>, Vec<ScannedJob>> =
+        Default::default();
+    for job in result.accepted {
+        let src = by_company
+            .get(&job.company.to_lowercase())
+            .map(|s| s.id.clone());
+        grouped.entry(src).or_default().push(job.into_scanned());
+    }
+    let mut ingested = 0_i64;
+    for (source_id, jobs) in &grouped {
+        ingested += state
+            .ingest_scanned_jobs(jobs, source_id.as_deref())
+            .await?
+            .ingested;
+    }
+
+    for r in &result.rejected {
+        sqlx::query(
+            r#"
+            INSERT INTO filtered_audit (id, canonical_key, url, company, title, location, reason_code, reason_detail, source_type)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            "#,
+        )
+        .bind(new_id())
+        .bind(canonicalize_url_key(&r.url))
+        .bind(&r.url)
+        .bind(&r.company)
+        .bind(&r.title)
+        .bind(&r.location)
+        .bind(&r.reason_code)
+        .bind(&r.reason_detail)
+        .bind(r.db_source_type())
+        .execute(&state.pool)
+        .await?;
+    }
+
+    let now = now_iso();
+    let errors: std::collections::HashMap<String, String> = result
+        .errors
+        .into_iter()
+        .map(|e| (e.target.to_lowercase(), e.error))
+        .collect();
+    for src in sources {
+        sqlx::query("UPDATE sources SET last_scanned_at = ?1, last_error = ?2 WHERE id = ?3")
+            .bind(&now)
+            .bind(errors.get(&src.company.to_lowercase()))
+            .bind(&src.id)
+            .execute(&state.pool)
+            .await?;
+    }
+    Ok((fetched, ingested, filtered, errored))
+}
+
+#[cfg(test)]
+mod sidecar_tests {
+    use std::sync::{Arc, Mutex};
+
+    use axum::{routing::post, Router};
+    use tokio::net::TcpListener;
+
+    use super::*;
+    use crate::{
+        ai::MockAiProvider,
+        config::AppConfig,
+        db::init_pool,
+        integrations::{
+            calendar::CalendarClient, drive::DriveClient, gmail::GmailClient, maps::MapsClient,
+            scanner::ScannerClient,
+        },
+    };
+
+    async fn fake_sidecar() -> (String, Arc<Mutex<Option<serde_json::Value>>>) {
+        let seen: Arc<Mutex<Option<serde_json::Value>>> = Arc::default();
+        let log = seen.clone();
+        let app = Router::new().route(
+            "/scan/ats",
+            post(move |Json(body): Json<serde_json::Value>| {
+                let log = log.clone();
+                async move {
+                    *log.lock().unwrap() = Some(body);
+                    Json(serde_json::json!({
+                        "accepted": [{
+                            "canonicalKey": "x", "url": "https://jobs.example.com/acme/1",
+                            "company": "Acme", "title": "Senior Platform Engineer",
+                            "location": "Remote, US", "workplaceType": "remote",
+                            "postedAt": "2026-11-20T00:00:00Z", "sourceType": "ats_board",
+                            "jdText": "Run the platform."
+                        }],
+                        "rejected": [{
+                            "canonicalKey": "y", "url": "https://jobs.example.com/acme/2",
+                            "company": "Acme", "title": "Account Executive", "location": "Remote, US",
+                            "reasonCode": "TITLE_NOT_TARGET", "reasonDetail": "not a target title",
+                            "sourceType": "ats_board"
+                        }],
+                        "errors": [{ "target": "Globex", "error": "HTTP 404" }]
+                    }))
+                }
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (format!("http://{addr}"), seen)
+    }
+
+    async fn state(scanner_url: Option<String>) -> AppState {
+        let pool = init_pool("sqlite::memory:").await.unwrap();
+        sqlx::query(
+            "INSERT INTO sources (id, company, provider, careers_url, board_id, enabled) VALUES
+             ('s1','Acme','greenhouse','https://job-boards.greenhouse.io/acme','acme',1),
+             ('s2','Globex','auto','https://recruiting.paylocity.com/x',NULL,1),
+             ('s3','Off','lever','https://jobs.lever.co/off','off',0)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        AppState {
+            pool,
+            config: Arc::new(AppConfig {
+                scheduler_enabled: false,
+                scanner_url,
+                ..AppConfig::default()
+            }),
+            ai: Arc::new(MockAiProvider),
+            cipher: None,
+            scanner: ScannerClient::new(),
+            gmail: GmailClient::new(),
+            drive: DriveClient::new(),
+            calendar: CalendarClient::new(),
+            maps: MapsClient::new(None),
+            sync_lock: Default::default(),
+            linear: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn scan_goes_through_sidecar_filters() {
+        let (url, seen) = fake_sidecar().await;
+        let st = state(Some(url)).await;
+        let out = run_ats_scan(&st, None).await.unwrap();
+        assert_eq!(out.sources_scanned, 2); // disabled source not sent
+        assert_eq!(
+            (
+                out.items_fetched,
+                out.items_ingested,
+                out.items_filtered,
+                out.items_errored
+            ),
+            (2, 1, 1, 1)
+        );
+
+        let body = seen.lock().unwrap().clone().unwrap();
+        assert_eq!(body["portalsConfig"]["max_posting_age_days"], 45);
+        assert_eq!(body["sources"][0]["provider"], "greenhouse");
+        // Unknown provider names are left for the sidecar to auto-detect.
+        assert!(body["sources"][1].get("provider").is_none());
+
+        let (title, source_id, src_type): (String, Option<String>, String) =
+            sqlx::query_as("SELECT title, source_id, source_type FROM jobs")
+                .fetch_one(&st.pool)
+                .await
+                .unwrap();
+        assert_eq!(title, "Senior Platform Engineer");
+        assert_eq!(source_id.as_deref(), Some("s1"));
+        assert_eq!(src_type, "ats_board");
+        let reason: String = sqlx::query_scalar("SELECT reason_code FROM filtered_audit")
+            .fetch_one(&st.pool)
+            .await
+            .unwrap();
+        assert_eq!(reason, "TITLE_NOT_TARGET");
+        let errs: Vec<(String, Option<String>)> =
+            sqlx::query_as("SELECT id, last_error FROM sources WHERE enabled = 1 ORDER BY id")
+                .fetch_all(&st.pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            errs,
+            vec![("s1".into(), None), ("s2".into(), Some("HTTP 404".into()))]
+        );
+        let status: String = sqlx::query_scalar("SELECT status FROM sync_runs")
+            .fetch_one(&st.pool)
+            .await
+            .unwrap();
+        assert_eq!(status, "partial");
+
+        let list = list_sources(State(st.clone())).await.unwrap().0;
+        let acme = list.sources.iter().find(|s| s.id == "s1").unwrap();
+        assert_eq!(acme.matched_count, 1);
+        assert_eq!(list.filtered_audit.len(), 1);
+        assert_eq!(list.filtered_audit[0].title, "Account Executive");
+    }
+
+    #[tokio::test]
+    async fn scan_without_sidecar_refuses_instead_of_ingesting_unfiltered() {
+        let st = state(None).await;
+        let err = run_ats_scan(&st, None).await.unwrap_err();
+        assert_eq!(err.status_and_code().1, "SERVICE_UNAVAILABLE");
+        let jobs: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM jobs")
+            .fetch_one(&st.pool)
+            .await
+            .unwrap();
+        assert_eq!(jobs, 0);
+    }
 }

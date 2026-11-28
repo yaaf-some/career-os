@@ -12,6 +12,7 @@ import {
   type ApiTrackerEntry,
 } from '@/api/jobs';
 import { GoogleSyncPanel } from '@/components/GoogleSyncPanel';
+import { SourcesView } from '@/routes/SourcesView';
 import { TodayView } from '@/routes/TodayView';
 import { TrackerView } from '@/routes/TrackerView';
 // Written by the API's `workspace_fixtures_match_web` test.
@@ -247,5 +248,46 @@ describe('live Today / Tracker / quick-add / sync', () => {
     );
     expect(await careerApi.healthz()).toEqual({ ok: true, service: 'career-os-api', version: '0.1.0' });
     expect(calls[0].url).toBe('/healthz');
+  });
+
+  it('Sources page maps the live API and toggles scanning', async () => {
+    const calls = mockFetch((url, init) => {
+      if (url === '/api/sources' && (init.method ?? 'GET') === 'GET')
+        return json({
+          sources: [
+            {
+              id: 's1', company: 'Acme', provider: 'greenhouse', careers_url: 'https://job-boards.greenhouse.io/acme',
+              board_id: 'acme', enabled: false, notes: null, last_scanned_at: null, last_error: 'HTTP 404',
+              created_at: '2026-11-27T00:00:00Z', matched_count: 3,
+            },
+          ],
+          filtered_audit: [
+            {
+              id: 'f1', url: 'https://x.example/1', company: 'Acme', title: 'Account Executive', location: null,
+              reason_code: 'TITLE_NOT_TARGET', reason_detail: 'not a target title', source_type: 'ats_board',
+              created_at: '2026-11-27T00:00:00Z',
+            },
+          ],
+        });
+      if (url === '/api/sources/s1')
+        return json({
+          id: 's1', company: 'Acme', provider: 'greenhouse', careers_url: 'https://job-boards.greenhouse.io/acme',
+          enabled: true, last_scanned_at: null, last_error: null, matched_count: 0,
+        });
+      if (url === '/api/sources/scan')
+        return json({ sync_run_id: 'r', sources_scanned: 1, items_fetched: 9, items_ingested: 2, items_filtered: 7, items_errored: 0 });
+      return json({ error: 'not found', code: 'NOT_FOUND' }, 404);
+    });
+    renderWithQuery(<SourcesView />);
+    await waitFor(() => expect(screen.getByText('Acme')).toBeTruthy());
+    expect(screen.getByText('3 matched')).toBeTruthy();
+    expect(screen.getByText('Last scan failed: HTTP 404')).toBeTruthy();
+    expect(screen.getByText('TITLE_NOT_TARGET')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('Scan Acme'));
+    await waitFor(() =>
+      expect(calls.some((c) => c.url === '/api/sources/s1' && c.method === 'PATCH')).toBe(true),
+    );
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ enabled: true });
+    expect(await careerApi.scanSources()).toMatchObject({ scannedSources: 1, newMatches: 2, filteredOut: 7 });
   });
 });

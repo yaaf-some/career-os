@@ -8,7 +8,7 @@
 - **`JOB-5` Verified + archived 2026-11-27** (`project/changes/archive/JOB-5-ai-bridge/`). #12/#13/#14 merged. AC12 passed on the M2 under Docker Desktop. statusLine hook installed (Usage Bar live).
 - **`JOB-6` in progress** (`project/changes/JOB-6-live-google-sync/`, approved 2026-11-27: Q1 `gmail.compose` yes, Q2 Linear yes, Google sync every 12 h). PR A `feat/job-6a-read`: linking, Today, Tracker, quick-add, job comms, Sync now, web read side.
 - **`JOB-7` in progress** (`project/changes/JOB-7-mac-mini-cutover/`): live compose project `career-os` on this Mac, at `https://<host>:8080` on the tailnet. Old career-ops sources (56, disabled) and the pipeline (36 jobs) imported. Backups via `scripts/backup-db.sh`.
-- **Exact Next Concrete Step:** Yaaf adds the Google client ID and secret to `.env` and the redirect URI in GCP (JOB-7 Q1), then JOB-6 AC11 live. Install the backup LaunchAgent and run the restore drill once the `--backup-stdout` image is released. Then route ATS scans through the filtered scanner sidecar before enabling sources.
+- **Exact Next Concrete Step:** merge `feat/job-7-filtered-scans`, then pull, enable sources and scan live (expect ~150 jobs per full scan). Yaaf adds the Google client ID and secret (JOB-7 Q1), then JOB-6 AC11 live. Nightly backups are running (03:30).
 
 ## Done This Session
 

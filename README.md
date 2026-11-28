@@ -140,7 +140,7 @@ docker compose up -d
 ```bash
 docker compose -p career-os stop app
 docker run --rm -v career-os_career_os_db:/v -v ~/Backups/career-os:/b:ro alpine:3 \
-  sh -c 'cp /b/career-os-YYYYMMDDTHHMMSSZ.db /v/career-os.db && rm -f /v/career-os.db-wal /v/career-os.db-shm'
+  sh -c 'cp /b/career-os-YYYYMMDDTHHMMSSZ.db /v/career-os.db && rm -f /v/career-os.db-wal /v/career-os.db-shm && chown 65532:65532 /v/career-os.db'
 docker compose -p career-os start app
 ```
 

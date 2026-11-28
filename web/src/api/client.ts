@@ -7,7 +7,9 @@ import {
   trackerFromApi,
   trackerPatchToApi,
 } from './jobs';
+import { scanFromApi, sourceCreateToApi, sourceFromApi, sourcesFromApi } from './jobs';
 import type {
+  ApiSourceRecord,
   ApiJobDetailResponse,
   ApiJobRecord,
   ApiListJobsResponse,
@@ -397,24 +399,66 @@ export const careerApi = {
       : trackerFromApi(res as { entries: ApiTrackerEntry[] });
   },
 
-  getSources(): Promise<SourcesResponse> {
-    return requestWithFallback('/api/sources', { method: 'GET' }, () => demoStore.getSources());
-  },
-
-  createSource(payload: CreateSourceRequest): Promise<JobSource> {
-    return requestWithFallback(
+  async getSources(): Promise<SourcesResponse> {
+    let fellBack = false;
+    const res = await requestWithFallback<unknown>(
       '/api/sources',
-      { method: 'POST', body: JSON.stringify(payload) },
-      () => demoStore.addSource(payload),
+      { method: 'GET' },
+      () => {
+        fellBack = true;
+        return demoStore.getSources();
+      },
+      LIVE_ONLY,
     );
+    return fellBack
+      ? (res as SourcesResponse)
+      : sourcesFromApi(res as Parameters<typeof sourcesFromApi>[0]);
   },
 
-  scanSources(): Promise<ScanSourcesResponse> {
-    return requestWithFallback(
+  async createSource(payload: CreateSourceRequest): Promise<JobSource> {
+    let fellBack = false;
+    const res = await requestWithFallback<unknown>(
+      '/api/sources',
+      { method: 'POST', body: JSON.stringify(sourceCreateToApi(payload)) },
+      () => {
+        fellBack = true;
+        return demoStore.addSource(payload);
+      },
+      LIVE_ONLY,
+    );
+    return fellBack ? (res as JobSource) : sourceFromApi(res as ApiSourceRecord);
+  },
+
+  /** Turns scanning on or off for one source (`PATCH /api/sources/{id}`). */
+  async setSourceEnabled(id: string, enabled: boolean): Promise<JobSource> {
+    let fellBack = false;
+    const res = await requestWithFallback<unknown>(
+      `/api/sources/${encodeURIComponent(id)}`,
+      { method: 'PATCH', body: JSON.stringify({ enabled }) },
+      () => {
+        fellBack = true;
+        return demoStore.setSourceEnabled(id, enabled);
+      },
+      LIVE_ONLY,
+    );
+    return fellBack ? (res as JobSource) : sourceFromApi(res as ApiSourceRecord);
+  },
+
+  /** Scans every enabled source through the scanner's filters (`POST /api/sources/scan`). */
+  async scanSources(): Promise<ScanSourcesResponse> {
+    let fellBack = false;
+    const res = await requestWithFallback<unknown>(
       '/api/sources/scan',
       { method: 'POST', body: JSON.stringify({}) },
-      () => demoStore.scanSources(),
+      () => {
+        fellBack = true;
+        return demoStore.scanSources();
+      },
+      LIVE_ONLY,
     );
+    return fellBack
+      ? (res as ScanSourcesResponse)
+      : scanFromApi(res as Parameters<typeof scanFromApi>[0]);
   },
 
   /** Builds settings from `GET /api/settings`; only `ai_routing` is stored server-side so far. */

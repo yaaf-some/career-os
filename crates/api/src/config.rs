@@ -26,6 +26,9 @@ pub struct AppConfig {
     pub ai_agy_daily_call_limit: Option<i64>,
     /// Hours between scheduled Google syncs (`GOOGLE_SYNC_INTERVAL_HOURS`, 1–168, default 12).
     pub google_sync_interval_hours: u64,
+    /// Scanner sidecar base URL (`SCANNER_URL`, e.g. `http://scanner:8081`).
+    /// ATS scans go through it so its title/location/experience filters apply.
+    pub scanner_url: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -53,6 +56,7 @@ impl Default for AppConfig {
             profile_summary: None,
             ai_agy_daily_call_limit: None,
             google_sync_interval_hours: DEFAULT_GOOGLE_SYNC_INTERVAL_HOURS,
+            scanner_url: None,
         }
     }
 }
@@ -91,6 +95,7 @@ impl AppConfig {
             ai_agy_daily_call_limit: env_non_empty("AI_AGY_DAILY_CALL_LIMIT")
                 .and_then(|v| v.parse::<i64>().ok())
                 .filter(|v| *v > 0),
+            scanner_url: env_non_empty("SCANNER_URL"),
             google_sync_interval_hours: parse_sync_interval(
                 env_non_empty("GOOGLE_SYNC_INTERVAL_HOURS").as_deref(),
             ),

@@ -761,6 +761,13 @@ class DemoStore {
     return structuredClone(created);
   }
 
+  setSourceEnabled(id: string, enabled: boolean): JobSource {
+    const src = this.sources.find((s) => s.id === id);
+    if (!src) throw new Error(`Source ${id} not found`);
+    src.enabled = enabled;
+    return structuredClone(src);
+  }
+
   scanSources(): ScanSourcesResponse {
     const now = new Date().toISOString();
     for (const src of this.sources) {

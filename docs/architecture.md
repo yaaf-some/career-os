@@ -50,6 +50,7 @@ flowchart TB
 - **Host:** the M2 Mac mini runs compose project `career-os` from the GHCR `latest` images (`restart: unless-stopped`; Docker Desktop starts at login). The ai-bridge runs under launchd.
 - **Access:** `tailscale serve` maps `https://<host>.<tailnet>.ts.net:8080` to `127.0.0.1:8080`. Requests need the tailnet's `Tailscale-User-Login` to equal `ALLOWED_TAILSCALE_USER`: no header gets 401, another user gets 403.
 - **Backups:** `scripts/backup-db.sh`, run nightly by launchd (`com.career-os.backup`), streams a `VACUUM INTO` snapshot out of the distroless container (`career-os-api --backup-stdout`), checks `PRAGMA integrity_check`, and keeps 14 days in `~/Backups/career-os/` (mode 700).
+- **Job scanning:** `POST /api/sources/scan` and the 3-day schedule send all enabled sources to the scanner sidecar (`SCANNER_URL`, `/scan/ats`). The sidecar applies its provider registry, posting guard and target title, location and experience filters (45-day max age). Only accepted postings are ingested; rejected ones are logged in `filtered_audit` and shown on the Sources page. Without the sidecar, scans return 503 rather than ingest unfiltered postings.
 - **Private data:** the private career-data repo is cloned outside the repo and mounted read-only at `/data` (`DATA_DIR`).
 
 - **Persistence:** Application state resides in the named Docker volume `career_os_db` (`/var/lib/career-os`) using SQLite WAL mode. Candidate source files are mounted read-only at `/data`.
