@@ -82,21 +82,21 @@ automated = From local-part matches `no-?reply|do-?not-?reply|notifications?|mai
 
 ## Acceptance Criteria
 
-- [ ] With the API returning 500 on `/api/settings`, `/api/jobs/{id}/commute`,
+- [x] With the API returning 500 on `/api/settings`, `/api/jobs/{id}/commute`,
       `/api/commute/preview`, `/api/auth/google/status`, the web shows an error,
       not demo data (vitest per call).
-- [ ] `PUT /api/settings/travel_mode` with `"bike"` → 400; `"transit"` → 200 and
+- [x] `PUT /api/settings/travel_mode` with `"bike"` → 400; `"transit"` → 200 and
       `GET /api/jobs/{id}/commute` uses it (cargo test).
-- [ ] Saving home area in Settings persists across reload (vitest on client
+- [x] Saving home area in Settings persists across reload (vitest on client
       mapping + cargo test on validation).
-- [ ] `GET /api/integrations/linear` returns `configured:false, issues:[]` when
+- [x] `GET /api/integrations/linear` returns `configured:false, issues:[]` when
       unconfigured and lists stored identifiers when present; response contains
       no key/UUID (cargo test). Listed in OpenAPI.
-- [ ] Callback success → 303 to `/settings?google=connected`; bad state → 303 to
+- [x] Callback success → 303 to `/settings?google=connected`; bad state → 303 to
       `/settings?google=error&reason=invalid_state` (cargo test).
-- [ ] `normalize_thread` marks `no-reply@` and `CATEGORY_PROMOTIONS` threads
+- [x] `normalize_thread` marks `no-reply@` and `CATEGORY_PROMOTIONS` threads
       `needs_reply=false`; a human `CATEGORY_UPDATES` thread stays `true` (cargo test).
-- [ ] Full checks green: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
+- [x] Full checks green: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
       `cargo test`, `npm run typecheck && npm test && npm run build` in `web/`.
 
 ## Docs Impact

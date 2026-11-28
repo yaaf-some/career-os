@@ -5,12 +5,13 @@
 
 ## Current Focus
 
-- **`JOB-9` & `JOB-10` Shipped, Verified & Archived:** `JOB-9` (`#28`–`#30`) and `JOB-10` (`#31`, `#34`, `#33`, `#35`) are both merged to `main` (`a469075`), deployed live on M2 (`ai-bridge` + `career-os-app`), verified, and archived under `project/changes/archive/`. No active changes in `project/changes/`.
-- **Exact Next Concrete Step:** propose the next change (`project-propose`) — either **hardening follow-ups** (web demo-fallback hiding 404/5xx on settings/commute, Linear Settings display, OAuth callback UX, `needs_reply` inbox filter, Ashby non-API fallback) or **`/api/jobs/{id}/tailor`** (resume/cover-letter Google Docs grounded in `DATA_DIR` + `project_docs`).
+- **`JOB-11` Implemented (`feat/job-11-hardening`, PR `#36`):** hardening follow-ups (live API errors over demo fallback, persisted & validated commute prefs, `GET /api/integrations/linear`, OAuth callback 303 redirect + Settings notice, `needs_reply` automated-mail filter, `docs/architecture.md`) implemented with `CI Gate` green.
+- **Exact Next Concrete Step:** owner approval & merge of PR `#36` -> deploy updated `career-os-app` container on M2 & `curl` live endpoints -> run `project-verify-archive` for `JOB-11`.
 
 ## Active Branches / In-Flight Work
 
-- `main` (`a469075`): clean, zero open PRs; host `ai-bridge` (`launchd`) and `career-os-app` container running latest `main` (`JOB-9` auto AI routing + `JOB-10` Warm Paper `@base-ui/react` / `@tanstack/react-table` v9 PWA).
+- `main` (`a469075`): `JOB-9` + `JOB-10` live on M2 (`ai-bridge` + `career-os-app`).
+- `feat/job-11-hardening` (PR `#36`): open, `CI Gate` green, awaiting owner merge approval.
 
 ## Container Baseline
 
@@ -18,9 +19,9 @@
 
 ## Upcoming Priorities
 
-1. Hardening follow-ups: web demo-fallback hiding 404/5xx on settings/commute; Linear Settings display; OAuth callback raw JSON; `needs_reply` inbox filter; Ashby board without public API.
-2. Implement `/api/jobs/{id}/tailor` (resume/cover-letter Google Docs grounded in `DATA_DIR` + `project_docs`).
-3. Optional Linear sync: backfill `JOB-8`–`JOB-10` in team `JOB` (`JOB-1`–`JOB-7` currently exist).
+1. Merge PR `#36`, deploy & verify `JOB-11` on M2, and archive `JOB-11`.
+2. Implement `/api/jobs/{id}/tailor` (`JOB-12`: resume/cover-letter Google Docs grounded in `DATA_DIR` + `project_docs`).
+3. Expose Ashby `embed: true` opt-in on `career-os` sources (scanner already supports it; deferred from `JOB-11`) & optional Linear sync (`JOB-8`–`JOB-11`).
 
 ## Recent Decisions
 

@@ -53,7 +53,7 @@ Single PR (`feat/job-11-hardening`), ~5 small commits. Verify after each task.
 ### 7. Docs
 - [x] `docs/architecture.md` (endpoint, redirect, demo-mode rule, needs_reply,
       commute prefs). README Ashby note dropped (see deviations).
-- [ ] PII scan incl. untracked files; open PR; keep `CI Gate` green.
+- [x] PII scan incl. untracked files; open PR; keep `CI Gate` green. (PR #36 opened; CI Gate green on `d064b9f`.)
 
 Then `project-verify-archive` (deploy to M2, curl live endpoints).
 
