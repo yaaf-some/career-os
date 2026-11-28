@@ -10,8 +10,9 @@ use utoipa::ToSchema;
 
 use crate::{
     ai::{
-        build_deep_evaluation_prompt, parse_deep_evaluation_response, select_eval_tier, AiRequest,
-        AiTier, AiUsageReport, DeepEvalJobInput, DeepEvaluationResult, TriageScoreItem,
+        build_deep_evaluation_prompt, build_triage_batch_prompt, parse_deep_evaluation_response,
+        parse_triage_batch_response, select_eval_tier, AiRequest, AiTier, AiUsageReport,
+        DeepEvalJobInput, DeepEvaluationResult, TriageJobInput, TriageScoreItem,
         AI_DISABLED_MESSAGE,
     },
     db::{new_id, now_iso},
@@ -48,6 +49,17 @@ pub struct RescoreResponse {
     pub scored: usize,
     pub provider: Option<String>,
     pub model: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ScoreJobResponse {
+    pub job_id: String,
+    pub score: f64,
+    /// The job's status after scoring.
+    pub triage_status: String,
+    pub provider: String,
+    pub model: String,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -264,6 +276,139 @@ pub async fn rescore_jobs(
 
 #[utoipa::path(
     post,
+    path = "/api/ai/score/{job_id}",
+    params(
+        ("job_id" = String, Path, description = "Job UUID")
+    ),
+    responses(
+        (status = 200, description = "Redo fast triage scoring for this one job. A job still waiting for review may move to skipped; a saved or skipped job keeps its status.", body = ScoreJobResponse),
+        (status = 404, description = "Job not found", body = crate::error::ErrorResponse)
+    ),
+    tag = "ai"
+)]
+pub async fn score_job(
+    State(state): State<AppState>,
+    Path(job_id): Path<String>,
+) -> Result<Json<ScoreJobResponse>, AppError> {
+    if !state.ai.is_enabled() {
+        return Err(AppError::ServiceUnavailable(
+            AI_DISABLED_MESSAGE.to_string(),
+        ));
+    }
+    let job = sqlx::query_as::<_, JobRecord>(sqlx::AssertSqlSafe(format!(
+        r#"SELECT {JOB_COLUMNS} FROM jobs WHERE id = ?1"#
+    )))
+    .bind(&job_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("job {job_id} not found")))?;
+
+    let profile = crate::profile::load_effective_profile(&state.pool, &state.config.data_dir).await;
+    let weights = profile.scoring_weights();
+    let doc_digests = state.load_project_doc_digests().await;
+    let compiled_digest = profile.build_triage_digest(&doc_digests);
+    let profile_summary = compiled_digest
+        .as_deref()
+        .or(state.config.profile_summary.as_deref())
+        .unwrap_or("Senior systems/backend engineer evaluating role fit.");
+    let (system_prompt, prompt) = build_triage_batch_prompt(
+        profile_summary,
+        &weights,
+        &[TriageJobInput {
+            id: job.id,
+            company: job.company,
+            title: job.title,
+            location: job.location,
+            workplace_type: job.workplace_type,
+            jd_snippet: job.jd_text.unwrap_or_default(),
+        }],
+    );
+
+    let routing = state.ai_routing().await;
+    let started = Instant::now();
+    let ai_req = AiRequest {
+        tier: AiTier::Fast,
+        system_prompt: Some(system_prompt),
+        prompt,
+        max_tokens: Some(2000),
+        temperature: Some(0.1),
+        json_mode: true,
+        timeout_secs: Some(150),
+        routing_mode: Some(routing.mode),
+        primary: None,
+        allow_failover: true,
+    };
+    let resp = match state.ai.complete(ai_req).await {
+        Ok(r) => r,
+        Err(err) => {
+            let msg = err.to_string();
+            let _ = state
+                .record_ai_usage(AiUsageRecord::failure(
+                    AiTier::Fast,
+                    state.ai.name(),
+                    started.elapsed().as_millis() as i64,
+                    &msg,
+                    Some(&job_id),
+                ))
+                .await;
+            return Err(err);
+        }
+    };
+    let _ = state
+        .record_ai_usage(AiUsageRecord::success(AiTier::Fast, &resp, Some(&job_id)))
+        .await;
+
+    let mut item = parse_triage_batch_response(&resp.content)?
+        .into_iter()
+        .find(|item| item.job_id == job_id)
+        .ok_or_else(|| AppError::Upstream("the model returned no score for this job".into()))?;
+    item.score = item.score.clamp(0.0, 100.0);
+    let next_status = if item.recommended_status == "skipped" {
+        "skipped"
+    } else {
+        "pending_triage"
+    };
+    let tier1_json =
+        serde_json::to_string(&item).map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
+
+    // The status is decided in SQL so a verdict given while the model was
+    // thinking is never overwritten.
+    let triage_status: String = sqlx::query_scalar(
+        r#"
+        UPDATE jobs
+        SET tier1_score = ?1,
+            tier1_json = ?2,
+            triage_status = CASE
+                WHEN triage_status IN ('pending_scoring', 'pending_triage')
+                     AND id NOT IN (SELECT job_id FROM applications)
+                THEN ?3
+                ELSE triage_status
+            END,
+            updated_at = ?4
+        WHERE id = ?5
+        RETURNING triage_status
+        "#,
+    )
+    .bind(item.score)
+    .bind(tier1_json)
+    .bind(next_status)
+    .bind(now_iso())
+    .bind(&job_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("job {job_id} not found")))?;
+
+    Ok(Json(ScoreJobResponse {
+        job_id,
+        score: item.score,
+        triage_status,
+        provider: resp.provider,
+        model: resp.model,
+    }))
+}
+
+#[utoipa::path(
+    post,
     path = "/api/ai/evaluate/{job_id}",
     params(
         ("job_id" = String, Path, description = "Job UUID")
@@ -438,6 +583,7 @@ pub fn router() -> axum::Router<AppState> {
             axum::routing::post(score_pending_jobs),
         )
         .route("/api/ai/rescore", axum::routing::post(rescore_jobs))
+        .route("/api/ai/score/{job_id}", axum::routing::post(score_job))
         .route(
             "/api/ai/evaluate/{job_id}",
             axum::routing::post(evaluate_job),
@@ -446,7 +592,13 @@ pub fn router() -> axum::Router<AppState> {
 }
 
 #[derive(utoipa::OpenApi)]
-#[openapi(paths(score_pending_jobs, rescore_jobs, evaluate_job, get_ai_usage))]
+#[openapi(paths(
+    score_pending_jobs,
+    rescore_jobs,
+    score_job,
+    evaluate_job,
+    get_ai_usage
+))]
 pub struct Doc;
 
 #[cfg(test)]
@@ -555,5 +707,67 @@ mod tests {
         };
         let r = build_usage_response(&report, 50, Some(50), vec![], fixed_now());
         assert_eq!(r.antigravity.status, AntigravityStatus::Exhausted);
+    }
+
+    async fn state_with_jobs(jobs: &[(&str, &str)]) -> AppState {
+        let state = AppState::for_test(
+            crate::db::init_pool("sqlite::memory:").await.unwrap(),
+            crate::config::AppConfig::default(),
+            std::sync::Arc::new(crate::ai::MockAiProvider),
+        );
+        for (id, status) in jobs {
+            sqlx::query(
+                "INSERT INTO jobs (id, canonical_key, url, company, title, source_type, triage_status) \
+                 VALUES (?1, ?1, 'https://jobs.example.com/1', 'Example Co', 'Engineer', 'manual', ?2)",
+            )
+            .bind(id)
+            .bind(status)
+            .execute(&state.pool)
+            .await
+            .unwrap();
+        }
+        state
+    }
+
+    #[tokio::test]
+    async fn scoring_one_job_leaves_the_others_alone() {
+        let state = state_with_jobs(&[
+            ("job-a", "pending_scoring"),
+            ("job-b", "pending_scoring"),
+            ("job-c", "skipped"),
+        ])
+        .await;
+        let score = |id: &str| score_job(State(state.clone()), Path(id.to_string()));
+
+        assert_eq!(
+            score("job-a").await.unwrap().0.triage_status,
+            "pending_triage"
+        );
+        // A verdict is the user's: only the score changes.
+        assert_eq!(score("job-c").await.unwrap().0.triage_status, "skipped");
+
+        let other: (String, Option<f64>) =
+            sqlx::query_as("SELECT triage_status, tier1_score FROM jobs WHERE id = 'job-b'")
+                .fetch_one(&state.pool)
+                .await
+                .unwrap();
+        assert_eq!(other, ("pending_scoring".to_string(), None));
+        assert!(matches!(score("missing").await, Err(AppError::NotFound(_))));
+    }
+
+    /// The tier picker offers `fast`, which must still produce a deep report.
+    #[tokio::test]
+    async fn every_tier_can_evaluate() {
+        let state = state_with_jobs(&[("job-a", "pending_triage")]).await;
+        for tier in [AiTier::Fast, AiTier::Balanced, AiTier::Deep] {
+            let res = evaluate_job(
+                State(state.clone()),
+                Path("job-a".into()),
+                Json(EvaluateJobRequest { tier: Some(tier) }),
+            )
+            .await
+            .unwrap();
+            assert_eq!(res.0.tier, tier);
+        }
     }
 }
