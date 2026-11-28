@@ -119,6 +119,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/settings", get(routes::settings::list_settings))
         .route("/api/settings/{key}", put(routes::settings::upsert_setting))
         .route("/api/sync-runs", get(routes::settings::list_sync_runs))
+        .route(
+            "/api/integrations/linear",
+            get(routes::integrations::linear_status),
+        )
         .merge(SwaggerUi::new("/docs").url("/api/openapi.json", ApiDoc::openapi()));
 
     let mut router = if let Some(static_dir) = &state.config.static_dir {

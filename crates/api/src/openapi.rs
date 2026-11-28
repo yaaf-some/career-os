@@ -15,13 +15,11 @@ use crate::{
             ClaudeUsageWindow, EvaluateJobRequest, EvaluateJobResponse, RescoreRequest,
             RescoreResponse, ScorePendingRequest, ScorePendingResponse,
         },
-        auth::{
-            GoogleAuthCallbackResponse, GoogleAuthDisconnectResponse, GoogleAuthStatusResponse,
-            GoogleAuthUrlResponse,
-        },
+        auth::{GoogleAuthDisconnectResponse, GoogleAuthStatusResponse, GoogleAuthUrlResponse},
         comms::{CalendarReminderRequest, EmailDraftRequest},
         commute::{CommuteInfoResponse, CommutePreviewRequest},
         health::HealthResponse,
+        integrations::{LinearIssueLink, LinearStatusResponse},
         jobs::{
             ApplicationRecord, CalendarEventRecord, DriveArtifactRecord, EmailDraftRecord,
             EvaluationRecord, GmailThreadRecord, IngestJobInput, IngestJobsRequest,
@@ -95,6 +93,7 @@ use crate::{
         crate::routes::settings::list_settings,
         crate::routes::settings::upsert_setting,
         crate::routes::settings::list_sync_runs,
+        crate::routes::integrations::linear_status,
     ),
     components(
         schemas(
@@ -170,7 +169,6 @@ use crate::{
             AntigravityStatus,
             GoogleAuthStatusResponse,
             GoogleAuthUrlResponse,
-            GoogleAuthCallbackResponse,
             GoogleAuthDisconnectResponse,
             CommuteInfoResponse,
             CommutePreviewRequest,
@@ -179,6 +177,8 @@ use crate::{
             UpsertSettingRequest,
             SyncRunRecord,
             ListSyncRunsResponse,
+            LinearIssueLink,
+            LinearStatusResponse,
         )
     ),
     tags(
@@ -221,6 +221,7 @@ mod tests {
         assert!(json.contains("/api/ai/evaluate/{job_id}"));
         assert!(json.contains("/api/jobs/{id}/commute"));
         assert!(json.contains("/api/commute/preview"));
+        assert!(json.contains("/api/integrations/linear"));
         assert!(json.contains("AiUsageResponse") && json.contains("AiRouting"));
     }
 }

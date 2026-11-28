@@ -253,6 +253,46 @@ async fn parse_draft_response(resp: reqwest::Response) -> Result<String, AppErro
     Ok(parsed.id)
 }
 
+/// Gmail auto-categories that never hold a recruiter reply. `CATEGORY_UPDATES`
+/// stays eligible: real replies from ATS-hosted recruiters often land there.
+const AUTOMATED_CATEGORIES: &[&str] =
+    &["CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_FORUMS"];
+
+/// Mailbox local-parts that are machine senders (`no-reply@`, `notifications@`, …).
+const AUTOMATED_LOCAL_PARTS: &[&str] = &[
+    "noreply",
+    "donotreply",
+    "notification",
+    "notifications",
+    "mailerdaemon",
+    "postmaster",
+];
+
+/// True when a thread's last message is automated mail that needs no reply.
+fn is_automated(from: Option<&str>, labels: &[String]) -> bool {
+    if labels
+        .iter()
+        .any(|l| AUTOMATED_CATEGORIES.contains(&l.as_str()))
+    {
+        return true;
+    }
+    let Some(from) = from else { return false };
+    // `Name <addr@host>` or a bare `addr@host`.
+    let addr = from
+        .rsplit_once('<')
+        .map(|(_, rest)| rest.trim_end_matches('>'))
+        .unwrap_or(from);
+    let Some((local, _)) = addr.trim().split_once('@') else {
+        return false;
+    };
+    let local: String = local
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_ascii_lowercase();
+    AUTOMATED_LOCAL_PARTS.contains(&local.as_str())
+}
+
 fn normalize_thread(raw: GmailThreadApiResponse) -> SyncedGmailThread {
     let last_msg = raw.messages.last();
     let mut subject = None;
@@ -272,7 +312,9 @@ fn normalize_thread(raw: GmailThreadApiResponse) -> SyncedGmailThread {
     }
 
     let labels = last_msg.map(|m| m.label_ids.clone()).unwrap_or_default();
-    let needs_reply = labels.iter().any(|l| l == "INBOX") && !labels.iter().any(|l| l == "SENT");
+    let needs_reply = labels.iter().any(|l| l == "INBOX")
+        && !labels.iter().any(|l| l == "SENT")
+        && !is_automated(from_email.as_deref(), &labels);
 
     let last_message_at = last_msg
         .and_then(|m| m.internal_date.as_deref())
@@ -346,6 +388,39 @@ mod tests {
             threads[0].subject.as_deref(),
             Some("Interview Invitation - Acme")
         );
+    }
+
+    fn labels(ls: &[&str]) -> Vec<String> {
+        ls.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn automated_senders_and_categories_need_no_reply() {
+        let inbox = labels(&["INBOX"]);
+        for from in [
+            "no-reply@ats.example",
+            "Acme Careers <noreply@acme.example>",
+            "do-not-reply@acme.example",
+            "notifications@board.example",
+            "MAILER-DAEMON@mx.example",
+        ] {
+            assert!(is_automated(Some(from), &inbox), "{from}");
+        }
+        assert!(is_automated(
+            Some("pat@acme.example"),
+            &labels(&["INBOX", "CATEGORY_PROMOTIONS"])
+        ));
+        assert!(is_automated(None, &labels(&["CATEGORY_SOCIAL"])));
+    }
+
+    #[test]
+    fn human_reply_in_updates_still_needs_reply() {
+        assert!(!is_automated(
+            Some("Pat Recruiter <pat@acme.example>"),
+            &labels(&["INBOX", "CATEGORY_UPDATES"])
+        ));
+        assert!(!is_automated(Some("not-an-address"), &labels(&["INBOX"])));
+        assert!(!is_automated(None, &labels(&["INBOX"])));
     }
 
     #[test]

@@ -419,7 +419,7 @@ pub async fn patch_tracker(
 
 /// Placeholder written while the issue is being created, so a double submit
 /// can't create two issues.
-const LINEAR_CLAIM: &str = "creating";
+pub(crate) const LINEAR_CLAIM: &str = "creating";
 
 /// Creates one Linear issue for the job's application (JOB-6 PR C), only when
 /// Linear is configured and the application has none yet. Returns the issue

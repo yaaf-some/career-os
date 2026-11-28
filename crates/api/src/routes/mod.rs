@@ -3,6 +3,7 @@ pub mod auth;
 pub mod comms;
 pub mod commute;
 pub mod health;
+pub mod integrations;
 pub mod jobs;
 pub mod profile;
 pub mod settings;
