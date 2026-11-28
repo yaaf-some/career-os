@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react';
 import {
   useCreateSourceMutation,
   useScanSourcesMutation,
+  useSetSourceEnabledMutation,
   useSourcesQuery,
 } from '@/api/queries';
 import type { JobSource } from '@/api/types';
@@ -13,6 +14,7 @@ export function SourcesView() {
   const sourcesQuery = useSourcesQuery();
   const createSourceMutation = useCreateSourceMutation();
   const scanMutation = useScanSourcesMutation();
+  const toggleMutation = useSetSourceEnabledMutation();
 
   const [name, setName] = useState('');
   const [kind, setKind] = useState<JobSource['kind']>('greenhouse');
@@ -64,7 +66,12 @@ export function SourcesView() {
         }
       />
 
-      {scanMutation.data ? (
+      {scanMutation.isError ? (
+        <p role="alert" className="rounded-md border border-red-500/40 bg-red-500/5 px-3 py-2 text-xs text-destructive">
+          Scan failed: {scanMutation.error instanceof Error ? scanMutation.error.message : 'unknown error'}
+        </p>
+      ) : null}
+            {scanMutation.data ? (
         <Card className="border-emerald-500/30 bg-emerald-500/5 p-3 text-xs text-emerald-700 dark:text-emerald-300">
           Scan finished: {scanMutation.data.scannedSources} sources checked,{' '}
           <strong>{scanMutation.data.newMatches}</strong> new matches queued,{' '}
@@ -126,8 +133,25 @@ export function SourcesView() {
                     <Badge variant="neutral">{src.kind}</Badge>
                   </div>
                   <div className="truncate text-xs text-muted-foreground">{src.boardUrl}</div>
+                  {src.lastError ? (
+                    <div className="truncate text-xs text-destructive" title={src.lastError}>
+                      Last scan failed: {src.lastError}
+                    </div>
+                  ) : null}
                 </div>
-                <Badge variant="brand">{src.matchedCount} matched</Badge>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Badge variant="brand">{src.matchedCount} matched</Badge>
+                  <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={src.enabled}
+                      disabled={toggleMutation.isPending}
+                      onChange={(e) => toggleMutation.mutate({ id: src.id, enabled: e.target.checked })}
+                      aria-label={`Scan ${src.name}`}
+                    />
+                    <span>Scan</span>
+                  </label>
+                </div>
               </div>
             ))}
           </div>

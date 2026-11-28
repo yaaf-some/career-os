@@ -44,6 +44,11 @@ impl ScannerClient {
         }
     }
 
+    /// Shared HTTP client (also used for the scanner sidecar).
+    pub fn http(&self) -> &reqwest::Client {
+        &self.http
+    }
+
     pub fn with_bases(mut self, greenhouse: String, ashby: String, lever: String) -> Self {
         self.greenhouse_base = greenhouse.trim_end_matches('/').to_string();
         self.ashby_base = ashby.trim_end_matches('/').to_string();
@@ -412,6 +417,143 @@ fn infer_workplace_type(location: Option<&str>, title: &str) -> Option<String> {
         }
     }
     normalize_workplace(title)
+}
+
+/// One source as the scanner sidecar's `/scan/ats` expects it. `provider` is
+/// only set for ids the sidecar knows; otherwise it auto-detects from the URL.
+#[derive(Debug, Clone, Serialize)]
+pub struct SidecarSource {
+    pub name: String,
+    pub careers_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    pub enabled: bool,
+}
+
+const SIDECAR_PROVIDERS: &[&str] = &[
+    "greenhouse",
+    "ashby",
+    "lever",
+    "workday",
+    "smartrecruiters",
+    "workable",
+    "bamboohr",
+    "rippling",
+    "paylocity",
+];
+
+impl SidecarSource {
+    pub fn new(company: &str, careers_url: &str, provider: &str) -> Self {
+        let p = provider.to_ascii_lowercase();
+        Self {
+            name: company.to_string(),
+            careers_url: careers_url.to_string(),
+            provider: SIDECAR_PROVIDERS.contains(&p.as_str()).then_some(p),
+            enabled: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SidecarAccepted {
+    pub url: String,
+    pub company: String,
+    pub title: String,
+    pub location: Option<String>,
+    pub workplace_type: Option<String>,
+    pub posted_at: Option<String>,
+    pub source_type: Option<String>,
+    pub jd_text: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SidecarRejected {
+    pub url: String,
+    pub company: String,
+    pub title: String,
+    pub location: Option<String>,
+    pub reason_code: String,
+    pub reason_detail: Option<String>,
+    pub source_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SidecarError {
+    pub target: String,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SidecarScanResponse {
+    #[serde(default)]
+    pub accepted: Vec<SidecarAccepted>,
+    #[serde(default)]
+    pub rejected: Vec<SidecarRejected>,
+    #[serde(default)]
+    pub errors: Vec<SidecarError>,
+}
+
+/// `ats_board` / `discovery` are the only scanner source types the DB allows.
+fn sidecar_source_type(raw: Option<&str>) -> String {
+    match raw {
+        Some("discovery") => "discovery".into(),
+        _ => "ats_board".into(),
+    }
+}
+
+impl SidecarAccepted {
+    pub fn into_scanned(self) -> ScannedJob {
+        ScannedJob {
+            canonical_key: canonicalize_url_key(&self.url),
+            source_type: sidecar_source_type(self.source_type.as_deref()),
+            url: self.url,
+            company: self.company,
+            title: self.title,
+            location: self.location,
+            workplace_type: self.workplace_type,
+            posted_at: self.posted_at,
+            jd_text: self.jd_text,
+        }
+    }
+}
+
+impl SidecarRejected {
+    pub fn db_source_type(&self) -> String {
+        sidecar_source_type(self.source_type.as_deref())
+    }
+}
+
+/// Scans sources through the scanner sidecar (provider registry, posting
+/// guard and the target title/location/experience filters).
+pub async fn scan_via_sidecar(
+    http: &reqwest::Client,
+    sidecar_url: &str,
+    sources: &[SidecarSource],
+    max_posting_age_days: u32,
+) -> Result<SidecarScanResponse, AppError> {
+    let url = format!("{}/scan/ats", sidecar_url.trim_end_matches('/'));
+    let resp = http
+        .post(url.as_str())
+        .timeout(std::time::Duration::from_secs(600))
+        .json(&serde_json::json!({
+            "sources": sources,
+            "portalsConfig": { "max_posting_age_days": max_posting_age_days },
+        }))
+        .send()
+        .await
+        .map_err(|e| AppError::Upstream(format!("scanner sidecar request failed: {e}")))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(AppError::Upstream(format!(
+            "scanner sidecar returned {status}: {body}"
+        )));
+    }
+    resp.json()
+        .await
+        .map_err(|e| AppError::Upstream(format!("invalid scanner sidecar JSON: {e}")))
 }
 
 #[cfg(test)]

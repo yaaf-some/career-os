@@ -64,7 +64,9 @@ test('maps careers URLs to API providers', () => {
   assert.deepEqual(gh, { provider: 'greenhouse', boardId: 'exampleco' });
   assert.deepEqual(ashby, { provider: 'ashby', boardId: 'ashbyinc' });
   assert.deepEqual(lever, { provider: 'lever', boardId: 'leverlabs' });
-  assert.equal(paylocity, null);
+  assert.deepEqual(paylocity, { provider: 'paylocity', boardId: null });
+  assert.deepEqual(toSource({ careersUrl: 'https://careers.example.com/jobs' }), { provider: 'auto', boardId: null });
+  assert.equal(toSource({ careersUrl: 'ftp://example.com/jobs' }), null);
 });
 
 test('parses only unchecked pipeline URL rows', () => {
@@ -114,14 +116,14 @@ test('imports idempotently against the API, sources disabled by default', async 
   const base = `http://127.0.0.1:${server.address().port}`;
   try {
     const first = await runImport({ dataDir: dir, apiBase: base, log: () => {} });
-    assert.equal(first.sourcesCreated, 3);
-    assert.deepEqual(first.unsupported, ['Payroll Corp']);
+    assert.equal(first.sourcesCreated, 4);
+    assert.deepEqual(first.unsupported, []);
     assert.equal(first.jobsIngested, 2);
     assert.ok(sources.every((s) => s.enabled === false));
 
     const second = await runImport({ dataDir: dir, apiBase: base, log: () => {} });
     assert.equal(second.sourcesCreated, 0);
-    assert.equal(second.sourcesSkipped, 3);
+    assert.equal(second.sourcesSkipped, 4);
     assert.equal(second.jobsIngested, 0);
     assert.equal(second.jobsDuplicate, 2);
   } finally {

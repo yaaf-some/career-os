@@ -13,8 +13,13 @@ One branch, `feat/job-7-cutover`, carries the repo changes (scripts, plist examp
 ## Repo (`feat/job-7-cutover`)
 - [x] **2.1 Importer** — `scripts/import-career-ops.mjs` (Node 26, no deps; a tiny YAML subset parser for `tracked_companies`). Takes the data dir and API base as arguments; idempotent (skips existing sources by careers URL; ingest is deduped by canonical URL). Tests: `scripts/import-career-ops.test.mjs` on synthetic fixtures (`node --test`).
 - [x] **2.2 Backup** — `scripts/backup-db.sh`: a throwaway `alpine` container with the `career_os_db` volume mounted read-only runs `sqlite3 .backup` to `~/Backups/career-os/career-os-YYYYMMDD.db`, then `PRAGMA integrity_check`, and prunes files older than 14 days. `deploy/launchd/com.career-os.backup.plist.example` runs it daily at 03:30. CI: `plutil -lint` (existing job glob) and `bash -n`.
-- [ ] **2.3 Restore doc + drill** — README: restore into a throwaway volume, boot a throwaway project, compare job counts (AC6).
+- [x] **2.3 Restore doc + drill** — README: restore into a throwaway volume, boot a throwaway project, compare job counts (AC6).
 - [x] **2.4 Runbook + docs** — README §5 "Operate", architecture (deployment and backups), trust (tailnet user; backups hold encrypted tokens), STATE.
+
+## Filtered scanning (PR B, `feat/job-7-filtered-scans`)
+- [x] **4.1** API: `SCANNER_URL` config; `scan_via_sidecar`; `run_ats_scan` → sidecar (ingest accepted, `filtered_audit` for rejected, `last_error` per source; 503 without the sidecar); `GET /api/sources` adds `matched_count` and `filtered_audit`. Tests against a fake sidecar.
+- [x] **4.2** Web: Sources page live (mappers, per-source scan switch, scan result and error, rejection log); importer imports all hosts.
+- [ ] **4.3** Live: enable sources and scan after merge and release.
 
 ## Live
 - [x] **3.1 Import** — run the importer against the live API (AC3).
@@ -34,3 +39,6 @@ One branch, `feat/job-7-cutover`, carries the repo changes (scripts, plist examp
 - **2.2** Backup: `career-os-api --backup-stdout` (`VACUUM INTO` to tmpfs, streamed to stdout). Distroless has no shell, and `docker cp` can't read tmpfs. The host script checks the file with macOS `/usr/bin/sqlite3`. Docker Desktop's CLI is in `~/.docker/bin`, so it's on the plist PATH.
 - **3.1** Live import: 56 sources created (all **disabled**) and 36 pipeline jobs ingested. One company on Paylocity isn't supported by the API scanner. A re-run created nothing (56 skipped, 36 duplicates).
 - **3.2 (partial)** One live hydrogen batch: claude/haiku scored 10 of the imported jobs in 9 s, keeping 7 and skipping 3. **ATS scan not run.** The API fetches every board posting directly (`integrations/scanner.rs`) with no title, location or experience filter; the scanner sidecar's filters, which read the old `portals.yml` rules, are never called. Enabling 56 sources would ingest thousands of irrelevant postings and spend AI scoring calls on them. Sources stay disabled until scans go through the filtered sidecar (proposed follow-up).
+- **2.3** Restore drill: tonight's backup was restored into a throwaway volume, and a throwaway app on it served 36 jobs and 56 sources, the same as live. The README restore step needed `chown 65532:65532` (the app runs as nonroot); fixed. The backup LaunchAgent is installed and kickstarted (exit 0, 03:30 daily).
+- **4.x** Scan on a **copy** of the live DB (branch build, separate port): 56 sources, 10,642 postings fetched, **10,477 filtered**, 153 ingested, in 59 s. 5 boards returned 404, so their slugs in the old data are stale (see `last_error`). The title filter is coarse: aerospace roles like "Fuel/Radar Systems Engineer" pass "Systems Engineer". Hydrogen scoring ranks those low; filter tuning is a follow-up.
+- `ls` is aliased in the user's shell; use `/bin/ls` in scripts.

@@ -50,7 +50,11 @@ function unquote(v) {
   return /^(['"]).*\1$/.test(t) ? t.slice(1, -1) : t;
 }
 
-/** Provider + board id the API scanner understands, or null if unsupported. */
+/**
+ * Provider + board id for a careers URL. Scans run through the scanner sidecar,
+ * which auto-detects any provider it knows from the URL, so unknown hosts get
+ * `auto`. Returns null only for non-http(s) URLs.
+ */
 export function toSource(company) {
   const url = new URL(company.careersUrl);
   const host = url.hostname.toLowerCase();
@@ -60,7 +64,8 @@ export function toSource(company) {
   if (host.endsWith('greenhouse.io') && first) return { provider: 'greenhouse', boardId: first };
   if (host === 'jobs.ashbyhq.com' && first) return { provider: 'ashby', boardId: first };
   if (host === 'jobs.lever.co' && first) return { provider: 'lever', boardId: first };
-  return null;
+  if (host.endsWith('paylocity.com')) return { provider: 'paylocity', boardId: null };
+  return url.protocol === 'https:' || url.protocol === 'http:' ? { provider: 'auto', boardId: null } : null;
 }
 
 /** Pending pipeline lines: `- [ ] url | company | title | location`. */

@@ -255,6 +255,8 @@ export interface JobSource {
   enabled: boolean;
   lastScannedAt: string | null;
   matchedCount: number;
+  /** Last scan error for this source (live API only). */
+  lastError?: string | null;
 }
 
 export interface FilteredAuditEntry {

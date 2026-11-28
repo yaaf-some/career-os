@@ -28,8 +28,8 @@ use crate::{
             UpsertSettingRequest,
         },
         sources::{
-            CreateSourceRequest, DeleteSourceResponse, ListSourcesResponse, SourceRecord,
-            TriggerScanRequest, TriggerScanResponse, UpdateSourceRequest,
+            CreateSourceRequest, DeleteSourceResponse, FilteredAuditRecord, ListSourcesResponse,
+            SourceRecord, TriggerScanRequest, TriggerScanResponse, UpdateSourceRequest,
         },
         tracker::{
             ApplicationWithJob, ListApplicationsResponse, StageCount, TrackerEntry,
@@ -127,6 +127,7 @@ use crate::{
             CalendarReminderRequest,
             LinkThreadResponse,
             SourceRecord,
+            FilteredAuditRecord,
             ListSourcesResponse,
             CreateSourceRequest,
             DeleteSourceResponse,

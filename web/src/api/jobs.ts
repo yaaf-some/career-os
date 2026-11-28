@@ -5,6 +5,10 @@
  */
 import type {
   EvalBlock,
+  FilteredAuditEntry,
+  JobSource,
+  ScanSourcesResponse,
+  SourcesResponse,
   GmailThreadStatus,
   JobDetail,
   JobsListResponse,
@@ -495,4 +499,86 @@ export function trackerPatchToApi(req: UpdateTrackerRequest): Record<string, unk
 /** Badge text for a hydrogen score; 'unscored' until the hydrogen tier runs. */
 export function formatHydrogenScore(score: number | null): string {
   return score == null ? 'unscored' : `${Math.round(score)}/100`;
+}
+
+// ---- Sources (JOB-7) ----
+
+export interface ApiSourceRecord {
+  id: string;
+  company: string;
+  provider: string;
+  careers_url: string;
+  enabled: boolean;
+  last_scanned_at: string | null;
+  last_error: string | null;
+  matched_count: number;
+}
+
+export interface ApiFilteredAuditRecord {
+  id: string;
+  company: string;
+  title: string;
+  reason_code: string;
+  reason_detail: string | null;
+  source_type: string;
+  created_at: string;
+}
+
+const SOURCE_KINDS: JobSource['kind'][] = ['greenhouse', 'ashby', 'lever', 'reddit'];
+
+export function sourceFromApi(s: ApiSourceRecord): JobSource {
+  const kind = SOURCE_KINDS.find((k) => k === s.provider) ?? 'custom';
+  return {
+    id: s.id,
+    name: s.company,
+    kind,
+    boardUrl: s.careers_url,
+    enabled: s.enabled,
+    lastScannedAt: s.last_scanned_at,
+    matchedCount: s.matched_count ?? 0,
+    lastError: s.last_error,
+  };
+}
+
+export function sourcesFromApi(res: {
+  sources: ApiSourceRecord[];
+  filtered_audit?: ApiFilteredAuditRecord[];
+}): SourcesResponse {
+  return {
+    sources: res.sources.map(sourceFromApi),
+    filteredAudit: (res.filtered_audit ?? []).map(
+      (a): FilteredAuditEntry => ({
+        id: a.id,
+        title: a.title,
+        company: a.company,
+        sourceName: a.source_type,
+        rule: a.reason_code,
+        reason: a.reason_detail ?? '',
+        filteredAt: a.created_at,
+      }),
+    ),
+  };
+}
+
+/** Web create payload → API (`custom` lets the scanner auto-detect the board). */
+export function sourceCreateToApi(req: { name: string; kind: JobSource['kind']; boardUrl: string }) {
+  return {
+    company: req.name.trim(),
+    provider: req.kind === 'custom' ? 'auto' : req.kind,
+    careers_url: req.boardUrl.trim(),
+    enabled: true,
+  };
+}
+
+export function scanFromApi(res: {
+  sources_scanned: number;
+  items_ingested: number;
+  items_filtered?: number;
+}): ScanSourcesResponse {
+  return {
+    scannedSources: res.sources_scanned,
+    newMatches: res.items_ingested,
+    filteredOut: res.items_filtered ?? 0,
+    ranAt: new Date().toISOString(),
+  };
 }

@@ -47,7 +47,13 @@ Everything so far ran in throwaway compose projects on this M2 Mac mini (`your-m
    - It makes an online SQLite `.backup` of the volume into `~/Backups/career-os/`, keeps 14 days, and integrity-checks each file.
    - A restore procedure is documented and tested once.
 7. **Retire the old career-ops repo.** After Goals 1–5 pass, archive the GitHub repo (read-only and reversible), keeping the private career-data repo. Nothing from it runs on this host.
-8. **Runbook.** README §5 "Operate": update (pull and up), logs, backup and restore, rotate the bridge token, reconnect Google weekly (Testing mode).
+8. **Filtered scanning** (added 2026-11-28, Yaaf: "Yes, both").
+   - ATS scans go through the scanner sidecar's `/scan/ats`: provider registry, posting guard, and the target title, location and experience filters, plus a 45-day posting age.
+   - Accepted postings are ingested with their `source_id`. Rejected ones go to `filtered_audit` with the reason. Per-source errors go to `sources.last_error`.
+   - Without `SCANNER_URL`, scans return 503 instead of ingesting unfiltered postings.
+   - The Sources page works live: it lists sources with their matched counts, has an on/off switch per source and a scan button, and shows the rejection log.
+   - The importer now imports every host (unknown ones as `auto`, which the sidecar auto-detects).
+9. **Runbook.** README §5 "Operate": update (pull and up), logs, backup and restore, rotate the bridge token, reconnect Google weekly (Testing mode).
 
 ## Non-Goals
 
@@ -74,6 +80,7 @@ Everything so far ran in throwaway compose projects on this M2 Mac mini (`your-m
 - [ ] **AC5** JOB-6 AC11: Google connected with `gmail.compose`, Sync now succeeded, at least one thread linked (or a manual link works), a draft appears in Gmail Drafts unsent, and a reminder appears in Calendar. Test items are deleted afterwards after asking Yaaf.
 - [ ] **AC6** The nightly backup job is loaded. One manual run produces a `.backup` file that passes `PRAGMA integrity_check`. A restore into a throwaway volume boots the app with the same job count.
 - [ ] **AC7** the old career-ops repo is archived (if Q2 = yes).
+- [ ] **AC9** Filtered scan: integration test against a fake sidecar (accepted, rejected and error paths; refuses without `SCANNER_URL`). A live run on a copy of the database ingests only filter-accepted postings.
 - [ ] **AC8** README runbook. Checks for the surfaces touched pass: scanner/script tests, `bash -n`, `plutil -lint`, PII grep.
 
 ## Docs Impact
