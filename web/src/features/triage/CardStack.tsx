@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import type { JobSummary } from '@/api/types';
 import { cn } from '@/lib/cn';
 import { prefersReducedMotion } from '@/lib/theme';
 import type { VerdictAction } from './api';
 import { TriageCard } from './TriageCard';
+import { useFitHeight } from './useFitHeight';
 import { useSwipeGesture, type DragFrame } from './useSwipeGesture';
 
 /** The card behind sits this much lower and smaller until it is promoted. */
 const BEHIND_DROP_PX = 14;
 const BEHIND_SCALE = 0.95;
+const BEHIND_TRANSFORM = `translateY(${BEHIND_DROP_PX}px) scale(${BEHIND_SCALE})`;
 const MAX_TILT_DEG = 9;
 const FLY_MS = 320;
 
@@ -95,9 +97,7 @@ function Layer({
         'absolute inset-0 origin-bottom [transition:transform_320ms_var(--ease-calm),opacity_320ms_var(--ease-calm)]',
         isTop ? 'z-10' : 'pointer-events-none z-0 opacity-80',
       )}
-      style={{
-        transform: isTop ? 'none' : `translateY(${BEHIND_DROP_PX}px) scale(${BEHIND_SCALE})`,
-      }}
+      style={{ transform: isTop ? 'none' : BEHIND_TRANSFORM }}
     >
       {/* The entrance animation has its own element, so its fill can never override a drag. */}
       <div className={cn('h-full', entered && 'calm-rise')}>{children}</div>
@@ -112,7 +112,10 @@ export function CardStack({
   onExitDone,
   onSwipe,
   onOpen,
+  dockRef,
 }: {
+  /** The buttons below, which must stay on screen with the card. */
+  dockRef: RefObject<HTMLElement | null>;
   /** Null while the last card flies off. */
   current: JobSummary | null;
   next: JobSummary | null;
@@ -122,6 +125,7 @@ export function CardStack({
   onOpen: (jobId: string) => void;
 }) {
   const stackRef = useRef<HTMLDivElement>(null);
+  const height = useFitHeight(stackRef, dockRef);
 
   const paint = useCallback((card: HTMLElement, frame: DragFrame | null) => {
     const reduced = prefersReducedMotion();
@@ -130,11 +134,12 @@ export function CardStack({
       card.style.transition = '';
       card.style.transform = '';
       setFeedback(card, null, 0);
-      if (behind) {
-        behind.style.transition = '';
-        behind.style.transform = `translateY(${BEHIND_DROP_PX}px) scale(${BEHIND_SCALE})`;
-        behind.style.opacity = '';
-      }
+      // Every layer: if the queue moved mid-drag, the painted one is now on top.
+      stackRef.current?.querySelectorAll<HTMLElement>('[data-layer]').forEach((layer) => {
+        layer.style.transition = '';
+        layer.style.opacity = '';
+        layer.style.transform = layer.dataset.layer === 'next' ? BEHIND_TRANSFORM : 'none';
+      });
       return;
     }
     const rotate = reduced ? 0 : tilt(frame.offset, frame.cardWidth);
@@ -162,7 +167,8 @@ export function CardStack({
   return (
     <div
       ref={stackRef}
-      className="relative h-[clamp(300px,calc(100dvh-24rem),640px)]"
+      className="relative h-[60dvh] min-h-[300px]"
+      style={height === null ? undefined : { height }}
       data-testid="card-stack"
     >
       {cards.map((job) => {

@@ -6,7 +6,7 @@
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { queryKeys } from '@/api/queries';
-import type { JobsListResponse, JobSummary, TriageStatus } from '@/api/types';
+import type { JobsListResponse, JobSummary, PipelineStage, TriageStatus } from '@/api/types';
 import { useToast } from '@/components/ui';
 import { stageStyle } from '@/lib/stages';
 import { sendBatch, sendVerdict, type BatchOutcome, type VerdictAction } from './api';
@@ -17,6 +17,8 @@ export interface DecidedJob {
   id: string;
   company: string;
   title: string;
+  /** Its pipeline stage when it was decided, to spot later progress. */
+  stage: PipelineStage;
 }
 
 export type EntryStatus = 'held' | 'sending' | 'sent' | 'undoing';
@@ -54,10 +56,13 @@ export function describeEntry(entry: Pick<HistoryEntry, 'action' | 'jobs'>): str
   return `${VERB[entry.action]} ${what}`;
 }
 
+const stageOf = (job: JobSummary): PipelineStage => (job.inPipeline ? job.stage : 'saved');
+
 const decided = (job: JobSummary): DecidedJob => ({
   id: job.id,
   company: job.company,
   title: job.title,
+  stage: stageOf(job),
 });
 
 function createVerdictStore(client: QueryClient) {
@@ -104,13 +109,11 @@ function createVerdictStore(client: QueryClient) {
         : old,
     );
   };
-  const refresh = (ids: string[]) => {
-    void client.invalidateQueries({ queryKey: queryKeys.jobs, exact: true });
+  const refresh = () => {
+    // `jobs` is a prefix, so job pages and any other job lists are refreshed too.
+    void client.invalidateQueries({ queryKey: queryKeys.jobs });
     void client.invalidateQueries({ queryKey: queryKeys.today });
     void client.invalidateQueries({ queryKey: queryKeys.tracker });
-    for (const id of ids) {
-      void client.invalidateQueries({ queryKey: queryKeys.jobDetail(id) });
-    }
   };
   const confirm = (ids: string[], action: VerdictAction) =>
     patchCache(ids, (job) => ({
@@ -147,7 +150,7 @@ function createVerdictStore(client: QueryClient) {
           hide([job.id], false);
           // An undo may already be waiting on this send.
           if (find(key)?.status === 'sending') update(key, { status: 'sent' });
-          refresh([job.id]);
+          refresh();
         },
         () => {
           drop(key);
@@ -186,7 +189,7 @@ function createVerdictStore(client: QueryClient) {
         const waitingForUndo = find(key)?.status === 'undoing';
         update(key, { jobs: kept, status: waitingForUndo ? 'undoing' : 'sent' });
       }
-      refresh(ids);
+      refresh();
       const failures = outcome.failed.map((f) => ({
         job: targets.find((j) => j.id === f.jobId)!,
         error: f.error,
@@ -206,7 +209,8 @@ function createVerdictStore(client: QueryClient) {
       .getQueryData<JobsListResponse>(queryKeys.jobs)
       ?.jobs.find((j) => j.id === job.id);
     if (!now) return null;
-    if (now.inPipeline && now.stage !== 'saved') return `is at ${stageStyle(now.stage).label}`;
+    const stage = stageOf(now);
+    if (stage !== 'saved' && stage !== job.stage) return `is now at ${stageStyle(stage).label}`;
     if (now.triageStatus !== 'pending' && now.triageStatus !== STATUS_AFTER[action]) {
       return 'was changed somewhere else';
     }
@@ -279,7 +283,7 @@ function createVerdictStore(client: QueryClient) {
         notify('Back in the queue. A pipeline entry with its own history was kept.');
       }
     }
-    refresh(ids);
+    refresh();
     return restored;
   }
 

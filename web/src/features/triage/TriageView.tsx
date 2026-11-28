@@ -66,6 +66,7 @@ export function TriageView({
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [failures, setFailures] = useState<BulkFailure[]>([]);
   const [exits, setExits] = useState<CardExit[]>([]);
+  const dockRef = useRef<HTMLDivElement>(null);
   const exitKey = useRef(0);
   const lastIndex = useRef(0);
 
@@ -185,7 +186,8 @@ export function TriageView({
         browse(e.key === 'ArrowRight' ? 1 : -1);
       } else if (e.key === 'Enter') {
         // On a focused button or link, Enter already means that control.
-        if (document.activeElement?.closest('button, a, summary, [role="button"]')) return;
+        const control = 'button, a, summary, [role="button"], [role="switch"]';
+        if (document.activeElement?.closest(control)) return;
         e.preventDefault();
         onSelectRole(currentId);
       }
@@ -206,45 +208,44 @@ export function TriageView({
     <div className="mx-auto flex max-w-[680px] flex-col gap-3" data-testid="triage-view">
       <PageHeader
         title="Triage"
-        subtitle={
-          jobsQuery.data ? (
-            <span data-testid="triage-counts">
-              {left} · {decidedCount} decided this session
-            </span>
-          ) : null
-        }
         actions={
-          <>
-            <button type="button" onClick={openQuickAdd} aria-label="Add job URL" className={headerButton}>
-              <Plus className="h-5 w-5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setBrowserOpen(true)}
-              aria-label="Browse queue"
-              className={headerButton}
-            >
-              <List className="h-5 w-5" />
-            </button>
-          </>
+          <SegmentedControl<TriageMode>
+            ariaLabel="Triage view mode"
+            value={mode}
+            onValueChange={(m) => {
+              setExits([]);
+              changePrefs({ mode: m });
+            }}
+            options={[
+              { value: 'deck', label: 'Deck' },
+              { value: 'list', label: 'List' },
+            ]}
+            className="[&>button]:min-h-9 [&>button]:min-w-16"
+          />
         }
       />
 
       <div className="flex items-center justify-between gap-2">
-        <SegmentedControl<TriageMode>
-          ariaLabel="Triage view mode"
-          value={mode}
-          onValueChange={(m) => {
-            setExits([]);
-            changePrefs({ mode: m });
-          }}
-          options={[
-            { value: 'deck', label: 'Deck' },
-            { value: 'list', label: 'List' },
-          ]}
-          className="[&>button]:min-h-9 [&>button]:min-w-16"
-        />
-        <div className="flex items-center gap-2">
+        <p className="min-w-0 text-xs text-[var(--wp-secondary)]" data-testid="triage-counts">
+          {jobsQuery.data ? (
+            <>
+              <span className="block font-medium text-[var(--wp-ink)]">{left}</span>
+              <span className="block">{decidedCount} decided this session</span>
+            </>
+          ) : null}
+        </p>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button type="button" onClick={openQuickAdd} aria-label="Add job URL" className={headerButton}>
+            <Plus className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setBrowserOpen(true)}
+            aria-label="Browse queue"
+            className={headerButton}
+          >
+            <List className="h-5 w-5" />
+          </button>
           <button
             type="button"
             onClick={() => setHistoryOpen(true)}
@@ -403,8 +404,9 @@ export function TriageView({
       ) : current || flying ? (
         <>
           {/* Cards slide to the screen edge without making the page scroll sideways. */}
-          <div className="-mx-5 overflow-x-clip px-5 pb-4 md:-mx-8 md:px-8">
+          <div className="-mx-5 -mb-3 overflow-x-clip px-5 pb-4 md:-mx-8 md:px-8">
             <CardStack
+              dockRef={dockRef}
               current={current ?? null}
               next={next}
               exits={exits}
@@ -414,19 +416,22 @@ export function TriageView({
             />
           </div>
           {current ? (
-          <div className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 -mx-2 bg-[var(--wp-canvas)] px-2 pb-1 md:bottom-0">
-            <div className="flex min-h-5 justify-center">{lastVerdict}</div>
-            <ActionDock
-              position={index + 1}
-              total={jobs.length}
-              canUndo={Boolean(latest)}
-              onPrevious={() => browse(-1)}
-              onNext={() => browse(1)}
-              onSkip={() => decide('skip', current.id)}
-              onSave={() => decide('shortlist', current.id)}
-              onUndo={undoLatest}
-            />
-          </div>
+            <div
+              ref={dockRef}
+              className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 -mx-2 bg-[var(--wp-canvas)] px-2 pb-1 md:bottom-0"
+            >
+              <ActionDock
+                status={lastVerdict}
+                position={index + 1}
+                total={jobs.length}
+                canUndo={Boolean(latest)}
+                onPrevious={() => browse(-1)}
+                onNext={() => browse(1)}
+                onSkip={() => decide('skip', current.id)}
+                onSave={() => decide('shortlist', current.id)}
+                onUndo={undoLatest}
+              />
+            </div>
           ) : null}
         </>
       ) : null}

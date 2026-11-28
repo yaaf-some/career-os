@@ -1,4 +1,5 @@
 import { Bookmark, ChevronLeft, ChevronRight, Undo2, X } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { Kbd } from '@/components/ui';
 
 const arrowClass =
@@ -19,6 +20,7 @@ function Key({ children, solid = false }: { children: string; solid?: boolean })
 
 /** Every gesture has a button here, within reach of a thumb. */
 export function ActionDock({
+  status,
   position,
   total,
   canUndo,
@@ -28,6 +30,8 @@ export function ActionDock({
   onSave,
   onUndo,
 }: {
+  /** What was decided last. */
+  status: ReactNode;
   /** 1-based place of the current card in the queue. */
   position: number;
   total: number;
@@ -50,9 +54,12 @@ export function ActionDock({
         >
           <ChevronLeft className="h-5 w-5" />
         </button>
-        <span className="font-mono-meta text-xs text-[var(--wp-muted)]">
-          {position} of {total}
-        </span>
+        <div className="flex min-w-0 flex-col items-center">
+          {status}
+          <span className="font-mono-meta text-xs text-[var(--wp-muted)]">
+            {position} of {total}
+          </span>
+        </div>
         <button
           type="button"
           aria-label="Next job"

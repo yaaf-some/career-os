@@ -292,7 +292,7 @@ describe('held verdicts and undo history', () => {
     await renderDeck(0);
     fireEvent.click(screen.getByRole('button', { name: /^Save/ }));
     await screen.findByText(/Could not save your choice for Alpha/);
-    expect(screen.getByTestId('triage-counts').textContent).toContain('3 left · 0 decided');
+    expect(screen.getByTestId('triage-counts').textContent).toContain('3 left0 decided');
   });
 
   it('undoes an already sent verdict with restore, from the history', async () => {
@@ -306,7 +306,7 @@ describe('held verdicts and undo history', () => {
       expect(posts[1]).toEqual({ url: '/api/triage/a', body: { action: 'restore' } }),
     );
     await waitFor(() =>
-      expect(screen.getByTestId('triage-counts').textContent).toContain('3 left · 0 decided'),
+      expect(screen.getByTestId('triage-counts').textContent).toContain('3 left0 decided'),
     );
   });
 
@@ -355,13 +355,13 @@ describe('list mode', () => {
       body: { action: 'skip', job_ids: ['a', 'b', 'c'] },
     });
     await waitFor(() =>
-      expect(screen.getByTestId('triage-counts').textContent).toContain('1 left · 2 decided'),
+      expect(screen.getByTestId('triage-counts').textContent).toContain('1 left2 decided'),
     );
 
     // One undo takes the whole bulk verdict back.
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
     await waitFor(() =>
-      expect(screen.getByTestId('triage-counts').textContent).toContain('3 left · 0 decided'),
+      expect(screen.getByTestId('triage-counts').textContent).toContain('3 left0 decided'),
     );
     expect(posts[1].body).toEqual({ action: 'restore', job_ids: ['a', 'c'] });
   });
