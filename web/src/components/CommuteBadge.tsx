@@ -36,12 +36,12 @@ export function CommuteBadgeDisplay({
         : MapPin;
 
   const tone = commute.isRemote
-    ? 'border-sky-500/30 bg-sky-500/10 text-sky-300'
+    ? 'border-transparent bg-[var(--wp-raised)] text-[var(--wp-secondary)]'
     : commute.durationMinutes !== null && commute.durationMinutes <= 25
-      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+      ? 'border-transparent bg-[var(--wp-good-soft)] text-[var(--wp-good)]'
       : commute.distanceMiles !== null
-        ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
-        : 'border-border bg-muted/60 text-muted-foreground';
+        ? 'border-transparent bg-[var(--wp-warn-soft)] text-[var(--wp-warn)]'
+        : 'border-[var(--wp-hairline)] bg-[var(--wp-raised)] text-[var(--wp-muted)]';
 
   const label = formatCommuteText(commute);
   const title = commute.originArea
@@ -51,7 +51,7 @@ export function CommuteBadgeDisplay({
   const badge = (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium',
+        'font-mono-meta inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium',
         tone,
       )}
       data-testid="commute-badge"
@@ -60,7 +60,7 @@ export function CommuteBadgeDisplay({
       <Icon className="h-3 w-3 shrink-0" />
       <span>{label}</span>
       {!compact && commute.originArea && !commute.isRemote ? (
-        <span className="text-[11px] opacity-80">from {commute.originArea}</span>
+        <span className="font-sans text-[11px] opacity-80">from {commute.originArea}</span>
       ) : null}
     </span>
   );
@@ -70,13 +70,13 @@ export function CommuteBadgeDisplay({
       <a
         href={commute.mapsUrl}
         target="_blank"
-        rel="noreferrer"
+        rel="noopener noreferrer"
         onClick={(e) => e.stopPropagation()}
         className="inline-flex items-center gap-1 hover:opacity-90"
         title={`Open directions in Google Maps (${title})`}
       >
         {badge}
-        {!compact ? <ExternalLink className="h-3 w-3 text-muted-foreground" /> : null}
+        {!compact ? <ExternalLink className="h-3 w-3 text-[var(--wp-muted)]" /> : null}
       </a>
     );
   }
@@ -122,7 +122,7 @@ export function CommuteBadge({
   if (commuteQuery.isLoading || !commuteQuery.data) {
     return (
       <span
-        className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground"
+        className="inline-flex items-center gap-1 rounded-full border border-[var(--wp-hairline)] bg-[var(--wp-raised)] px-2 py-0.5 text-xs text-[var(--wp-muted)]"
         data-testid="commute-badge-loading"
       >
         <MapPin className="h-3 w-3" />

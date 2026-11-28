@@ -10,15 +10,15 @@ import {
 } from '@/lib/usage';
 
 const SEVERITY_TEXT: Record<UsageSeverity, string> = {
-  ok: 'text-emerald-600 dark:text-emerald-400',
-  warn: 'text-amber-600 dark:text-amber-400',
-  critical: 'text-red-600 dark:text-red-400',
+  ok: 'text-[var(--wp-good)]',
+  warn: 'text-[var(--wp-warn)]',
+  critical: 'text-[var(--wp-bad)]',
 };
 
 const SEVERITY_BAR: Record<UsageSeverity, string> = {
-  ok: 'bg-emerald-500',
-  warn: 'bg-amber-500',
-  critical: 'bg-red-500',
+  ok: 'bg-[var(--wp-good)]',
+  warn: 'bg-[var(--wp-warn)]',
+  critical: 'bg-[var(--wp-bad)]',
 };
 
 function WindowMeter({
@@ -36,9 +36,9 @@ function WindowMeter({
   const countdown = formatResetCountdown(window?.resetAt, nowMs);
 
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-border bg-card/80 px-2.5 py-1.5 text-xs">
-      <span className="font-medium text-muted-foreground">{label}</span>
-      <div className="h-1.5 w-14 overflow-hidden rounded-full bg-secondary" aria-hidden="true">
+    <div className="paper-sheet flex items-center gap-2 rounded-[10px] px-2.5 py-1.5 text-xs">
+      <span className="font-medium text-[var(--wp-muted)]">{label}</span>
+      <div className="h-1.5 w-14 overflow-hidden rounded-full bg-[var(--wp-raised)]" aria-hidden="true">
         <div
           className={cn('h-full rounded-full transition-all', SEVERITY_BAR[severity])}
           style={{ width: `${clamped}%` }}
@@ -46,13 +46,13 @@ function WindowMeter({
       </div>
       <span
         className={cn(
-          'font-semibold tabular-nums',
-          percent == null ? 'text-muted-foreground' : SEVERITY_TEXT[severity],
+          'font-mono-meta font-semibold',
+          percent == null ? 'text-[var(--wp-muted)]' : SEVERITY_TEXT[severity],
         )}
       >
         {formatUsagePercent(percent)}
       </span>
-      <span className="text-[11px] text-muted-foreground tabular-nums">
+      <span className="font-mono-meta text-[11px] text-[var(--wp-muted)]">
         resets {countdown}
       </span>
     </div>
@@ -71,7 +71,7 @@ export function UsageBar({
   if (isLoading && !usage) {
     return (
       <div
-        className="flex items-center gap-2 text-xs text-muted-foreground"
+        className="flex items-center gap-2 text-xs text-[var(--wp-muted)]"
         data-testid="usage-bar-loading"
       >
         <Cpu className="h-3.5 w-3.5 animate-pulse" />
@@ -87,7 +87,7 @@ export function UsageBar({
   if (!usage.configured) {
     return (
       <div
-        className="flex items-center gap-2 text-xs text-muted-foreground"
+        className="flex items-center gap-2 text-xs text-[var(--wp-muted)]"
         aria-label="AI Quota Usage Bar"
         data-testid="usage-bar-unconfigured"
       >
@@ -100,10 +100,10 @@ export function UsageBar({
   const ag = formatAntigravityStatus(usage.antigravity, nowMs);
   const agToneClass =
     ag.tone === 'ready'
-      ? 'text-emerald-600 dark:text-emerald-400'
+      ? 'text-[var(--wp-good)]'
       : ag.tone === 'cooldown'
-        ? 'text-amber-600 dark:text-amber-400'
-        : 'text-red-600 dark:text-red-400';
+        ? 'text-[var(--wp-warn)]'
+        : 'text-[var(--wp-bad)]';
 
   return (
     <div
@@ -111,16 +111,16 @@ export function UsageBar({
       aria-label="AI Quota Usage Bar"
       data-testid="usage-bar"
     >
-      <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-        <Cpu className="h-3.5 w-3.5 text-accent-brand" />
+      <div className="flex items-center gap-1.5 text-xs font-medium text-[var(--wp-muted)]">
+        <Cpu className="h-3.5 w-3.5 text-[var(--wp-accent)]" />
         <span>Claude</span>
         {!usage.bridgeReachable ? (
-          <span className="text-red-600 dark:text-red-400" data-testid="usage-bridge-offline">
+          <span className="text-[var(--wp-bad)]" data-testid="usage-bridge-offline">
             bridge offline
           </span>
         ) : usage.claudeStale ? (
           <span
-            className="text-amber-600 dark:text-amber-400"
+            className="text-[var(--wp-warn)]"
             data-testid="usage-claude-stale"
             title={usage.updatedAt ? `Last update ${usage.updatedAt}` : 'No Claude usage data yet'}
           >
@@ -132,10 +132,10 @@ export function UsageBar({
       <WindowMeter label="5h" window={usage.claude5h} nowMs={nowMs} />
       <WindowMeter label="7d" window={usage.claude7d} nowMs={nowMs} />
 
-      <div className="flex items-center gap-2 rounded-lg border border-border bg-card/80 px-2.5 py-1.5 text-xs">
-        <Sparkles className="h-3.5 w-3.5 text-accent-brand" />
-        <span className="font-medium text-muted-foreground">Antigravity</span>
-        <span className="font-semibold tabular-nums">{ag.callsLabel}</span>
+      <div className="paper-sheet flex items-center gap-2 rounded-[10px] px-2.5 py-1.5 text-xs">
+        <Sparkles className="h-3.5 w-3.5 text-[var(--wp-accent)]" />
+        <span className="font-medium text-[var(--wp-muted)]">Antigravity</span>
+        <span className="font-mono-meta font-semibold">{ag.callsLabel}</span>
         <span className={cn('font-medium', agToneClass)}>{ag.label}</span>
       </div>
     </div>

@@ -1,46 +1,51 @@
-# JOB-10 — Calm Native iOS/macOS UX & UI Overhaul (ADHD-Friendly Focus Architecture)
+# JOB-10 — Warm Paper Calm Native UX & Mobile-First UI Overhaul
 
-**Status:** Proposed
-**Issue:** JOB-10 (Linear) · Target Branches: `feat/job-10a-design-system-shell`, `feat/job-10b-focus-triage-today`, `feat/job-10c-tracker-sources-settings`
+**Status:** In Progress (PR 10A) (Warm Paper + Terracotta mobile-first prototype approved; awaiting final spec/plan OK to start PR 10A)
+**Issue:** JOB-10 · Target Branches: `feat/job-10a-design-system-shell`, `feat/job-10b-focus-triage-today`, `feat/job-10c-tracker-sources-settings`
 
 ## Problem / Context
 
 The current `web/` frontend feels generic and high-cognitive-load for daily use:
-1. **Hand-rolled primitive layer & card soup:** A single 111-line `web/src/components/ui.tsx` renders flat bordered cards stacked vertically with 4–5 pill badges per row and unstyled native `<input>` / `<select>` elements despite `@base-ui/react` + Tailwind v4 already being installed.
-2. **Cognitive overload on Triage & Today:** Every screen dumps full metadata and action buttons at once instead of guiding attention sequentially, lacks keyboard/focus-queue flow (`A/S/X`, `←/→`), and exposes cluttered internal status pills in the global top bar.
-3. **Weak native mobile/desktop feel:** Navigation, forms, settings rows, and motion feel like a generic template rather than a calm macOS / iOS native companion app tailored for an ADHD workflow.
+1. **Hand-rolled primitive layer & card soup:** A single 111-line [`web/src/components/ui.tsx`](../../../web/src/components/ui.tsx) renders flat bordered cards stacked vertically with 4–5 pill badges per row and unstyled native `<input>` / `<select>` elements despite `@base-ui/react` + Tailwind v4 already being installed.
+2. **Cognitive overload on Triage & Today:** Every screen dumps full metadata and action buttons at once instead of guiding attention sequentially, lacks a thumb-friendly Focus Queue (`A/S/X`, `←/→`, drag-to-verdict, Undo toast), and clutters the global header with persistent status pills.
+3. **Weak mobile-first & calm native craft:** Navigation, sheets, forms, settings rows, and motion feel like a generic admin template rather than a quiet iOS/macOS companion tailored for an ADHD workflow.
 
-## Design North Star
+## Design North Star (Approved Prototype: `job10-paper-mobile-prototype.html`)
 
-- **Calmness & Clarity First:** Inspired by **Apple HIG (macOS / iOS)**, **Things 3**, and **Craft**, built on **`@base-ui/react` + `coss ui`** copy-and-own primitives and **`@tanstack/react-table`**.
-- **ADHD-Friendly Progressive Disclosure:** Surface at most 3–4 signals by default (match score, role/company, location/commute, status dot); keep full JDs, 4-dimension score bars, and deep A–G analysis tucked behind clean tabs, expandable sections, and slide-over sheets.
-- **Purposeful Motion & Modern Web Craft:** Zero lag on high-frequency actions (`⌘K`, `j/k`, `A/S/X` triage verdicts); gentle `ease-out` / spring curves on focus-card transitions, sheets, and toasts; CSS `@container` queries and View Transitions API; strict `prefers-reduced-motion` compliance; zero purple gradients or pill-badge clutter.
+- **Warm Paper + Terracotta Aesthetic:** Tactile, editorial calm inspired by **Apple HIG (iOS/macOS)**, **Things 3**, and **Craft**, built on **`@base-ui/react` + `coss ui`** copy-and-own primitives and **`@tanstack/react-table`**.
+  - **Light (Warm Paper):** sidebar `#EDE7DC`, canvas `#F7F4EE`, paper surface `#FDFBF7`, raised `#EFE9DF`, hairline `rgba(31, 27, 22, 0.08)`, ink `#1F1B16`, secondary `#5E554A`, muted `#7B7266`, terracotta accent `#9E472A`, good `#2B7A54`, bad `#B83B33`, subtle warm elevation shadows.
+  - **Dark (Warm Charcoal):** sidebar `#12110F`, canvas `#161513`, paper surface `#1C1A18`, raised `#262421`, hairline `rgba(239, 233, 222, 0.08)`, ink `#EFE9DE`, secondary `#AAA398`, muted `#8A847A`, warm terracotta `#DC8562`, good `#4CC38A`, bad `#E5645C`, subtle top inset highlight (`inset 0 1px 0 rgba(255, 255, 255, 0.06)`), high-contrast primary CTA (`#EFE9DE` on `#161513`).
+  - **Typography:** Editorial serif display titles (`"New York", "Iowan Old Style", Georgia, serif`, weight 400, `-0.015em` tracking), native sans UI (`-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif`), and tabular monospace (`ui-monospace, "SF Mono", Menlo, monospace`, `tabular-nums`) for scores, dates, and counts.
+- **Mobile-First, ADHD-Friendly Progressive Disclosure:** Show at most 3–4 signals on the primary surface (company/location, serif role title, concise summary, 4-part Fit Horizon); keep full job descriptions, deep A–G analysis, Gmail/Calendar/Draft actions, and queue browsing in pull-up bottom sheets (mobile) / slide-over sheets (desktop).
+- **Purposeful Calm Motion:** `--ease-calm: cubic-bezier(0.22, 1, 0.36, 1)`, subtle `scale(0.975)` tap response, `sheetRise`/`drawerUp` transitions, `inkCheck` SVG draw on approve, direct 1:1 pointer drag physics on the Triage Focus Sheet, and strict `prefers-reduced-motion: reduce` compliance. Zero purple gradients or pill-badge clutter.
 
 ## Goals
 
-1. **Design Token System & `coss ui` Primitive Layer (`web/src/index.css`, `web/src/components/ui/*`):**
-   - Replace `ui.tsx` with modular, copy-and-own Base UI + `coss ui` components (`Button`, `Badge`, `InsetGroup` / `Frame`, `Input`, `Textarea`, `Select`, `Switch`, `Tabs`, `SegmentedControl`, `Sheet`, `Dialog`, `Command`, `Popover`, `Tooltip`, `Toast`, `Meter`, `Kbd`, `Skeleton`, `Empty`, `Separator`).
-   - Implement Calm Native semantic tokens for **Light** (`#F7F7F5` paper canvas, `#FFFFFF` grouped inset surfaces), **Dark** (`#111214` charcoal canvas, `#1A1C20` grouped surfaces), and **System** mode (user-selectable + persisted in `localStorage`), with subtle layered ambient shadows + hairline borders, one restrained blue signal accent, humanist sans + tabular monospace (`tabular-nums`) for scores/dates/commutes.
-2. **Quiet Navigation Chrome & Global `⌘K` Command + Quick-Add (`AppShell.tsx`):**
-   - Translucent macOS-style sidebar (desktop) with calm icon-first nav and safe-area iOS bottom tab bar (mobile PWA).
-   - Move Quick-Add Job URL into a global **`+` / `⌘K` Command Palette** accessible from every screen.
-   - Replace permanently crowded top-bar pills with a quiet sidebar footer status dot (opening a popover with AI/Google details on click) and a calm top banner shown **only** when user action is required (e.g., Google OAuth expiring/missing scopes or AI bridge unreachable).
+1. **Warm Paper Token System & `coss ui` Primitive Layer (`web/src/index.css`, `web/src/lib/theme.ts`, `web/src/components/ui/*`):**
+   - Replace monolithic `ui.tsx` with modular copy-and-own `@base-ui/react` primitives (`Button`, `Badge`, `InsetGroup` / `PaperSheet`, `Input`, `Textarea`, `Select`, `Switch`, `Tabs`, `SegmentedControl`, `Sheet`, `Dialog`, `Command`, `Popover`, `Tooltip`, `Toast`, `Meter`, `Kbd`, `Skeleton`, `Empty`, `Separator`).
+   - Implement Warm Paper Light / Warm Charcoal Dark / System theme support persisted in `localStorage` with instant `data-theme` attribute application (zero flash).
+2. **Mobile-First 4-Tab Shell, Quiet Status & Global `+` / `⌘K` Capture (`AppShell.tsx`, `CommandPalette.tsx`, `QuickAddDialog.tsx`):**
+   - **Mobile PWA:** Clean 4-tab safe-area bottom bar (`Today`, `Triage`, `Tracker`, `Settings`) with `Sources` cleanly linked from Settings (`Job boards`) and `⌘K` while preserving the `/sources` route.
+   - **Desktop:** Quiet `#EDE7DC` / `#12110F` sidebar (`w-60`) with `+` quick-capture button, nav items (including Sources link), and a single quiet footer status dot opening an AI/Google status popover on click.
+   - **Conditional Alert Banner:** Remove permanently crowded top-bar pills; render a calm top alert banner **only** when user action is required (Google OAuth expiring/missing scopes or AI bridge unreachable).
+   - **Global `+` / `⌘K`:** Quick-Add Job URL sheet/dialog + Command Palette (route navigation, Quick-Add, Scan Boards, Sync Google/Drive) accessible from every view.
 3. **Today — Quiet 3-Section Daily Briefing (`TodayView.tsx`):**
-   - Restrict Today to 3 calm inset groups: **Replies Needing Action**, **Upcoming & Follow-ups**, and **Top Matches to Triage**.
-   - Selecting any top match opens that role directly in Triage Focus Queue or its slide-over `RoleDetailSheet`.
-4. **Triage — Focus-First Single-Role Queue + List Toggle (`TriageView.tsx`, `RoleDetailSheet.tsx`):**
-   - Default to **Focus Queue**: distraction-free single-role workspace showing role header, match score meter + collapsible/clean 4-dimension bars, commute/remote summary, dealbreaker notice (if triggered), one-paragraph triage summary, `Overview | JD | Deep Analysis` tabs, and a calm pinned verdict dock (**Approve `[A]`**, **Shortlist `[S]`**, **Skip `[X]`**, `Prev/Next [←/→]`, progress indicator `1 of N`).
-   - Provide a subtle **`Queue | List`** segmented control (plus search/inbox/approved filter) when batch-browsing is wanted.
+   - Editorial serif date header + one-line summary count + `+` quick capture trigger.
+   - Strictly 3 calm paper groups: **Needs a reply**, **Follow ups & upcoming**, and **Worth a look** (top matches tapping straight into Triage Focus or `RoleDetailSheet`).
+4. **Triage — Single-Role Focus Paper Sheet, 4-Part Fit Horizon & Drag/Undo (`TriageView.tsx`, `FitHorizon.tsx`, `RoleDetailSheet.tsx`):**
+   - Single-role centered Focus Paper Sheet with hairline progress bar (`1 / N`), signature terracotta bookmark notch when saved, dealbreaker soft-tint notice (if triggered), concise summary, and **Signature 4-Part Fit Horizon** (`Role /35`, `Level /25`, `Vibe /25`, `Logistics /15`, terracotta score highlight when `>= 75`).
+   - Direct 1:1 pointer/touch horizontal drag physics (`>96px` Approve/Skip threshold, subtle `±2.5deg` tilt, intent labels) paired with thumb-zone action dock (`Skip [X]`, bookmark `[S]`, primary `Approve [A]` with `inkCheck` animation) and calm **Undo toast** reverting accidental verdicts.
+   - Pull-up/slide-over **Queue Browser sheet** (`Inbox | Saved | All` filter + jump-to-role; desktop `Queue | List` option) and **`RoleDetailSheet`** (`Posting details` | `Deep analysis` + full Gmail/Calendar/Draft/Commute actions).
 5. **Tracker — Things-3-Style Grouped Stage Lists (`TrackerView.tsx`):**
-   - Render applications in calm grouped inset sections per pipeline stage (collapsing empty stages cleanly), with subtle Gmail thread status dots, tabular follow-up dates, Linear issue links, quick inline stage transition, and slide-over `RoleDetailSheet`.
-6. **Sources & Settings (`SourcesView.tsx`, `SettingsView.tsx`):**
-   - **Sources:** Compact `@tanstack/react-table` board table with inline enable switches, scan trigger with toast feedback, and a collapsible rejection audit drawer/section.
-   - **Settings:** macOS System Settings-style grouped inset sections (**Appearance**, **Candidate Profile & Project Docs**, **AI Routing & Provider Health**, **Google Workspace**, **LA Commute & Maps**, **Linear Integration** showing real connected status).
+   - Stage-grouped paper lists (`Interview`, `Applied`, `Saved`, collapsing empty stages), subtle Gmail reply/waiting status dots, tabular follow-up dates, Linear issue links, pull-up/inline Stage Picker sheet/select, and `RoleDetailSheet` inspection.
+6. **Sources & macOS/iOS System Settings (`SourcesView.tsx`, `SettingsView.tsx`):**
+   - **Sources:** Compact `@tanstack/react-table` board list with inline Base UI `Switch` toggles, scan trigger with toast feedback, and collapsible rejection audit section (also reachable from Settings → **Job boards**).
+   - **Settings:** Calm grouped paper panels for **Appearance** (`Light | Dark | System`), **AI routing** (`Auto | Claude | Gemini` segmented control + read-only Claude 5h/7d & Gemini health meters), **Profile & sources** (Candidate Profile file count, Drive Project Docs **Sync** & **Rescore**, **Job boards** link, **Google Workspace**, **Maps & LA Commute**, and **Linear** live status).
 
 ## Non-Goals
 
 - Adding new backend API endpoints or modifying `crates/api` contracts (consumes `JOB-8` and `JOB-9` APIs directly).
-- Desktop Electron/Tauri packaging (stays a fast responsive web PWA).
+- Native Swift/Electron/Tauri packaging (remains a fast responsive web PWA bundled into `/app/static`).
 
 ## Security & Trust Boundary Notes
 
@@ -49,16 +54,16 @@ The current `web/` frontend feels generic and high-cognitive-load for daily use:
 
 ## Acceptance Criteria
 
-- [ ] **AC1 — `coss ui` + Base UI Component Library & Theme System:** Legacy `ui.tsx` replaced by modular `@base-ui/react` primitives styled with Calm Native tokens; Light/Dark/System selector works and persists cleanly.
-- [ ] **AC2 — Quiet Chrome & `⌘K` Command / Quick-Add:** Desktop sidebar + iOS bottom tab bar with safe-area padding; global `⌘K` / `+` opens Command Palette & Quick-Add URL from any route; noisy header status pills are tucked into sidebar status popover and surface inline banners only on actionable alerts.
-- [ ] **AC3 — Focus-First Triage Queue:** Default Triage presents one role at a time with match score + 4-dimension breakdown, Deep Analysis trigger, keyboard shortcuts (`A`, `S`, `X`, `←`, `→`), subtle progress counter, and working `Queue | List` segmented toggle.
-- [ ] **AC4 — Calm Today, Grouped Tracker & Table Sources:** Today shows max 3 focused sections; Tracker displays stage-grouped inset lists with inline stage changes and Gmail/Linear metadata; Sources uses `@tanstack/react-table` + collapsible rejection log.
-- [ ] **AC5 — macOS-Style Settings & Toast Feedback:** Settings uses grouped inset panels for Appearance, Profile/Docs sync & rescore, AI routing mode, Google OAuth, Maps preview, and Linear live status; mutations provide calm Base UI toasts instead of jarring inline banners.
-- [ ] **AC6 — Responsive Craft, Motion & Accessibility:** CSS `@container` queries and `tabular-nums` applied consistently; View Transitions and spring/ease-out transitions respect `prefers-reduced-motion`; full keyboard and ARIA compliance across dialogs, sheets, tabs, and menus.
-- [ ] **AC7 — Web Verification Suite:** `cd web && npm run typecheck && npm test && npm run build` passes with updated Vitest tests covering Focus Triage navigation/shortcuts, `⌘K` Quick-Add, theme toggle, grouped Tracker, and Settings.
-- [ ] **AC8 — Live Desktop & Mobile Tailnet Verification:** Deployed on M2 container stack and visually verified at both desktop and iPhone viewport sizes (plus light & dark mode).
+- [ ] **AC1 — Warm Paper Tokens, Theme System & `coss ui` Primitives:** Legacy `ui.tsx` replaced by modular `@base-ui/react` primitives styled with Warm Paper Light / Warm Charcoal Dark tokens, terracotta accent, serif/sans/mono typography, and persisted `Light | Dark | System` selector.
+- [ ] **AC2 — Mobile-First Quiet Shell & Global `+` / `⌘K`:** 4-tab mobile bottom nav with safe-area padding + quiet desktop sidebar with status footer popover; conditional alert banner shown only on actionable Google/AI issues; `+` / `⌘K` opens Quick-Add URL & Command Palette from any route (`/sources` route preserved).
+- [ ] **AC3 — Focus Triage Sheet, 4-Part Fit Horizon, Drag Physics & Undo:** Default Triage presents single-role Focus Paper Sheet with 4-Part Fit Horizon (`Role/Level/Vibe/Logistics`), bookmark notch, pointer drag-to-verdict, keyboard shortcuts (`A`, `S`, `X`, `←`, `→`), `inkCheck` approve feedback, Undo toast, and Queue Browser (`Inbox | Saved | All`).
+- [ ] **AC4 — Calm Today, Grouped Tracker, `RoleDetailSheet` & TanStack Sources:** Today shows max 3 focused paper groups; `RoleDetailSheet` presents Posting details, Deep analysis, and comms/draft actions cleanly; Tracker groups roles by stage with Gmail dots & stage picker; Sources uses `@tanstack/react-table` + collapsible rejection audit.
+- [ ] **AC5 — Grouped Settings & Toast Feedback:** Settings uses Warm Paper inset sections for Appearance, AI routing (`Auto | Claude | Gemini`) + provider health meters, Candidate Profile/Drive Sync/Rescore, Job boards link, Google Workspace, LA Commute preview, and Linear status, with Base UI toasts for mutations.
+- [ ] **AC6 — Responsive Craft, Motion & Accessibility:** CSS `@container` queries and `tabular-nums` applied consistently; calm motion (`--ease-calm`) and drag physics respect `prefers-reduced-motion`; full keyboard and ARIA compliance across sheets, dialogs, tabs, switches, and menus.
+- [ ] **AC7 — Web Verification Suite:** `cd web && npm run typecheck && npm test && npm run build` passes with updated Vitest tests covering Focus Triage navigation/shortcuts/Undo, `+`/`⌘K` Quick-Add, theme switching, grouped Tracker, Sources table, and Settings.
+- [ ] **AC8 — Live Desktop & Mobile Tailnet Verification:** Deployed on M2 container stack and visually verified at both desktop and iPhone viewport sizes in Warm Paper Light & Warm Charcoal Dark modes.
 
 ## Docs Impact
 
-- `docs/architecture.md` — Briefly update frontend UI stack summary (`@base-ui/react`, `coss ui` patterns, `@tanstack/react-table`, Calm Native tokens).
-- `README.md` — Update UI feature bullets (Focus Triage Queue, `⌘K` Command Palette, Calm Native PWA).
+- `docs/architecture.md` — Update frontend UI stack summary (`@base-ui/react`, `coss ui` patterns, `@tanstack/react-table`, Warm Paper Calm Native design system).
+- `README.md` — Update UI feature highlights (Focus Triage Paper Sheet, 4-Part Fit Horizon, `⌘K` Quick Capture, mobile-first Warm Paper PWA).

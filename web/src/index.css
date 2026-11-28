@@ -25,60 +25,297 @@
   --radius-lg: var(--radius);
 }
 
-:root {
-  --background: oklch(0.985 0.002 247.8);
-  --foreground: oklch(0.145 0.008 260);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0.008 260);
-  --primary: oklch(0.205 0.015 260);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.955 0.006 255);
-  --secondary-foreground: oklch(0.205 0.015 260);
-  --muted: oklch(0.945 0.006 255);
-  --muted-foreground: oklch(0.49 0.015 260);
-  --accent: oklch(0.94 0.01 245);
-  --accent-foreground: oklch(0.18 0.015 260);
-  --accent-brand: oklch(0.585 0.165 235);
-  --destructive: oklch(0.56 0.22 25);
-  --destructive-foreground: oklch(0.985 0 0);
-  --success: oklch(0.58 0.16 155);
-  --warning: oklch(0.68 0.16 70);
-  --border: oklch(0.89 0.008 255);
-  --ring: oklch(0.585 0.165 235);
-  --radius: 0.625rem;
+:root,
+:root[data-theme="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --font-serif: "New York", "Iowan Old Style", Georgia, serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --ease-calm: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --wp-sidebar: #EDE7DC;
+  --wp-canvas: #F7F4EE;
+  --wp-surface: #FDFBF7;
+  --wp-raised: #EFE9DF;
+  --wp-hairline: rgba(31, 27, 22, 0.08);
+  --wp-ink: #1F1B16;
+  --wp-secondary: #5E554A;
+  --wp-muted: #7B7266;
+  --wp-accent: #9E472A;
+  --wp-accent-ink: #FDFBF7;
+  --wp-accent-soft: rgba(158, 71, 42, 0.10);
+  --wp-good: #2B7A54;
+  --wp-good-soft: rgba(43, 122, 84, 0.11);
+  --wp-bad: #B83B33;
+  --wp-bad-soft: rgba(184, 59, 51, 0.10);
+  --wp-warn: #A3681B;
+  --wp-warn-soft: rgba(163, 104, 27, 0.12);
+  --wp-shadow-sm: 0 1px 2px rgba(31, 27, 22, 0.05);
+  --wp-shadow-lg: 0 8px 24px rgba(31, 27, 22, 0.06);
+  --wp-highlight: none;
+  --wp-btn-bg: #9E472A;
+  --wp-btn-ink: #FDFBF7;
+  --wp-seg-2: rgba(31, 27, 22, 0.42);
+  --wp-seg-3: rgba(31, 27, 22, 0.24);
+  --wp-seg-4: rgba(31, 27, 22, 0.12);
+
+  --background: var(--wp-canvas);
+  --foreground: var(--wp-ink);
+  --card: var(--wp-surface);
+  --card-foreground: var(--wp-ink);
+  --primary: var(--wp-btn-bg);
+  --primary-foreground: var(--wp-btn-ink);
+  --secondary: var(--wp-raised);
+  --secondary-foreground: var(--wp-ink);
+  --muted: var(--wp-raised);
+  --muted-foreground: var(--wp-muted);
+  --accent: var(--wp-raised);
+  --accent-foreground: var(--wp-ink);
+  --accent-brand: var(--wp-accent);
+  --destructive: var(--wp-bad);
+  --destructive-foreground: #FDFBF7;
+  --success: var(--wp-good);
+  --warning: var(--wp-warn);
+  --border: var(--wp-hairline);
+  --ring: var(--wp-accent);
+  --radius: 0.75rem;
+}
+
+:root[data-theme="dark"] {
+  --wp-sidebar: #12110F;
+  --wp-canvas: #161513;
+  --wp-surface: #1C1A18;
+  --wp-raised: #262421;
+  --wp-hairline: rgba(239, 233, 222, 0.08);
+  --wp-ink: #EFE9DE;
+  --wp-secondary: #AAA398;
+  --wp-muted: #8A847A;
+  --wp-accent: #DC8562;
+  --wp-accent-ink: #161513;
+  --wp-accent-soft: rgba(220, 133, 98, 0.14);
+  --wp-good: #4CC38A;
+  --wp-good-soft: rgba(76, 195, 138, 0.14);
+  --wp-bad: #E5645C;
+  --wp-bad-soft: rgba(229, 100, 92, 0.14);
+  --wp-warn: #E5A94C;
+  --wp-warn-soft: rgba(229, 169, 76, 0.14);
+  --wp-shadow-sm: none;
+  --wp-shadow-lg: none;
+  --wp-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --wp-btn-bg: #EFE9DE;
+  --wp-btn-ink: #161513;
+  --wp-seg-2: rgba(239, 233, 222, 0.44);
+  --wp-seg-3: rgba(239, 233, 222, 0.25);
+  --wp-seg-4: rgba(239, 233, 222, 0.13);
+
+  --background: var(--wp-canvas);
+  --foreground: var(--wp-ink);
+  --card: var(--wp-surface);
+  --card-foreground: var(--wp-ink);
+  --primary: var(--wp-btn-bg);
+  --primary-foreground: var(--wp-btn-ink);
+  --secondary: var(--wp-raised);
+  --secondary-foreground: var(--wp-ink);
+  --muted: var(--wp-raised);
+  --muted-foreground: var(--wp-muted);
+  --accent: var(--wp-raised);
+  --accent-foreground: var(--wp-ink);
+  --accent-brand: var(--wp-accent);
+  --destructive: var(--wp-bad);
+  --destructive-foreground: #161513;
+  --success: var(--wp-good);
+  --warning: var(--wp-warn);
+  --border: var(--wp-hairline);
+  --ring: var(--wp-accent);
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: oklch(0.135 0.007 260);
-    --foreground: oklch(0.965 0.004 250);
-    --card: oklch(0.175 0.008 260);
-    --card-foreground: oklch(0.965 0.004 250);
-    --primary: oklch(0.965 0.004 250);
-    --primary-foreground: oklch(0.175 0.008 260);
-    --secondary: oklch(0.24 0.01 260);
-    --secondary-foreground: oklch(0.965 0.004 250);
-    --muted: oklch(0.24 0.01 260);
-    --muted-foreground: oklch(0.68 0.012 255);
-    --accent: oklch(0.26 0.014 255);
-    --accent-foreground: oklch(0.965 0.004 250);
-    --accent-brand: oklch(0.68 0.16 230);
-    --destructive: oklch(0.62 0.21 25);
-    --destructive-foreground: oklch(0.985 0 0);
-    --success: oklch(0.69 0.16 155);
-    --warning: oklch(0.77 0.15 75);
-    --border: oklch(0.275 0.01 260);
-    --ring: oklch(0.68 0.16 230);
+  :root:not([data-theme="light"]) {
+    --wp-sidebar: #12110F;
+    --wp-canvas: #161513;
+    --wp-surface: #1C1A18;
+    --wp-raised: #262421;
+    --wp-hairline: rgba(239, 233, 222, 0.08);
+    --wp-ink: #EFE9DE;
+    --wp-secondary: #AAA398;
+    --wp-muted: #8A847A;
+    --wp-accent: #DC8562;
+    --wp-accent-ink: #161513;
+    --wp-accent-soft: rgba(220, 133, 98, 0.14);
+    --wp-good: #4CC38A;
+    --wp-good-soft: rgba(76, 195, 138, 0.14);
+    --wp-bad: #E5645C;
+    --wp-bad-soft: rgba(229, 100, 92, 0.14);
+    --wp-warn: #E5A94C;
+    --wp-warn-soft: rgba(229, 169, 76, 0.14);
+    --wp-shadow-sm: none;
+    --wp-shadow-lg: none;
+    --wp-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    --wp-btn-bg: #EFE9DE;
+    --wp-btn-ink: #161513;
+    --wp-seg-2: rgba(239, 233, 222, 0.44);
+    --wp-seg-3: rgba(239, 233, 222, 0.25);
+    --wp-seg-4: rgba(239, 233, 222, 0.13);
+
+    --background: var(--wp-canvas);
+    --foreground: var(--wp-ink);
+    --card: var(--wp-surface);
+    --card-foreground: var(--wp-ink);
+    --primary: var(--wp-btn-bg);
+    --primary-foreground: var(--wp-btn-ink);
+    --secondary: var(--wp-raised);
+    --secondary-foreground: var(--wp-ink);
+    --muted: var(--wp-raised);
+    --muted-foreground: var(--wp-muted);
+    --accent: var(--wp-raised);
+    --accent-foreground: var(--wp-ink);
+    --accent-brand: var(--wp-accent);
+    --destructive: var(--wp-bad);
+    --destructive-foreground: #161513;
+    --success: var(--wp-good);
+    --warning: var(--wp-warn);
+    --border: var(--wp-hairline);
+    --ring: var(--wp-accent);
   }
 }
 
 * {
-  border-color: var(--border);
+  border-color: var(--wp-hairline);
 }
 
 html,
 body {
-  background-color: var(--background);
-  color: var(--foreground);
+  background-color: var(--wp-canvas);
+  color: var(--wp-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
+}
+
+.font-serif-title {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: -0.015em;
+}
+
+.font-mono-meta {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.paper-sheet {
+  background-color: var(--wp-surface);
+  border: 1px solid var(--wp-hairline);
+  box-shadow: var(--wp-shadow-sm);
+}
+
+:root[data-theme="dark"] .paper-sheet {
+  box-shadow: var(--wp-highlight);
+}
+
+.paper-floating {
+  background-color: var(--wp-surface);
+  border: 1px solid var(--wp-hairline);
+  box-shadow: var(--wp-shadow-lg);
+}
+
+:root[data-theme="dark"] .paper-floating {
+  box-shadow: var(--wp-highlight);
+}
+
+.tap-control {
+  transition:
+    transform 140ms var(--ease-calm),
+    background-color 140ms var(--ease-calm),
+    color 140ms var(--ease-calm),
+    opacity 140ms var(--ease-calm);
+}
+
+.tap-control:active {
+  transform: scale(0.975);
+}
+
+.keycap {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 16px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--wp-hairline);
+  background-color: var(--wp-raised);
+  color: var(--wp-muted);
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@keyframes sheetRise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.calm-rise {
+  animation: sheetRise 280ms var(--ease-calm) both;
+}
+
+@keyframes drawerUp {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.drawer-rise {
+  animation: drawerUp 300ms var(--ease-calm) both;
+}
+
+@keyframes rowFade {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.stagger-row {
+  animation: rowFade 240ms var(--ease-calm) both;
+}
+
+@keyframes inkCheck {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.draw-check {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  animation: inkCheck 240ms var(--ease-calm) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

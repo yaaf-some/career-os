@@ -2,6 +2,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { ToastProvider, TooltipProvider } from '@/components/ui';
+import { ThemeProvider } from '@/lib/theme';
 import { router } from '@/routes/router';
 import '@/index.css';
 
@@ -21,8 +23,14 @@ if (!rootEl) {
 
 createRoot(rootEl).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
+    <ThemeProvider>
+      <TooltipProvider>
+        <ToastProvider>
+          <QueryClientProvider client={queryClient}>
+            <RouterProvider router={router} />
+          </QueryClientProvider>
+        </ToastProvider>
+      </TooltipProvider>
+    </ThemeProvider>
   </StrictMode>,
 );
