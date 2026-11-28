@@ -23,7 +23,7 @@ use crate::{
         build_command_spec, compose_system_prompt, parse_agy_line, parse_claude_output,
         remove_agy_conversation, write_private_file, AgyEvent, CommandSpec, ParsedOutput,
     },
-    config::{BridgeConfig, CliProviderKind},
+    config::{BridgeConfig, CliProviderKind, RoutingMode},
 };
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -31,9 +31,12 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AiTier {
-    Hydrogen,
-    Neon,
-    Carbon,
+    #[serde(alias = "hydrogen")]
+    Fast,
+    #[serde(alias = "neon")]
+    Balanced,
+    #[serde(alias = "carbon")]
+    Deep,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -46,7 +49,10 @@ pub struct CompleteRequest {
     #[serde(default)]
     pub json_mode: bool,
     pub timeout_secs: Option<u64>,
-    /// Overrides `AI_BRIDGE_PRIMARY` for this request.
+    /// Overrides `AI_BRIDGE_ROUTING_MODE` / `AI_BRIDGE_PRIMARY` for this request.
+    #[serde(default)]
+    pub routing_mode: Option<RoutingMode>,
+    /// Legacy per-provider override; superseded by `routing_mode`.
     #[serde(default)]
     pub primary: Option<CliProviderKind>,
     /// When false, only the primary is tried (no failover, even on rate limit).
@@ -369,6 +375,7 @@ pub struct RuntimeMetrics {
     pub total_failovers: u64,
     pub rate_limit_hits: u64,
     pub busy_rejections: u64,
+    pub auto_rr_cursor: u64,
     pub claude_requests: u64,
     pub claude_failures: u64,
     pub claude_rate_limits: u64,
@@ -480,13 +487,34 @@ impl BridgeRouter {
 
     pub fn model_for(&self, provider: CliProviderKind, tier: AiTier) -> &str {
         match (provider, tier) {
-            (CliProviderKind::Claude, AiTier::Hydrogen) => &self.config.claude_hydrogen_model,
-            (CliProviderKind::Claude, AiTier::Neon) => &self.config.claude_neon_model,
-            (CliProviderKind::Claude, AiTier::Carbon) => &self.config.claude_carbon_model,
-            (CliProviderKind::Agy, AiTier::Hydrogen) => &self.config.agy_hydrogen_model,
-            (CliProviderKind::Agy, AiTier::Neon) => &self.config.agy_neon_model,
-            (CliProviderKind::Agy, AiTier::Carbon) => &self.config.agy_carbon_model,
+            (CliProviderKind::Claude, AiTier::Fast) => &self.config.claude_fast_model,
+            (CliProviderKind::Claude, AiTier::Balanced) => &self.config.claude_balanced_model,
+            (CliProviderKind::Claude, AiTier::Deep) => &self.config.claude_deep_model,
+            (CliProviderKind::Agy, AiTier::Fast) => &self.config.agy_fast_model,
+            (CliProviderKind::Agy, AiTier::Balanced) => &self.config.agy_balanced_model,
+            (CliProviderKind::Agy, AiTier::Deep) => &self.config.agy_deep_model,
         }
+    }
+
+    async fn claude_quota_high(&self) -> bool {
+        let Some(path) = &self.config.claude_statusline_path else {
+            return false;
+        };
+        let usage =
+            crate::usage::read_claude_usage(path, self.config.statusline_max_age_secs).await;
+        if usage.stale {
+            return false;
+        }
+        let threshold = self.config.claude_high_usage_threshold_pct;
+        let five_high = usage
+            .five_hour
+            .and_then(|w| w.used_percentage)
+            .is_some_and(|p| p >= threshold);
+        let seven_high = usage
+            .seven_day
+            .and_then(|w| w.used_percentage)
+            .is_some_and(|p| p >= threshold);
+        five_high || seven_high
     }
 
     pub async fn complete(&self, req: CompleteRequest) -> Result<CompleteResponse, BridgeError> {
@@ -510,18 +538,59 @@ impl BridgeRouter {
             }
         };
 
-        let primary = req.primary.unwrap_or(self.config.primary_provider);
-        let order = if req.allow_failover {
-            let secondary = primary.other();
-            let now = Instant::now();
-            let m = self.metrics.lock().await;
-            if m.is_on_cooldown(primary, now) && !m.is_on_cooldown(secondary, now) {
-                vec![secondary, primary]
-            } else {
-                vec![primary, secondary]
-            }
+        let effective_mode = req.routing_mode.unwrap_or(match req.primary {
+            Some(CliProviderKind::Claude) => RoutingMode::PreferClaude,
+            Some(CliProviderKind::Agy) => RoutingMode::PreferAgy,
+            None => self.config.default_routing_mode,
+        });
+        let quota_high = if effective_mode == RoutingMode::Auto {
+            self.claude_quota_high().await
         } else {
-            vec![primary]
+            false
+        };
+        let order = {
+            let now = Instant::now();
+            let mut m = self.metrics.lock().await;
+            let claude_cd = m.is_on_cooldown(CliProviderKind::Claude, now);
+            let agy_cd = m.is_on_cooldown(CliProviderKind::Agy, now);
+            let (first, second) = match effective_mode {
+                RoutingMode::PreferClaude => {
+                    if req.allow_failover && claude_cd && !agy_cd {
+                        (CliProviderKind::Agy, CliProviderKind::Claude)
+                    } else {
+                        (CliProviderKind::Claude, CliProviderKind::Agy)
+                    }
+                }
+                RoutingMode::PreferAgy => {
+                    if req.allow_failover && agy_cd && !claude_cd {
+                        (CliProviderKind::Claude, CliProviderKind::Agy)
+                    } else {
+                        (CliProviderKind::Agy, CliProviderKind::Claude)
+                    }
+                }
+                RoutingMode::Auto => {
+                    if claude_cd && !agy_cd {
+                        (CliProviderKind::Agy, CliProviderKind::Claude)
+                    } else if agy_cd && !claude_cd {
+                        (CliProviderKind::Claude, CliProviderKind::Agy)
+                    } else if quota_high {
+                        (CliProviderKind::Agy, CliProviderKind::Claude)
+                    } else {
+                        let pick_claude = m.auto_rr_cursor.is_multiple_of(2);
+                        m.auto_rr_cursor = m.auto_rr_cursor.wrapping_add(1);
+                        if pick_claude {
+                            (CliProviderKind::Claude, CliProviderKind::Agy)
+                        } else {
+                            (CliProviderKind::Agy, CliProviderKind::Claude)
+                        }
+                    }
+                }
+            };
+            if req.allow_failover {
+                vec![first, second]
+            } else {
+                vec![first]
+            }
         };
 
         let system_prompt = compose_system_prompt(req.system_prompt.as_deref(), req.json_mode);
@@ -560,7 +629,7 @@ impl BridgeRouter {
                         completion_tokens: out.completion_tokens,
                         cost_usd: out.cost_usd,
                         latency_ms: out.latency_ms,
-                        failover_used: provider != primary,
+                        failover_used: idx > 0,
                     });
                 }
                 Err(err) => {
@@ -674,6 +743,7 @@ mod tests {
             temperature: None,
             json_mode: false,
             timeout_secs: Some(15),
+            routing_mode: None,
             primary: None,
             allow_failover: true,
         }
@@ -682,6 +752,7 @@ mod tests {
     fn claude_primary() -> BridgeConfig {
         BridgeConfig {
             primary_provider: CliProviderKind::Claude,
+            default_routing_mode: RoutingMode::PreferClaude,
             cooldown_secs: 120,
             ..BridgeConfig::default()
         }
@@ -699,17 +770,14 @@ mod tests {
         let router = BridgeRouter::new(claude_primary(), runner);
 
         // First request hits Claude 429 -> fails over to Agy and sets Claude cooldown
-        let r1 = router
-            .complete(creq(AiTier::Hydrogen, "score"))
-            .await
-            .unwrap();
+        let r1 = router.complete(creq(AiTier::Fast, "score")).await.unwrap();
         assert_eq!(r1.provider, "agy");
         assert!(r1.failover_used);
         assert_eq!(r1.model, "gemini-a");
 
         // Second request skips cooled-down Claude and routes directly to Agy
         let r2 = router
-            .complete(creq(AiTier::Neon, "evaluate"))
+            .complete(creq(AiTier::Balanced, "evaluate"))
             .await
             .unwrap();
         assert_eq!(r2.provider, "agy");
@@ -726,7 +794,7 @@ mod tests {
     async fn request_primary_overrides_config() {
         let runner = Arc::new(ScriptedRunner::default());
         let router = BridgeRouter::new(claude_primary(), runner.clone());
-        let mut r = creq(AiTier::Neon, "x");
+        let mut r = creq(AiTier::Balanced, "x");
         r.primary = Some(CliProviderKind::Agy);
         let resp = router.complete(r).await.unwrap();
         assert_eq!(resp.provider, "agy");
@@ -741,7 +809,7 @@ mod tests {
             vec![],
         ));
         let router = BridgeRouter::new(claude_primary(), runner.clone());
-        let mut r = creq(AiTier::Neon, "x");
+        let mut r = creq(AiTier::Balanced, "x");
         r.allow_failover = false;
         let err = router.complete(r).await.unwrap_err();
         assert!(matches!(
@@ -755,7 +823,7 @@ mod tests {
         );
 
         // Even with Claude cooling down, failover=false keeps the requested primary.
-        let mut r = creq(AiTier::Neon, "y");
+        let mut r = creq(AiTier::Balanced, "y");
         r.allow_failover = false;
         assert_eq!(router.complete(r).await.unwrap().provider, "claude");
     }
@@ -767,7 +835,10 @@ mod tests {
             vec![],
         ));
         let router = BridgeRouter::new(claude_primary(), runner.clone());
-        let err = router.complete(creq(AiTier::Neon, "x")).await.unwrap_err();
+        let err = router
+            .complete(creq(AiTier::Balanced, "x"))
+            .await
+            .unwrap_err();
         assert_eq!(err.status_and_code(), (502, "UPSTREAM_FAILED"));
         assert_eq!(
             runner.providers_called().await,
@@ -783,7 +854,7 @@ mod tests {
         ] {
             let runner = Arc::new(ScriptedRunner::with(vec![Err(err)], vec![]));
             let router = BridgeRouter::new(claude_primary(), runner.clone());
-            let resp = router.complete(creq(AiTier::Neon, "x")).await.unwrap();
+            let resp = router.complete(creq(AiTier::Balanced, "x")).await.unwrap();
             assert_eq!(resp.provider, "agy");
             assert!(resp.failover_used);
             // Only rate limits put a provider on cooldown.
@@ -800,10 +871,11 @@ mod tests {
         ));
         let cfg = BridgeConfig {
             primary_provider: CliProviderKind::Agy,
+            default_routing_mode: RoutingMode::PreferAgy,
             ..claude_primary()
         };
         let router = BridgeRouter::new(cfg, runner.clone());
-        let resp = router.complete(creq(AiTier::Neon, "x")).await.unwrap();
+        let resp = router.complete(creq(AiTier::Balanced, "x")).await.unwrap();
         assert_eq!(resp.provider, "claude");
         assert!(resp.failover_used);
         assert!(!router
@@ -812,7 +884,7 @@ mod tests {
             .await
             .is_on_cooldown(CliProviderKind::Agy, Instant::now()));
         // Next request still starts with agy.
-        router.complete(creq(AiTier::Neon, "y")).await.unwrap();
+        router.complete(creq(AiTier::Balanced, "y")).await.unwrap();
         assert_eq!(
             runner.providers_called().await,
             vec![
@@ -830,7 +902,7 @@ mod tests {
             vec![Err(CliInvokeError::ToolUseAttempted("search_web".into()))],
         ));
         let router = BridgeRouter::new(claude_primary(), runner);
-        let mut r = creq(AiTier::Neon, "x");
+        let mut r = creq(AiTier::Balanced, "x");
         r.primary = Some(CliProviderKind::Agy);
         r.allow_failover = false;
         let err = router.complete(r).await.unwrap_err();
@@ -844,7 +916,10 @@ mod tests {
             vec![Err(CliInvokeError::TimedOut(15))],
         ));
         let router = BridgeRouter::new(claude_primary(), runner);
-        let err = router.complete(creq(AiTier::Neon, "x")).await.unwrap_err();
+        let err = router
+            .complete(creq(AiTier::Balanced, "x"))
+            .await
+            .unwrap_err();
         assert_eq!(err.status_and_code(), (504, "TIMED_OUT"));
     }
 
@@ -862,7 +937,7 @@ mod tests {
 
         let r1 = router.clone();
         let first = tokio::spawn(async move {
-            let mut r = creq(AiTier::Neon, "slow");
+            let mut r = creq(AiTier::Balanced, "slow");
             r.timeout_secs = Some(30);
             r1.complete(r).await
         });
@@ -872,7 +947,7 @@ mod tests {
         // with the remaining ~2.4 s as its attempt timeout.
         let r2 = router.clone();
         let waiter = tokio::spawn(async move {
-            let mut r = creq(AiTier::Neon, "waits");
+            let mut r = creq(AiTier::Balanced, "waits");
             r.timeout_secs = Some(5);
             r2.complete(r).await
         });
@@ -899,12 +974,12 @@ mod tests {
         let router = Arc::new(BridgeRouter::new(cfg, runner.clone()));
         let r1 = router.clone();
         let hog = tokio::spawn(async move {
-            let mut r = creq(AiTier::Neon, "hog");
+            let mut r = creq(AiTier::Balanced, "hog");
             r.timeout_secs = Some(30);
             r1.complete(r).await
         });
         tokio::time::sleep(Duration::from_millis(100)).await;
-        let mut r = creq(AiTier::Neon, "rejected");
+        let mut r = creq(AiTier::Balanced, "rejected");
         r.timeout_secs = Some(5);
         let err = router.complete(r).await.unwrap_err();
         assert!(matches!(err, BridgeError::Busy(5)), "{err:?}");
@@ -921,11 +996,14 @@ mod tests {
     async fn json_mode_adds_instruction_to_system_prompt() {
         let runner = Arc::new(ScriptedRunner::default());
         let router = BridgeRouter::new(claude_primary(), runner.clone());
-        let mut r = creq(AiTier::Neon, "x");
+        let mut r = creq(AiTier::Balanced, "x");
         r.json_mode = true;
         r.system_prompt = Some("Score this job.".into());
         router.complete(r).await.unwrap();
-        router.complete(creq(AiTier::Neon, "plain")).await.unwrap();
+        router
+            .complete(creq(AiTier::Balanced, "plain"))
+            .await
+            .unwrap();
         let calls = runner.calls.lock().await.clone();
         let sys = calls[0].system_prompt.as_deref().unwrap();
         assert!(sys.starts_with("Score this job."));
@@ -934,20 +1012,139 @@ mod tests {
     }
 
     #[test]
-    fn complete_request_defaults_and_bad_primary() {
-        let r: CompleteRequest = serde_json::from_str(r#"{"tier":"neon","prompt":"p"}"#).unwrap();
+    fn complete_request_defaults_and_legacy_tier_aliases() {
+        let r: CompleteRequest =
+            serde_json::from_str(r#"{"tier":"balanced","prompt":"p"}"#).unwrap();
+        assert_eq!(r.tier, AiTier::Balanced);
         assert!(r.allow_failover);
+        assert_eq!(r.routing_mode, None);
         assert_eq!(r.primary, None);
+
+        for (raw, expected) in [
+            ("fast", AiTier::Fast),
+            ("balanced", AiTier::Balanced),
+            ("deep", AiTier::Deep),
+            ("hydrogen", AiTier::Fast),
+            ("neon", AiTier::Balanced),
+            ("carbon", AiTier::Deep),
+        ] {
+            let parsed: CompleteRequest =
+                serde_json::from_str(&format!(r#"{{"tier":"{raw}","prompt":"p"}}"#)).unwrap();
+            assert_eq!(parsed.tier, expected);
+        }
+
         let r: CompleteRequest = serde_json::from_str(
-            r#"{"tier":"neon","prompt":"p","primary":"agy","allow_failover":false}"#,
+            r#"{"tier":"deep","prompt":"p","routing_mode":"auto","primary":"agy","allow_failover":false}"#,
         )
         .unwrap();
+        assert_eq!(r.tier, AiTier::Deep);
+        assert_eq!(r.routing_mode, Some(RoutingMode::Auto));
         assert_eq!(r.primary, Some(CliProviderKind::Agy));
         assert!(!r.allow_failover);
         assert!(serde_json::from_str::<CompleteRequest>(
-            r#"{"tier":"neon","prompt":"p","primary":"codex"}"#
+            r#"{"tier":"balanced","prompt":"p","primary":"codex"}"#
         )
         .is_err());
+    }
+
+    #[tokio::test]
+    async fn auto_mode_balances_claude_and_agy_equally() {
+        let runner = Arc::new(ScriptedRunner::default());
+        let cfg = BridgeConfig {
+            default_routing_mode: RoutingMode::Auto,
+            ..BridgeConfig::default()
+        };
+        let router = BridgeRouter::new(cfg, runner.clone());
+
+        for tier in [AiTier::Fast, AiTier::Balanced, AiTier::Deep, AiTier::Fast] {
+            let mut r = creq(tier, "balance");
+            r.routing_mode = Some(RoutingMode::Auto);
+            let resp = router.complete(r).await.unwrap();
+            assert!(!resp.failover_used);
+        }
+
+        assert_eq!(
+            runner.providers_called().await,
+            vec![
+                CliProviderKind::Claude,
+                CliProviderKind::Agy,
+                CliProviderKind::Claude,
+                CliProviderKind::Agy,
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn auto_mode_shifts_to_agy_when_claude_quota_is_high_and_ignores_stale() {
+        let dir =
+            std::env::temp_dir().join(format!("career-os-quota-shift-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let status_path = dir.join("statusline.json");
+        std::fs::write(
+            &status_path,
+            r#"{"rate_limits":{"five_hour":{"used_percentage":89.0},"seven_day":{"used_percentage":40.0}}}"#,
+        )
+        .unwrap();
+
+        let runner = Arc::new(ScriptedRunner::default());
+        let cfg = BridgeConfig {
+            default_routing_mode: RoutingMode::Auto,
+            claude_statusline_path: Some(status_path.clone()),
+            statusline_max_age_secs: 900,
+            claude_high_usage_threshold_pct: 85.0,
+            ..BridgeConfig::default()
+        };
+        let router = BridgeRouter::new(cfg, runner.clone());
+
+        router.complete(creq(AiTier::Fast, "1")).await.unwrap();
+        router.complete(creq(AiTier::Balanced, "2")).await.unwrap();
+        assert_eq!(
+            runner.providers_called().await,
+            vec![CliProviderKind::Agy, CliProviderKind::Agy]
+        );
+
+        // With statusline_max_age_secs=0 (after a tick -> stale), resume equal balancing.
+        let mut stale_cfg = BridgeConfig {
+            default_routing_mode: RoutingMode::Auto,
+            claude_statusline_path: Some(status_path),
+            statusline_max_age_secs: 0,
+            claude_high_usage_threshold_pct: 85.0,
+            ..BridgeConfig::default()
+        };
+        stale_cfg.statusline_max_age_secs = 0;
+        let runner2 = Arc::new(ScriptedRunner::default());
+        let router2 = BridgeRouter::new(stale_cfg, runner2.clone());
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        router2.complete(creq(AiTier::Fast, "a")).await.unwrap();
+        router2.complete(creq(AiTier::Fast, "b")).await.unwrap();
+        assert_eq!(
+            runner2.providers_called().await,
+            vec![CliProviderKind::Claude, CliProviderKind::Agy]
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn auto_mode_skips_cooldown_provider_and_fails_over() {
+        let runner = Arc::new(ScriptedRunner::with(
+            vec![Err(CliInvokeError::RateLimited("429".into()))],
+            vec![ok("agy 1", "g1"), ok("agy 2", "g2")],
+        ));
+        let cfg = BridgeConfig {
+            default_routing_mode: RoutingMode::Auto,
+            cooldown_secs: 120,
+            ..BridgeConfig::default()
+        };
+        let router = BridgeRouter::new(cfg, runner);
+
+        let r1 = router.complete(creq(AiTier::Fast, "1")).await.unwrap();
+        assert_eq!(r1.provider, "agy");
+        assert!(r1.failover_used);
+
+        let r2 = router.complete(creq(AiTier::Fast, "2")).await.unwrap();
+        assert_eq!(r2.provider, "agy");
+        assert!(!r2.failover_used);
     }
 
     #[cfg(unix)]

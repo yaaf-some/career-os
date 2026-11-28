@@ -1,5 +1,33 @@
 use std::{fmt::Display, path::PathBuf, str::FromStr};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RoutingMode {
+    #[default]
+    Auto,
+    PreferClaude,
+    PreferAgy,
+}
+
+impl RoutingMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::PreferClaude => "prefer_claude",
+            Self::PreferAgy => "prefer_agy",
+        }
+    }
+
+    pub fn from_str_lossy(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "auto" | "balanced" => Some(Self::Auto),
+            "prefer_claude" | "claude" => Some(Self::PreferClaude),
+            "prefer_agy" | "agy" | "gemini" => Some(Self::PreferAgy),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CliProviderKind {
@@ -50,14 +78,16 @@ pub struct BridgeConfig {
     pub bind_addr: String,
     pub bearer_token: Option<String>,
     pub primary_provider: CliProviderKind,
+    pub default_routing_mode: RoutingMode,
+    pub claude_high_usage_threshold_pct: f64,
     pub claude_bin: String,
     pub agy_bin: String,
-    pub claude_hydrogen_model: String,
-    pub claude_neon_model: String,
-    pub claude_carbon_model: String,
-    pub agy_hydrogen_model: String,
-    pub agy_neon_model: String,
-    pub agy_carbon_model: String,
+    pub claude_fast_model: String,
+    pub claude_balanced_model: String,
+    pub claude_deep_model: String,
+    pub agy_fast_model: String,
+    pub agy_balanced_model: String,
+    pub agy_deep_model: String,
     pub default_timeout_secs: u64,
     pub cooldown_secs: u64,
     pub claude_statusline_path: Option<PathBuf>,
@@ -74,14 +104,16 @@ impl Default for BridgeConfig {
             bind_addr: "127.0.0.1:8787".to_string(),
             bearer_token: None,
             primary_provider: CliProviderKind::Claude,
+            default_routing_mode: RoutingMode::Auto,
+            claude_high_usage_threshold_pct: 85.0,
             claude_bin: "claude".to_string(),
             agy_bin: "agy".to_string(),
-            claude_hydrogen_model: "haiku".to_string(),
-            claude_neon_model: "sonnet".to_string(),
-            claude_carbon_model: "opus".to_string(),
-            agy_hydrogen_model: "gemini-4-hydrogen-medium".to_string(),
-            agy_neon_model: "gemini-4-neon-medium".to_string(),
-            agy_carbon_model: "gemini-4-carbon-medium".to_string(),
+            claude_fast_model: "haiku".to_string(),
+            claude_balanced_model: "sonnet".to_string(),
+            claude_deep_model: "opus".to_string(),
+            agy_fast_model: "gemini-4-hydrogen-medium".to_string(),
+            agy_balanced_model: "gemini-4-neon-medium".to_string(),
+            agy_deep_model: "gemini-4-carbon-medium".to_string(),
             default_timeout_secs: 90,
             cooldown_secs: 300,
             claude_statusline_path: None,
@@ -118,29 +150,58 @@ impl BridgeConfig {
         {
             cfg.primary_provider = v;
         }
+        if let Some(raw) = env_non_empty("AI_BRIDGE_ROUTING_MODE") {
+            cfg.default_routing_mode =
+                RoutingMode::from_str_lossy(&raw).ok_or_else(|| ConfigError::Invalid {
+                    var: "AI_BRIDGE_ROUTING_MODE",
+                    reason: format!("expected auto, prefer_claude, or prefer_agy (got {raw:?})"),
+                })?;
+        }
+        if let Some(raw) = env_non_empty("AI_BRIDGE_CLAUDE_HIGH_USAGE_PCT") {
+            let pct = parse_var::<f64>(&raw, "AI_BRIDGE_CLAUDE_HIGH_USAGE_PCT")?;
+            if !(0.0..=100.0).contains(&pct) {
+                return Err(ConfigError::Invalid {
+                    var: "AI_BRIDGE_CLAUDE_HIGH_USAGE_PCT",
+                    reason: "must be between 0 and 100".to_string(),
+                });
+            }
+            cfg.claude_high_usage_threshold_pct = pct;
+        }
         if let Some(v) = env_non_empty("AI_BRIDGE_CLAUDE_BIN") {
             cfg.claude_bin = v;
         }
         if let Some(v) = env_non_empty("AI_BRIDGE_AGY_BIN") {
             cfg.agy_bin = v;
         }
-        if let Some(v) = env_non_empty("AI_BRIDGE_CLAUDE_HYDROGEN_MODEL") {
-            cfg.claude_hydrogen_model = v;
+        if let Some(v) = env_non_empty("AI_BRIDGE_CLAUDE_FAST_MODEL")
+            .or_else(|| env_non_empty("AI_BRIDGE_CLAUDE_HYDROGEN_MODEL"))
+        {
+            cfg.claude_fast_model = v;
         }
-        if let Some(v) = env_non_empty("AI_BRIDGE_CLAUDE_NEON_MODEL") {
-            cfg.claude_neon_model = v;
+        if let Some(v) = env_non_empty("AI_BRIDGE_CLAUDE_BALANCED_MODEL")
+            .or_else(|| env_non_empty("AI_BRIDGE_CLAUDE_NEON_MODEL"))
+        {
+            cfg.claude_balanced_model = v;
         }
-        if let Some(v) = env_non_empty("AI_BRIDGE_CLAUDE_CARBON_MODEL") {
-            cfg.claude_carbon_model = v;
+        if let Some(v) = env_non_empty("AI_BRIDGE_CLAUDE_DEEP_MODEL")
+            .or_else(|| env_non_empty("AI_BRIDGE_CLAUDE_CARBON_MODEL"))
+        {
+            cfg.claude_deep_model = v;
         }
-        if let Some(v) = env_non_empty("AI_BRIDGE_AGY_HYDROGEN_MODEL") {
-            cfg.agy_hydrogen_model = v;
+        if let Some(v) = env_non_empty("AI_BRIDGE_AGY_FAST_MODEL")
+            .or_else(|| env_non_empty("AI_BRIDGE_AGY_HYDROGEN_MODEL"))
+        {
+            cfg.agy_fast_model = v;
         }
-        if let Some(v) = env_non_empty("AI_BRIDGE_AGY_NEON_MODEL") {
-            cfg.agy_neon_model = v;
+        if let Some(v) = env_non_empty("AI_BRIDGE_AGY_BALANCED_MODEL")
+            .or_else(|| env_non_empty("AI_BRIDGE_AGY_NEON_MODEL"))
+        {
+            cfg.agy_balanced_model = v;
         }
-        if let Some(v) = env_non_empty("AI_BRIDGE_AGY_CARBON_MODEL") {
-            cfg.agy_carbon_model = v;
+        if let Some(v) = env_non_empty("AI_BRIDGE_AGY_DEEP_MODEL")
+            .or_else(|| env_non_empty("AI_BRIDGE_AGY_CARBON_MODEL"))
+        {
+            cfg.agy_deep_model = v;
         }
         if let Some(v) = env_non_empty("AI_BRIDGE_TIMEOUT_SECS").and_then(|s| s.parse().ok()) {
             cfg.default_timeout_secs = v;
@@ -362,5 +423,37 @@ mod tests {
     fn existing_vars_still_work() {
         let cfg = cfg(&[("AI_BRIDGE_PRIMARY", "agy")]).unwrap();
         assert_eq!(cfg.primary_provider, CliProviderKind::Agy);
+    }
+
+    #[test]
+    fn routing_mode_and_tier_models_parse_with_legacy_fallbacks() {
+        let c = cfg(&[]).unwrap();
+        assert_eq!(c.default_routing_mode, RoutingMode::Auto);
+        assert_eq!(c.claude_high_usage_threshold_pct, 85.0);
+        assert_eq!(c.claude_fast_model, "haiku");
+        assert_eq!(c.claude_balanced_model, "sonnet");
+        assert_eq!(c.claude_deep_model, "opus");
+
+        let legacy = cfg(&[
+            ("AI_BRIDGE_ROUTING_MODE", "prefer_agy"),
+            ("AI_BRIDGE_CLAUDE_HYDROGEN_MODEL", "claude-haiku-legacy"),
+            ("AI_BRIDGE_AGY_CARBON_MODEL", "gemini-legacy-deep"),
+        ])
+        .unwrap();
+        assert_eq!(legacy.default_routing_mode, RoutingMode::PreferAgy);
+        assert_eq!(legacy.claude_fast_model, "claude-haiku-legacy");
+        assert_eq!(legacy.agy_deep_model, "gemini-legacy-deep");
+
+        let modern = cfg(&[
+            ("AI_BRIDGE_CLAUDE_FAST_MODEL", "claude-fast"),
+            ("AI_BRIDGE_CLAUDE_HYDROGEN_MODEL", "ignored-legacy"),
+            ("AI_BRIDGE_CLAUDE_HIGH_USAGE_PCT", "72.5"),
+        ])
+        .unwrap();
+        assert_eq!(modern.claude_fast_model, "claude-fast");
+        assert_eq!(modern.claude_high_usage_threshold_pct, 72.5);
+
+        assert!(cfg(&[("AI_BRIDGE_ROUTING_MODE", "codex")]).is_err());
+        assert!(cfg(&[("AI_BRIDGE_CLAUDE_HIGH_USAGE_PCT", "120")]).is_err());
     }
 }
