@@ -1,12 +1,12 @@
 # JOB-10 — Warm Paper Calm Native UX & Mobile-First UI Overhaul
 
-**Status:** In Progress (PRs 10A–10C open) (Warm Paper + Terracotta mobile-first prototype approved; awaiting final spec/plan OK to start PR 10A)
-**Issue:** JOB-10 · Target Branches: `feat/job-10a-design-system-shell`, `feat/job-10b-focus-triage-today`, `feat/job-10c-tracker-sources-settings`
+**Status:** Verified
+**Issue:** JOB-10 · Merged PRs: `#31` (10A), `#34` (10B, replacing `#32`), `#33` (10C)
 
 ## Problem / Context
 
 The current `web/` frontend feels generic and high-cognitive-load for daily use:
-1. **Hand-rolled primitive layer & card soup:** A single 111-line [`web/src/components/ui.tsx`](../../../web/src/components/ui.tsx) renders flat bordered cards stacked vertically with 4–5 pill badges per row and unstyled native `<input>` / `<select>` elements despite `@base-ui/react` + Tailwind v4 already being installed.
+1. **Hand-rolled primitive layer & card soup:** A single 111-line [`web/src/components/ui/`](../../../../web/src/components/ui/) predecessor (`ui.tsx`) rendered flat bordered cards stacked vertically with 4–5 pill badges per row and unstyled native `<input>` / `<select>` elements despite `@base-ui/react` + Tailwind v4 already being installed.
 2. **Cognitive overload on Triage & Today:** Every screen dumps full metadata and action buttons at once instead of guiding attention sequentially, lacks a thumb-friendly Focus Queue (`A/S/X`, `←/→`, drag-to-verdict, Undo toast), and clutters the global header with persistent status pills.
 3. **Weak mobile-first & calm native craft:** Navigation, sheets, forms, settings rows, and motion feel like a generic admin template rather than a quiet iOS/macOS companion tailored for an ADHD workflow.
 
@@ -54,14 +54,14 @@ The current `web/` frontend feels generic and high-cognitive-load for daily use:
 
 ## Acceptance Criteria
 
-- [ ] **AC1 — Warm Paper Tokens, Theme System & `coss ui` Primitives:** Legacy `ui.tsx` replaced by modular `@base-ui/react` primitives styled with Warm Paper Light / Warm Charcoal Dark tokens, terracotta accent, serif/sans/mono typography, and persisted `Light | Dark | System` selector.
-- [ ] **AC2 — Mobile-First Quiet Shell & Global `+` / `⌘K`:** 4-tab mobile bottom nav with safe-area padding + quiet desktop sidebar with status footer popover; conditional alert banner shown only on actionable Google/AI issues; `+` / `⌘K` opens Quick-Add URL & Command Palette from any route (`/sources` route preserved).
-- [ ] **AC3 — Focus Triage Sheet, 4-Part Fit Horizon, Drag Physics & Undo:** Default Triage presents single-role Focus Paper Sheet with 4-Part Fit Horizon (`Role/Level/Vibe/Logistics`), bookmark notch, pointer drag-to-verdict, keyboard shortcuts (`A`, `S`, `X`, `←`, `→`), `inkCheck` approve feedback, Undo toast, and Queue Browser (`Inbox | Saved | All`).
-- [ ] **AC4 — Calm Today, Grouped Tracker, `RoleDetailSheet` & TanStack Sources:** Today shows max 3 focused paper groups; `RoleDetailSheet` presents Posting details, Deep analysis, and comms/draft actions cleanly; Tracker groups roles by stage with Gmail dots & stage picker; Sources uses `@tanstack/react-table` + collapsible rejection audit.
-- [ ] **AC5 — Grouped Settings & Toast Feedback:** Settings uses Warm Paper inset sections for Appearance, AI routing (`Auto | Claude | Gemini`) + provider health meters, Candidate Profile/Drive Sync/Rescore, Job boards link, Google Workspace, LA Commute preview, and Linear status, with Base UI toasts for mutations.
-- [ ] **AC6 — Responsive Craft, Motion & Accessibility:** CSS `@container` queries and `tabular-nums` applied consistently; calm motion (`--ease-calm`) and drag physics respect `prefers-reduced-motion`; full keyboard and ARIA compliance across sheets, dialogs, tabs, switches, and menus.
-- [ ] **AC7 — Web Verification Suite:** `cd web && npm run typecheck && npm test && npm run build` passes with updated Vitest tests covering Focus Triage navigation/shortcuts/Undo, `+`/`⌘K` Quick-Add, theme switching, grouped Tracker, Sources table, and Settings.
-- [ ] **AC8 — Live Desktop & Mobile Tailnet Verification:** Deployed on M2 container stack and visually verified at both desktop and iPhone viewport sizes in Warm Paper Light & Warm Charcoal Dark modes.
+- [x] **AC1 — Warm Paper Tokens, Theme System & `coss ui` Primitives:** Legacy `ui.tsx` replaced by modular `@base-ui/react` primitives styled with Warm Paper Light / Warm Charcoal Dark tokens, terracotta accent, serif/sans/mono typography, and persisted `Light | Dark | System` selector.
+- [x] **AC2 — Mobile-First Quiet Shell & Global `+` / `⌘K`:** 4-tab mobile bottom nav with safe-area padding + quiet desktop sidebar with status footer popover; conditional alert banner shown only on actionable Google/AI issues; `+` / `⌘K` opens Quick-Add URL & Command Palette from any route (`/sources` route preserved).
+- [x] **AC3 — Focus Triage Sheet, 4-Part Fit Horizon, Drag Physics & Undo:** Default Triage presents single-role Focus Paper Sheet with 4-Part Fit Horizon (`Role/Level/Vibe/Logistics`), bookmark notch, pointer drag-to-verdict, keyboard shortcuts (`A`, `S`, `X`, `←`, `→`), `inkCheck` approve feedback, Undo toast, and Queue Browser (`Inbox | Saved | All`).
+- [x] **AC4 — Calm Today, Grouped Tracker, `RoleDetailSheet` & TanStack Sources:** Today shows max 3 focused paper groups; `RoleDetailSheet` presents Posting details, Deep analysis, and comms/draft actions cleanly; Tracker groups roles by stage with Gmail dots & stage picker; Sources uses `@tanstack/react-table` + collapsible rejection audit.
+- [x] **AC5 — Grouped Settings & Toast Feedback:** Settings uses Warm Paper inset sections for Appearance, AI routing (`Auto | Claude | Gemini`) + provider health meters, Candidate Profile/Drive Sync/Rescore, Job boards link, Google Workspace, LA Commute preview, and Linear status, with Base UI toasts for mutations.
+- [x] **AC6 — Responsive Craft, Motion & Accessibility:** CSS `@container` queries and `tabular-nums` applied consistently; calm motion (`--ease-calm`) and drag physics respect `prefers-reduced-motion`; full keyboard and ARIA compliance across sheets, dialogs, tabs, switches, and menus.
+- [x] **AC7 — Web Verification Suite:** `cd web && npm run typecheck && npm test && npm run build` passes with updated Vitest tests covering Focus Triage navigation/shortcuts/Undo, `+`/`⌘K` Quick-Add, theme switching, grouped Tracker, Sources table, and Settings.
+- [x] **AC8 — Live Desktop & Mobile Tailnet Verification:** Deployed on M2 container stack and visually verified at both desktop and iPhone viewport sizes in Warm Paper Light & Warm Charcoal Dark modes.
 
 ## Docs Impact
 

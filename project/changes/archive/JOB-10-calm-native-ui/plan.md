@@ -46,5 +46,5 @@ Prerequisite: `JOB-9` merged & archived (`a74dce1`). Branch per PR off `main`; n
 
 ## Verify & Archive
 
-- [ ] **4.1 Live M2 Desktop & Mobile Check** — Pull updated container on Mac mini, verify Warm Paper Light / Warm Charcoal Dark / System, Focus Triage drag + keyboard + Undo, `⌘K` Quick-Add, Tracker, Sources, and Settings across desktop and iPhone viewports.
-- [ ] **4.2 `project-verify-archive`** — Tick all ACs, archive `JOB-10-calm-native-ui`, update `project/STATE.md`.
+- [x] **4.1 Live M2 Desktop & Mobile Check** — Pull updated container on Mac mini, verify Warm Paper Light / Warm Charcoal Dark / System, Focus Triage drag + keyboard + Undo, `⌘K` Quick-Add, Tracker, Sources, and Settings across desktop and iPhone viewports.
+- [x] **4.2 `project-verify-archive`** — Tick all ACs, archive `JOB-10-calm-native-ui`, update `project/STATE.md`.
