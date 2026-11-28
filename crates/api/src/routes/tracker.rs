@@ -148,6 +148,11 @@ pub async fn update_application(
     }
 
     let now = now_iso();
+    let previous: Option<String> =
+        sqlx::query_scalar("SELECT stage FROM applications WHERE id = ?1")
+            .bind(&id)
+            .fetch_optional(&state.pool)
+            .await?;
     let res = sqlx::query(
         r#"
         UPDATE applications
@@ -191,6 +196,17 @@ pub async fn update_application(
     .bind(&id)
     .fetch_one(&state.pool)
     .await?;
+
+    if previous.as_deref() != Some(updated.stage.as_str()) {
+        state
+            .record_job_event(
+                &updated.job_id,
+                "stage",
+                previous.as_deref(),
+                &updated.stage,
+            )
+            .await?;
+    }
 
     Ok(Json(updated))
 }
@@ -367,6 +383,11 @@ pub async fn patch_tracker(
 
     let now = now_iso();
     let mut tx = state.pool.begin().await?;
+    let previous: Option<String> =
+        sqlx::query_scalar("SELECT stage FROM applications WHERE job_id = ?1")
+            .bind(&req.job_id)
+            .fetch_optional(&mut *tx)
+            .await?;
     sqlx::query(
         r#"
         INSERT INTO applications (id, job_id, stage, updated_at)
@@ -404,6 +425,14 @@ pub async fn patch_tracker(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
+
+    if let Some(stage) = req.stage.as_deref() {
+        if previous.as_deref() != Some(stage) {
+            state
+                .record_job_event(&req.job_id, "stage", previous.as_deref(), stage)
+                .await?;
+        }
+    }
 
     if req.stage.as_deref() == Some("applied") {
         // Best effort: the stage change stands even if Linear is down.

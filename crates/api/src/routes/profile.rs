@@ -5,7 +5,7 @@ use utoipa::ToSchema;
 
 use crate::{
     error::AppError,
-    profile::{load_profile, ProfileFileStatus, ProfileTargetingSummary},
+    profile::{load_effective_profile, ProfileFileStatus, ProfileTargetingSummary},
     state::AppState,
 };
 
@@ -51,7 +51,7 @@ pub struct SyncProjectDocsResponse {
 pub async fn get_profile_status(
     State(state): State<AppState>,
 ) -> Result<Json<ProfileStatusResponse>, AppError> {
-    let profile = load_profile(&state.config.data_dir);
+    let profile = load_effective_profile(&state.pool, &state.config.data_dir).await;
     let targeting = profile.targeting_summary();
     let drive_projects_folder_configured = state
         .config

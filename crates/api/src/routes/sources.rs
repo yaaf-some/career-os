@@ -378,7 +378,7 @@ async fn scan_sources_filtered(
         .iter()
         .map(|s| SidecarSource::new(&s.company, &s.careers_url, &s.provider))
         .collect();
-    let profile = crate::profile::load_profile(&state.config.data_dir);
+    let profile = crate::profile::load_effective_profile(&state.pool, &state.config.data_dir).await;
     let portals_config = profile.to_portals_config(MAX_POSTING_AGE_DAYS);
     let result =
         scan_via_sidecar(state.scanner.http(), sidecar_url, &entries, portals_config).await?;

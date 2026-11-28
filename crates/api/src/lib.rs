@@ -1000,3 +1000,106 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 }
+
+#[cfg(test)]
+mod workspace_foundation_tests {
+    use crate::{
+        ai::MockAiProvider, config::AppConfig, db::init_pool, integrations::scanner::ScannedJob,
+        state::AppState,
+    };
+
+    #[tokio::test]
+    async fn list_reports_stage_and_tags_hides_archived_and_verdicts_leave_history() {
+        let state = AppState::for_test(
+            init_pool("sqlite::memory:").await.unwrap(),
+            AppConfig::default(),
+            std::sync::Arc::new(MockAiProvider),
+        );
+        let job = |n: u8| ScannedJob {
+            canonical_key: format!("k{n}"),
+            url: format!("https://example.com/jobs/{n}"),
+            company: "Example Co".into(),
+            title: "Platform Engineer".into(),
+            location: None,
+            workplace_type: None,
+            posted_at: None,
+            source_type: "manual".into(),
+            jd_text: None,
+        };
+        state
+            .ingest_scanned_jobs(&[job(1), job(2)], None)
+            .await
+            .unwrap();
+        let id: String = sqlx::query_scalar("SELECT id FROM jobs WHERE canonical_key = 'k1'")
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO job_tags (job_id, tag) VALUES (?1, 'remote, maybe'), (?1, 'a')")
+            .bind(&id)
+            .execute(&state.pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "UPDATE jobs SET archived_at = '2026-11-01T00:00:00Z' WHERE canonical_key = 'k2'",
+        )
+        .execute(&state.pool)
+        .await
+        .unwrap();
+
+        let app = crate::build_router(state.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
+            .await
+            .unwrap();
+        });
+        let client = reqwest::Client::new();
+        client
+            .post(format!("{base}/api/triage/{id}"))
+            .json(&serde_json::json!({ "action": "shortlist" }))
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+
+        let list: serde_json::Value = client
+            .get(format!("{base}/api/jobs"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(list["total"], 1);
+        assert_eq!(list["jobs"][0]["application_stage"], "shortlisted");
+        assert_eq!(list["jobs"][0]["tags_json"], r#"["a","remote, maybe"]"#);
+        let all: serde_json::Value = client
+            .get(format!("{base}/api/jobs?include_archived=true"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(all["total"], 2);
+
+        let events: Vec<(String, Option<String>, String)> =
+            sqlx::query_as("SELECT kind, from_value, to_value FROM job_events")
+                .fetch_all(&state.pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            events,
+            [(
+                "triage".into(),
+                Some("pending_scoring".into()),
+                "shortlisted".into()
+            )]
+        );
+    }
+}

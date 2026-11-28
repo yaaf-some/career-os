@@ -1,3 +1,5 @@
+pub mod drive_docs;
+pub mod rules;
 pub mod yaml;
 
 use std::{collections::BTreeMap, fs, path::Path};
@@ -213,6 +215,15 @@ pub struct LoadedProfile {
     pub projects: Vec<ProfileFileRecord>,
     pub files: Vec<ProfileFileStatus>,
     pub warnings: Vec<String>,
+}
+
+/// The profile every feature should use: the `DATA_DIR` files, with app rules
+/// and linked Google Docs taking their place where they exist.
+pub async fn load_effective_profile(pool: &sqlx::SqlitePool, data_dir: &Path) -> LoadedProfile {
+    let mut profile = load_profile(data_dir);
+    rules::apply(pool, &mut profile).await;
+    drive_docs::apply(pool, &mut profile).await;
+    profile
 }
 
 /// Parses optional leading `--- ... ---` YAML frontmatter from Markdown.

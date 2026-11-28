@@ -42,6 +42,27 @@ pub struct AppState {
 
 pub type ScannerClientRef = crate::integrations::scanner::ScannerClient;
 
+#[cfg(test)]
+impl AppState {
+    /// State with default integration clients and no Google or Linear. New
+    /// tests should start here and override fields as needed.
+    pub fn for_test(pool: SqlitePool, config: AppConfig, ai: Arc<dyn AiProvider>) -> Self {
+        Self {
+            pool,
+            config: Arc::new(config),
+            ai,
+            cipher: None,
+            scanner: crate::integrations::scanner::ScannerClient::new(),
+            gmail: GmailClient::new(),
+            drive: DriveClient::new(),
+            calendar: CalendarClient::new(),
+            maps: MapsClient::new(None),
+            sync_lock: Default::default(),
+            linear: None,
+        }
+    }
+}
+
 /// The scanner used to cut descriptions at 4,000 characters (slightly fewer
 /// after the posting guard).
 pub const TRUNCATED_DESCRIPTION: &str = "LENGTH(jd_text) BETWEEN 3900 AND 4000";
@@ -278,7 +299,7 @@ impl AppState {
             r#"
             SELECT id, company, title, location, workplace_type, jd_text
             FROM jobs
-            WHERE triage_status = 'pending_scoring'
+            WHERE triage_status = 'pending_scoring' AND archived_at IS NULL
             ORDER BY created_at ASC
             LIMIT ?1
             "#,
@@ -308,7 +329,8 @@ impl AppState {
             })
             .collect();
 
-        let profile = crate::profile::load_profile(&self.config.data_dir);
+        let profile =
+            crate::profile::load_effective_profile(&self.pool, &self.config.data_dir).await;
         let weights = profile.scoring_weights();
         let doc_digests = self.load_project_doc_digests().await;
         let compiled_digest = profile.build_triage_digest(&doc_digests);
@@ -396,6 +418,29 @@ impl AppState {
             provider: resp.provider,
             model: resp.model,
         })
+    }
+
+    /// Adds a line to a job's history. `kind` is `triage` or `stage`.
+    pub async fn record_job_event(
+        &self,
+        job_id: &str,
+        kind: &str,
+        from: Option<&str>,
+        to: &str,
+    ) -> Result<(), AppError> {
+        sqlx::query(
+            "INSERT INTO job_events (id, job_id, kind, from_value, to_value, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        )
+        .bind(new_id())
+        .bind(job_id)
+        .bind(kind)
+        .bind(from)
+        .bind(to)
+        .bind(now_iso())
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 
     pub async fn record_ai_usage(&self, rec: AiUsageRecord<'_>) -> Result<(), AppError> {
