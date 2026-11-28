@@ -34,13 +34,13 @@ Prerequisite: `JOB-9` merged & archived (`a74dce1`). Branch per PR off `main`; n
 
 ## PR 10C — Grouped Tracker, TanStack Table Sources, Grouped Settings & Docs (`feat/job-10c-tracker-sources-settings`)
 
-- [ ] **3.1 Things-3-Style Grouped Tracker & Stage Picker** — `web/src/routes/TrackerView.tsx`:
+- [x] **3.1 Things-3-Style Grouped Tracker & Stage Picker** — `web/src/routes/TrackerView.tsx`:
   - Stage-grouped Warm Paper lists (`Interview`, `Applied`, `Saved`, collapsing empty stages), subtle Gmail reply/waiting dots, tabular follow-up dates, Linear issue links, pull-up/inline Stage Picker (`Sheet`/`Select`), and `RoleDetailSheet` inspection.
-- [ ] **3.2 TanStack Table Sources & Rejection Audit** — `web/src/routes/SourcesView.tsx`:
+- [x] **3.2 TanStack Table Sources & Rejection Audit** — `web/src/routes/SourcesView.tsx`:
   - Migrate ATS/Reddit boards to `@tanstack/react-table` with sorting/filtering, inline Base UI `Switch` toggles, scan trigger with toast feedback, clean Add Source dialog, and collapsible rejection audit section.
-- [ ] **3.3 Grouped Warm Paper Settings** — `web/src/routes/SettingsView.tsx`:
+- [x] **3.3 Grouped Warm Paper Settings** — `web/src/routes/SettingsView.tsx`:
   - Organize into Warm Paper inset sections: **Appearance** (`Light | Dark | System`), **AI routing** (`Auto | Claude | Gemini` segmented control + read-only Claude & Gemini usage meters), **Profile & sources** (Candidate Profile file status, Drive **Sync** & **Rescore**, **Job boards** link to `/sources`, **Google Workspace**, **Maps & LA Commute** preview, and live **Linear** status).
-- [ ] **3.4 Vitest Polish, Container Queries & Living Docs** — `web/src/__tests__/*`, `docs/architecture.md`, `README.md`:
+- [x] **3.4 Vitest Polish, Container Queries & Living Docs** — `web/src/__tests__/*`, `docs/architecture.md`, `README.md`:
   - Update test suite cleanly covering Focus Triage/Undo, `+`/`⌘K` Quick-Add, theme toggle, grouped Tracker, Sources table, and Settings; sync `docs/architecture.md` & `README.md`.
   - Verify: `cd web && npm run typecheck && npm test && npm run build`.
 

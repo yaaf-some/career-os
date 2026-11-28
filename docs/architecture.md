@@ -21,7 +21,7 @@ flowchart TB
 | Component | Runtime | Responsibility |
 | --- | --- | --- |
 | `career-os-api` | Rust (`crates/`), `gcr.io/distroless/cc-debian13:nonroot` (digest-pinned, UID 65532, `--healthcheck` probe, SIGTERM-graceful) | HTTP API, static PWA serving, SQLite WAL state, Tailscale user verification, OAuth token encryption (`TOKEN_ENCRYPTION_KEY`), scanner & AI bridge orchestration. |
-| `web` | React 19 + Vite + TypeScript (`web/`) | Compiled into `/app/static` at image build time; mobile-ready PWA for pipeline review, job evaluation, and status tracking. |
+| `web` | React 19 + Vite + TypeScript (`web/`) | Compiled into `/app/static` at image build time; mobile-first Warm Paper Calm Native PWA built on `@base-ui/react` (`coss ui` copy-and-own primitives) and `@tanstack/react-table` featuring Focus Triage Paper Sheet + 4-Part Fit Horizon, `⌘K` Quick Capture, grouped Tracker, and Light/Dark/System themes. |
 | `scanner` | Node.js 26 LTS (`scanner/`, `node:26-alpine`) | Internal-only sidecar on port `8081` (no host port binding) handling ATS API polling and HTML job-board fetching. |
 | `ai-bridge` | Rust (`crates/ai-bridge`) on the macOS host (`launchd`, `deploy/launchd/`) | Listens on `127.0.0.1:8787`, requires `AI_BRIDGE_TOKEN` (≥ 32 chars, no placeholders), and runs `claude` or `agy` with tools disabled: prompt on stdin, private 0700 workdir, minimal env, agy conversation deleted after each run. Automatic quota-aware `auto` balancing across Claude and Gemini (`agy`) + instant failover, capability tiers (`fast`/`balanced`/`deep`), concurrency cap, typed Claude usage from the statusline. See [ADR-002](adr/ADR-002-ai-bridge-cli-isolation.md). |
 
