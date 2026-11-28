@@ -378,13 +378,10 @@ async fn scan_sources_filtered(
         .iter()
         .map(|s| SidecarSource::new(&s.company, &s.careers_url, &s.provider))
         .collect();
-    let result = scan_via_sidecar(
-        state.scanner.http(),
-        sidecar_url,
-        &entries,
-        MAX_POSTING_AGE_DAYS,
-    )
-    .await?;
+    let profile = crate::profile::load_profile(&state.config.data_dir);
+    let portals_config = profile.to_portals_config(MAX_POSTING_AGE_DAYS);
+    let result =
+        scan_via_sidecar(state.scanner.http(), sidecar_url, &entries, portals_config).await?;
 
     let by_company: std::collections::HashMap<String, &SourceRecord> = sources
         .iter()
@@ -597,5 +594,35 @@ mod sidecar_tests {
             .await
             .unwrap();
         assert_eq!(jobs, 0);
+    }
+
+    #[tokio::test]
+    async fn scan_forwards_profile_scanner_filters_to_sidecar() {
+        let dir = std::env::temp_dir().join(format!("sources-profile-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(dir.join("profile")).unwrap();
+        std::fs::write(
+            dir.join("profile/targeting.yml"),
+            "schema_version: 1\nstatus: verified\nscanner_filters:\n  max_yoe: 3\n  max_posting_age_days: 30\n  excluded_domains:\n    - \"Aerospace\"\n",
+        )
+        .unwrap();
+
+        let (url, seen) = fake_sidecar().await;
+        let mut st = state(Some(url)).await;
+        st.config = Arc::new(AppConfig {
+            scheduler_enabled: false,
+            scanner_url: st.config.scanner_url.clone(),
+            data_dir: dir.clone(),
+            ..AppConfig::default()
+        });
+
+        let _ = run_ats_scan(&st, None).await.unwrap();
+        let body = seen.lock().unwrap().clone().unwrap();
+        assert_eq!(body["portalsConfig"]["max_posting_age_days"], 30);
+        assert_eq!(body["portalsConfig"]["scanner_filters"]["max_yoe"], 3);
+        assert_eq!(
+            body["portalsConfig"]["scanner_filters"]["excluded_domains"][0],
+            "Aerospace"
+        );
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

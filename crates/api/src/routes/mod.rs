@@ -4,6 +4,7 @@ pub mod comms;
 pub mod commute;
 pub mod health;
 pub mod jobs;
+pub mod profile;
 pub mod settings;
 pub mod sources;
 pub mod tracker;

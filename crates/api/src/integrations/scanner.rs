@@ -531,7 +531,7 @@ pub async fn scan_via_sidecar(
     http: &reqwest::Client,
     sidecar_url: &str,
     sources: &[SidecarSource],
-    max_posting_age_days: u32,
+    portals_config: serde_json::Value,
 ) -> Result<SidecarScanResponse, AppError> {
     let url = format!("{}/scan/ats", sidecar_url.trim_end_matches('/'));
     let resp = http
@@ -539,7 +539,7 @@ pub async fn scan_via_sidecar(
         .timeout(std::time::Duration::from_secs(600))
         .json(&serde_json::json!({
             "sources": sources,
-            "portalsConfig": { "max_posting_age_days": max_posting_age_days },
+            "portalsConfig": portals_config,
         }))
         .send()
         .await

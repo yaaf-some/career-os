@@ -6,6 +6,7 @@ pub mod error;
 pub mod integrations;
 pub mod middleware;
 pub mod openapi;
+pub mod profile;
 pub mod routes;
 pub mod scheduler;
 pub mod state;
@@ -91,8 +92,13 @@ pub fn build_router(state: AppState) -> Router {
             "/api/ai/score-pending",
             post(routes::ai::score_pending_jobs),
         )
+        .route("/api/ai/rescore", post(routes::ai::rescore_jobs))
         .route("/api/ai/evaluate/{job_id}", post(routes::ai::evaluate_job))
         .route("/api/ai/usage", get(routes::ai::get_ai_usage))
+        .route(
+            "/api/profile/status",
+            get(routes::profile::get_profile_status),
+        )
         .route(
             "/api/auth/google/status",
             get(routes::auth::google_auth_status),
@@ -276,16 +282,14 @@ mod tests {
         assert_eq!(stats_res["by_application_stage"][0]["count"], 1);
     }
 
-    async fn serve_with(
+    async fn serve_with_config(
         ai: Arc<dyn crate::ai::AiProvider>,
+        config: AppConfig,
     ) -> (String, sqlx::SqlitePool, AppState) {
         let pool = init_pool("sqlite::memory:").await.unwrap();
         let state = AppState {
             pool: pool.clone(),
-            config: Arc::new(AppConfig {
-                scheduler_enabled: false,
-                ..AppConfig::default()
-            }),
+            config: Arc::new(config),
             ai,
             cipher: None,
             scanner: ScannerClient::new(),
@@ -308,6 +312,19 @@ mod tests {
             .unwrap();
         });
         (format!("http://{addr}"), pool, state)
+    }
+
+    async fn serve_with(
+        ai: Arc<dyn crate::ai::AiProvider>,
+    ) -> (String, sqlx::SqlitePool, AppState) {
+        serve_with_config(
+            ai,
+            AppConfig {
+                scheduler_enabled: false,
+                ..AppConfig::default()
+            },
+        )
+        .await
     }
 
     async fn ingest_one(client: &reqwest::Client, base: &str) -> String {
@@ -688,5 +705,128 @@ mod tests {
         let run = crate::scheduler::run_google_sync(&state).await.unwrap();
         assert_eq!(run.run_type, "gmail_sync");
         assert_eq!(run.status, "succeeded");
+    }
+
+    #[tokio::test]
+    async fn profile_status_personalized_prompts_and_rescore() {
+        use crate::ai::fake_bridge::{self, Mode};
+
+        let dir = std::env::temp_dir().join(format!("api-profile-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(dir.join("profile/projects")).unwrap();
+        std::fs::write(
+            dir.join("profile/targeting.yml"),
+            "schema_version: 1\nstatus: verified\nroles:\n  primary: [\"Platform Engineer\"]\nscoring_weights:\n  role_stack: 35\n  level_reachability: 25\n  vibe_culture: 25\n  logistics_comp: 15\nhard_dealbreakers:\n  - \"No aerospace hardware\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("profile/skills.yml"),
+            "status: verified\nstrong_production:\n  infra: [\"Kubernetes\", \"ArgoCD\"]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("profile/projects/demo.md"),
+            "---\nslug: demo\nname: \"Demo Platform\"\nstatus: verified\n---\n\n## One-Liner\nSelf-serve platform proof.\n",
+        )
+        .unwrap();
+
+        let (bridge_url, fake) = fake_bridge::start(Mode::Ok).await;
+        let provider = Arc::new(crate::ai::HostBridgeProvider::new(
+            bridge_url,
+            fake_bridge::TOKEN.into(),
+        ));
+        let (base, pool, _) = serve_with_config(
+            provider,
+            AppConfig {
+                scheduler_enabled: false,
+                data_dir: dir.clone(),
+                ..AppConfig::default()
+            },
+        )
+        .await;
+        let client = reqwest::Client::new();
+
+        // 1. Profile status reports loaded profile metadata.
+        let status: serde_json::Value = client
+            .get(format!("{base}/api/profile/status"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(status["loaded"], true);
+        assert_eq!(status["targeting"]["primaryRoles"][0], "Platform Engineer");
+        assert_eq!(status["targeting"]["dealbreakerCount"], 1);
+
+        // 2. Seed jobs across statuses: pending_triage (unapplied), skipped (unapplied),
+        //    shortlisted (with application), blacklisted.
+        for sql in [
+            "INSERT INTO jobs (id, canonical_key, url, company, title, source_type, triage_status, tier1_score, tier1_json) VALUES \
+             ('j-triage','k1','https://example.com/1','Example Co','Platform Engineer','manual','pending_triage',70.0,'{}'), \
+             ('j-skip','k2','https://example.com/2','Example Co','DevOps Engineer','manual','skipped',30.0,'{}'), \
+             ('j-short','k3','https://example.com/3','Example Co','SRE','manual','shortlisted',88.0,'{}'), \
+             ('j-black','k4','https://example.com/4','Example Co','Old Role','manual','blacklisted',20.0,'{}')",
+            "INSERT INTO applications (id, job_id, stage) VALUES ('a1', 'j-short', 'applied')",
+        ] {
+            sqlx::query(sql).execute(&pool).await.unwrap();
+        }
+
+        // 3. Rescore only pending_triage (includeSkipped=false), scoring 1 batch immediately.
+        let rescore: serde_json::Value = client
+            .post(format!("{base}/api/ai/rescore"))
+            .json(&serde_json::json!({"includeSkipped": false, "scoreLimit": 5}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(rescore["resetCount"], 1);
+        assert_eq!(rescore["scored"], 1);
+
+        // Skipped, applied/shortlisted, and blacklisted remain untouched.
+        let skip_status: String =
+            sqlx::query_scalar("SELECT triage_status FROM jobs WHERE id = 'j-skip'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(skip_status, "skipped");
+        let short_score: Option<f64> =
+            sqlx::query_scalar("SELECT tier1_score FROM jobs WHERE id = 'j-short'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(short_score, Some(88.0));
+
+        // 4. Persisted tier1_json includes breakdown, and Hydrogen prompt used loaded profile.
+        let tier1_raw: String =
+            sqlx::query_scalar("SELECT tier1_json FROM jobs WHERE id = 'j-triage'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let tier1_val: serde_json::Value = serde_json::from_str(&tier1_raw).unwrap();
+        assert_eq!(tier1_val["breakdown"]["role_stack"], 30.0);
+
+        // 5. Neon evaluation also receives the compiled dossier.
+        let eval_resp = client
+            .post(format!("{base}/api/ai/evaluate/j-triage"))
+            .json(&serde_json::json!({"tier": "neon"}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(eval_resp.status(), reqwest::StatusCode::OK);
+
+        {
+            let reqs = fake.requests.lock().unwrap();
+            assert_eq!(reqs.len(), 2);
+            let h_prompt = reqs[0]["prompt"].as_str().unwrap();
+            assert!(h_prompt.contains("No aerospace hardware"));
+            assert!(h_prompt.contains("Demo Platform"));
+            assert!(!h_prompt.contains("Senior systems/backend engineer"));
+            let n_prompt = reqs[1]["prompt"].as_str().unwrap();
+            assert!(n_prompt.contains("Self-serve platform proof."));
+        }
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

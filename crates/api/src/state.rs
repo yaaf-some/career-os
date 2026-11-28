@@ -222,12 +222,15 @@ impl AppState {
             })
             .collect();
 
-        let profile_summary = self
-            .config
-            .profile_summary
+        let profile = crate::profile::load_profile(&self.config.data_dir);
+        let weights = profile.scoring_weights();
+        let compiled_digest = profile.build_hydrogen_digest(&[]);
+        let profile_summary = compiled_digest
             .as_deref()
+            .or(self.config.profile_summary.as_deref())
             .unwrap_or("Senior systems/backend engineer evaluating role fit.");
-        let (system_prompt, prompt) = build_hydrogen_triage_batch_prompt(profile_summary, &inputs);
+        let (system_prompt, prompt) =
+            build_hydrogen_triage_batch_prompt(profile_summary, &weights, &inputs);
 
         let routing = self.ai_routing().await;
         let started = Instant::now();

@@ -104,23 +104,46 @@ export function sanitizePostingWithGuard(raw) {
  * Extract optional filter overrides from a `portalsConfig` object.
  *
  * @param {Record<string, any> | null | undefined} portalsConfig
- * @returns {{ maxYoe: number, strictLocation: boolean, sinceDays: number | null }}
+ * @returns {{
+ *   maxYoe: number,
+ *   strictLocation: boolean,
+ *   sinceDays: number | null,
+ *   targetTitleKeywords?: string[],
+ *   excludedSeniority?: string[],
+ *   excludedDomains?: string[],
+ * }}
  */
 export function resolveFilterOptions(portalsConfig) {
   const cfg = portalsConfig && typeof portalsConfig === 'object' ? portalsConfig : {};
+  const sf = cfg.scanner_filters && typeof cfg.scanner_filters === 'object'
+    ? cfg.scanner_filters
+    : {};
   const expCfg = cfg.experience_filter && typeof cfg.experience_filter === 'object'
     ? cfg.experience_filter
     : {};
-  const maxYoe = Number.isInteger(expCfg.max_yoe)
-    ? expCfg.max_yoe
-    : Number.isInteger(cfg.max_yoe)
-      ? cfg.max_yoe
-      : DEFAULT_MAX_YOE;
-  const strictLocation = cfg.strict_location !== false;
-  const sinceDays = Number.isInteger(cfg.max_posting_age_days) && cfg.max_posting_age_days > 0
-    ? cfg.max_posting_age_days
-    : null;
-  return { maxYoe, strictLocation, sinceDays };
+  const maxYoe = Number.isInteger(sf.max_yoe)
+    ? sf.max_yoe
+    : Number.isInteger(expCfg.max_yoe)
+      ? expCfg.max_yoe
+      : Number.isInteger(cfg.max_yoe)
+        ? cfg.max_yoe
+        : DEFAULT_MAX_YOE;
+  const strictLocation =
+    sf.strict_location !== undefined
+      ? sf.strict_location !== false
+      : cfg.strict_location !== false;
+  const sinceDaysRaw = sf.max_posting_age_days ?? cfg.max_posting_age_days;
+  const sinceDays = Number.isInteger(sinceDaysRaw) && sinceDaysRaw > 0 ? sinceDaysRaw : null;
+  const strArray = (v) =>
+    Array.isArray(v) ? v.filter((x) => typeof x === 'string' && x.trim()) : undefined;
+  return {
+    maxYoe,
+    strictLocation,
+    sinceDays,
+    targetTitleKeywords: strArray(sf.target_title_keywords ?? cfg.target_title_keywords),
+    excludedSeniority: strArray(sf.excluded_seniority ?? cfg.excluded_seniority),
+    excludedDomains: strArray(sf.excluded_domains ?? cfg.excluded_domains),
+  };
 }
 
 /**
@@ -209,6 +232,9 @@ export function processRawJobs(rawJobs, opts = {}) {
       {
         maxYoe: opts.maxYoe,
         strictLocation: opts.strictLocation,
+        targetTitleKeywords: opts.targetTitleKeywords,
+        excludedSeniority: opts.excludedSeniority,
+        excludedDomains: opts.excludedDomains,
       },
     );
 

@@ -3,13 +3,17 @@ use std::path::Path;
 use utoipa::OpenApi;
 
 use crate::{
-    ai::{AiRouting, AiTier, CliKind, HydrogenScoreItem, NeonEvaluationResult},
+    ai::{
+        AiRouting, AiTier, CliKind, DealbreakerFlag, HydrogenScoreBreakdown, HydrogenScoreItem,
+        NeonEvaluationResult,
+    },
     error::ErrorResponse,
+    profile::{ProfileFileStatus, ProfileTargetingSummary, ScoringWeights},
     routes::{
         ai::{
             AiUsageResponse, AiUsageTierStat, AntigravityStatus, AntigravityUsage,
-            ClaudeUsageWindow, EvaluateJobRequest, EvaluateJobResponse, ScorePendingRequest,
-            ScorePendingResponse,
+            ClaudeUsageWindow, EvaluateJobRequest, EvaluateJobResponse, RescoreRequest,
+            RescoreResponse, ScorePendingRequest, ScorePendingResponse,
         },
         auth::{
             GoogleAuthCallbackResponse, GoogleAuthDisconnectResponse, GoogleAuthStatusResponse,
@@ -23,6 +27,7 @@ use crate::{
             EvaluationRecord, GmailThreadRecord, IngestJobInput, IngestJobsRequest,
             IngestJobsResponse, JobDetailResponse, JobRecord, ListJobsResponse, QuickAddJobRequest,
         },
+        profile::{ProfileStatusResponse, ProjectDocSummary},
         settings::{
             ListSettingsResponse, ListSyncRunsResponse, SettingRecord, SyncRunRecord,
             UpsertSettingRequest,
@@ -76,8 +81,10 @@ use crate::{
         crate::routes::sources::delete_source,
         crate::routes::sources::trigger_scan,
         crate::routes::ai::score_pending_jobs,
+        crate::routes::ai::rescore_jobs,
         crate::routes::ai::evaluate_job,
         crate::routes::ai::get_ai_usage,
+        crate::routes::profile::get_profile_status,
         crate::routes::auth::google_auth_status,
         crate::routes::auth::google_auth_url,
         crate::routes::auth::google_auth_callback,
@@ -137,12 +144,21 @@ use crate::{
             AiTier,
             CliKind,
             AiRouting,
+            ScoringWeights,
+            HydrogenScoreBreakdown,
+            DealbreakerFlag,
             HydrogenScoreItem,
             NeonEvaluationResult,
             ScorePendingRequest,
             ScorePendingResponse,
+            RescoreRequest,
+            RescoreResponse,
             EvaluateJobRequest,
             EvaluateJobResponse,
+            ProfileFileStatus,
+            ProfileTargetingSummary,
+            ProjectDocSummary,
+            ProfileStatusResponse,
             AiUsageTierStat,
             AiUsageResponse,
             ClaudeUsageWindow,
@@ -168,6 +184,7 @@ use crate::{
         (name = "tracker", description = "Application tracker and stats"),
         (name = "sources", description = "ATS and social job sources"),
         (name = "ai", description = "Tiered AI scoring and evaluation"),
+        (name = "profile", description = "Read-only candidate profile and project docs"),
         (name = "auth", description = "Google OAuth integration"),
         (name = "commute", description = "Google Maps & Places LA commute distance"),
         (name = "settings", description = "Settings and sync run logs")

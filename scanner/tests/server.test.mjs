@@ -269,3 +269,64 @@ test('POST /scan/ats works with mocked globalThis.fetch via _http.mjs transport'
     await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
 });
+
+test('POST /scan/ats applies portalsConfig.scanner_filters overrides', async () => {
+  const mockFetch = async (url) => {
+    if (url.startsWith('https://boards-api.greenhouse.io/v1/boards/acme/jobs')) {
+      return new Response(
+        JSON.stringify({
+          jobs: [
+            {
+              id: 2001,
+              title: 'Developer Experience Engineer',
+              absolute_url: 'https://job-boards.greenhouse.io/acme/jobs/2001',
+              location: { name: 'Remote - US' },
+              updated_at: '2026-11-25T10:00:00Z',
+              content: '<p>2 years of experience.</p>',
+            },
+            {
+              id: 2002,
+              title: 'Avionics Systems Engineer',
+              absolute_url: 'https://job-boards.greenhouse.io/acme/jobs/2002',
+              location: { name: 'Los Angeles, CA' },
+              updated_at: '2026-11-25T10:00:00Z',
+              content: '<p>2 years of experience.</p>',
+            },
+          ],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    return new Response('not found', { status: 404 });
+  };
+
+  await withServer(mockFetch, async (baseUrl) => {
+    const res = await fetch(`${baseUrl}/scan/ats`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sources: [
+          {
+            name: 'Acme',
+            careers_url: 'https://job-boards.greenhouse.io/acme',
+            api: 'https://boards-api.greenhouse.io/v1/boards/acme/jobs',
+            enabled: true,
+          },
+        ],
+        portalsConfig: {
+          scanner_filters: {
+            max_yoe: 4,
+            target_title_keywords: ['Developer Experience Engineer', 'Systems Engineer'],
+            excluded_domains: ['Avionics'],
+          },
+        },
+      }),
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.accepted.length, 1);
+    assert.equal(data.accepted[0].title, 'Developer Experience Engineer');
+    assert.equal(data.rejected.length, 1);
+    assert.equal(data.rejected[0].reasonCode, FILTER_REASON_CODES.TITLE_EXCLUDED_DOMAIN);
+  });
+});

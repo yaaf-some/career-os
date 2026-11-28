@@ -33,6 +33,23 @@ pub struct ScorePendingResponse {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RescoreRequest {
+    #[serde(default)]
+    pub include_skipped: bool,
+    pub score_limit: Option<i64>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RescoreResponse {
+    pub reset_count: u64,
+    pub scored: usize,
+    pub provider: Option<String>,
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct EvaluateJobRequest {
     pub tier: Option<AiTier>,
 }
@@ -180,6 +197,70 @@ pub async fn score_pending_jobs(
 
 #[utoipa::path(
     post,
+    path = "/api/ai/rescore",
+    request_body = RescoreRequest,
+    responses(
+        (status = 200, description = "Reset unapplied triage scores and optionally run a fresh hydrogen batch", body = RescoreResponse)
+    ),
+    tag = "ai"
+)]
+pub async fn rescore_jobs(
+    State(state): State<AppState>,
+    Json(req): Json<RescoreRequest>,
+) -> Result<Json<RescoreResponse>, AppError> {
+    let score_limit = req.score_limit.unwrap_or(0);
+    if score_limit > 0 && !state.ai.is_enabled() {
+        return Err(AppError::ServiceUnavailable(
+            AI_DISABLED_MESSAGE.to_string(),
+        ));
+    }
+
+    let now = now_iso();
+    let sql = if req.include_skipped {
+        r#"
+        UPDATE jobs
+        SET triage_status = 'pending_scoring',
+            tier1_score = NULL,
+            tier1_json = NULL,
+            updated_at = ?1
+        WHERE triage_status IN ('pending_triage', 'skipped')
+          AND id NOT IN (SELECT job_id FROM applications)
+        "#
+    } else {
+        r#"
+        UPDATE jobs
+        SET triage_status = 'pending_scoring',
+            tier1_score = NULL,
+            tier1_json = NULL,
+            updated_at = ?1
+        WHERE triage_status = 'pending_triage'
+          AND id NOT IN (SELECT job_id FROM applications)
+        "#
+    };
+
+    let res = sqlx::query(sql).bind(&now).execute(&state.pool).await?;
+    let reset_count = res.rows_affected();
+
+    if score_limit > 0 {
+        let outcome = state.score_pending_batch(score_limit).await?;
+        Ok(Json(RescoreResponse {
+            reset_count,
+            scored: outcome.scored,
+            provider: Some(outcome.provider),
+            model: Some(outcome.model),
+        }))
+    } else {
+        Ok(Json(RescoreResponse {
+            reset_count,
+            scored: 0,
+            provider: None,
+            model: None,
+        }))
+    }
+}
+
+#[utoipa::path(
+    post,
     path = "/api/ai/evaluate/{job_id}",
     params(
         ("job_id" = String, Path, description = "Job UUID")
@@ -216,10 +297,11 @@ pub async fn evaluate_job(
     .ok_or_else(|| AppError::NotFound(format!("job {job_id} not found")))?;
 
     let tier = req.tier.unwrap_or(AiTier::Neon);
-    let profile_summary = state
-        .config
-        .profile_summary
+    let profile = crate::profile::load_profile(&state.config.data_dir);
+    let compiled_dossier = profile.build_neon_dossier(&[], 16_000);
+    let profile_summary = compiled_dossier
         .as_deref()
+        .or(state.config.profile_summary.as_deref())
         .unwrap_or("Senior systems/backend engineer evaluating role fit.");
     let (system_prompt, prompt) = build_neon_evaluation_prompt(
         profile_summary,
