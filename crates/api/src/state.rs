@@ -327,7 +327,7 @@ impl AppState {
             max_tokens: Some(2000),
             temperature: Some(0.1),
             json_mode: true,
-            timeout_secs: Some(90),
+            timeout_secs: Some(150),
             routing_mode: Some(routing.mode),
             primary: None,
             allow_failover: true,
