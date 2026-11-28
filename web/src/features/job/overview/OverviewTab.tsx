@@ -33,9 +33,6 @@ export function OverviewTab({ job, onDeleted }: { job: JobDetail; onDeleted: () 
         ) : null}
       </PaperSheet>
 
-      <TagsCard jobId={job.id} />
-      <NotesCard jobId={job.id} />
-
       <DescriptionSection key={job.id} jobId={job.id} text={job.descriptionText} />
 
       {job.requirements.length > 0 ? (
@@ -49,6 +46,8 @@ export function OverviewTab({ job, onDeleted }: { job: JobDetail; onDeleted: () 
         </PaperSheet>
       ) : null}
 
+      <TagsCard jobId={job.id} />
+      <NotesCard jobId={job.id} />
       <DetailsCard jobId={job.id} />
       <ManageCard job={job} onDeleted={onDeleted} />
     </div>

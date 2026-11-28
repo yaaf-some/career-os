@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { describeAiError } from '@/api/client';
 import type { JobDetail } from '@/api/types';
 import { FitHorizon } from '@/components/FitHorizon';
-import { Badge, Button, Notice, PaperSheet, ScoreRing, Select, Skeleton, useToast } from '@/components/ui';
+import { Badge, Button, Notice, PaperSheet, Select, Skeleton, useToast } from '@/components/ui';
 import { errorText, useRawJobQuery } from '../overview/api';
 import {
   TIER_OPTIONS,
@@ -44,14 +44,11 @@ function TriageCard({ job, detail }: { job: JobDetail; detail: TriageDetail }) {
   return (
     <PaperSheet className="space-y-3 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <ScoreRing score={job.matchScore} size={52} />
-          <div>
-            <h3 className="text-sm font-medium text-[var(--wp-ink)]">Triage score</h3>
-            <p className="text-xs text-[var(--wp-muted)]">
-              {job.matchScore === null ? 'Not scored yet' : 'Quick match against your profile'}
-            </p>
-          </div>
+        <div>
+          <h3 className="text-sm font-medium text-[var(--wp-ink)]">Triage score</h3>
+          <p className="text-xs text-[var(--wp-muted)]">
+            {job.matchScore === null ? 'Not scored yet' : 'Quick match against your profile'}
+          </p>
         </div>
         <Button className="min-h-11" disabled={rescore.isPending} onClick={run}>
           <RefreshCw className={`h-3.5 w-3.5 ${rescore.isPending ? 'motion-safe:animate-spin' : ''}`} />
@@ -60,8 +57,8 @@ function TriageCard({ job, detail }: { job: JobDetail; detail: TriageDetail }) {
       </div>
       {rescore.isError ? <Notice tone="danger">{describeAiError(rescore.error)}</Notice> : null}
 
-      {job.scoreBreakdown ? (
-        <FitHorizon score={job.matchScore} breakdown={job.scoreBreakdown} compact />
+      {job.matchScore !== null ? (
+        <FitHorizon score={job.matchScore} breakdown={job.scoreBreakdown} />
       ) : null}
 
       {detail.archetype || job.dealbreakerReason ? (
