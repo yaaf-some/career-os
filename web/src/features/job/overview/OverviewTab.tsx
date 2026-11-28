@@ -2,10 +2,15 @@ import type { JobDetail } from '@/api/types';
 import { DescriptionSection } from '@/components/DescriptionSection';
 import { FitHorizon } from '@/components/FitHorizon';
 import { Badge, PaperSheet } from '@/components/ui';
+import { ArchivedBanner, ManageCard } from './ArchiveControls';
+import { DetailsCard } from './DetailsCard';
+import { NotesCard, TagsCard } from './TagsNotesCards';
 
-export function OverviewTab({ job }: { job: JobDetail }) {
+export function OverviewTab({ job, onDeleted }: { job: JobDetail; onDeleted: () => void }) {
   return (
     <div className="space-y-4">
+      <ArchivedBanner job={job} />
+
       <PaperSheet className="space-y-3 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs font-medium text-[var(--wp-muted)]">
@@ -40,6 +45,11 @@ export function OverviewTab({ job }: { job: JobDetail }) {
           </ul>
         </PaperSheet>
       ) : null}
+
+      <TagsCard jobId={job.id} />
+      <NotesCard jobId={job.id} />
+      <DetailsCard jobId={job.id} />
+      <ManageCard job={job} onDeleted={onDeleted} />
     </div>
   );
 }

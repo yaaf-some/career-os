@@ -178,7 +178,7 @@ export function JobPage({
             </TabsList>
             {/* Panels stay mounted so unsaved drafts survive switching tabs. */}
             <TabsPanel value="overview" keepMounted className="pt-5">
-              <OverviewTab job={job} />
+              <OverviewTab job={job} onDeleted={onBack} />
             </TabsPanel>
             <TabsPanel value="fit" keepMounted className="pt-5">
               <FitTab job={job} />

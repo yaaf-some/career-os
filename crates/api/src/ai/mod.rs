@@ -402,7 +402,9 @@ impl AiProvider for MockAiProvider {
     fn complete<'a>(&'a self, req: AiRequest) -> BoxFuture<'a, Result<AiResponse, AppError>> {
         Box::pin(async move {
             let start = Instant::now();
-            let content = if req.tier == AiTier::Fast && req.json_mode {
+            // A deep evaluation is the same prompt at every tier, `fast` included.
+            let is_deep_eval = req.prompt.contains("CANDIDATE_PROFILE_DOSSIER:");
+            let content = if req.tier == AiTier::Fast && req.json_mode && !is_deep_eval {
                 if req.prompt.contains("PROJECT_DOC_TITLE:") {
                     let title = req
                         .prompt

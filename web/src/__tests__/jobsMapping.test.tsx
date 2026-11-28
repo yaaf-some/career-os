@@ -258,7 +258,8 @@ describe('live API job routes', () => {
     renderWithQuery(<JobPageHarness jobId="job-1" />);
     await waitFor(() => expect(screen.getAllByText('88').length).toBeGreaterThan(0));
     expect(screen.getAllByText('Interviewing').length).toBeGreaterThan(0);
-    expect(screen.getByText('Strong platform match.')).toBeTruthy();
+    // On the overview and on the fit tab.
+    expect(screen.getAllByText('Strong platform match.').length).toBeGreaterThan(0);
     expect(screen.getByText(/Build the platform\./)).toBeTruthy();
     expect(screen.queryByText('Key requirements')).toBeNull();
 
