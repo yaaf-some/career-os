@@ -2,10 +2,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { RoleDetailSheet } from '@/components/RoleDetailSheet';
+import { ToastProvider } from '@/components/ui';
+import { ThemeProvider } from '@/lib/theme';
 import { TodayView } from '@/routes/TodayView';
 import { TriageView } from '@/routes/TriageView';
 
-function renderWithQuery(ui: ReactElement) {
+function renderWithProviders(ui: ReactElement) {
   const client = new QueryClient({
     defaultOptions: {
       queries: {
@@ -13,7 +16,13 @@ function renderWithQuery(ui: ReactElement) {
       },
     },
   });
-  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+  return render(
+    <ThemeProvider>
+      <ToastProvider>
+        <QueryClientProvider client={client}>{ui}</QueryClientProvider>
+      </ToastProvider>
+    </ThemeProvider>,
+  );
 }
 
 beforeEach(() => {
@@ -25,58 +34,82 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-describe('TodayView state rendering', () => {
-  it('renders action queue sections and supports quick-add URL submission', async () => {
+describe('TodayView Warm Paper 3-section briefing', () => {
+  it('renders Needs a reply, Follow ups & upcoming, and Worth a look and navigates on click', async () => {
     const onSelectRole = vi.fn();
-    renderWithQuery(<TodayView onSelectRole={onSelectRole} />);
+    renderWithProviders(<TodayView onSelectRole={onSelectRole} />);
 
     expect(screen.getByTestId('today-view')).toBeTruthy();
 
     await waitFor(() => {
-      expect(screen.getByText('Unread Recruiter Replies')).toBeTruthy();
-      expect(screen.getByText('Calendar Agenda')).toBeTruthy();
-      expect(screen.getByText('Follow-ups Due')).toBeTruthy();
-      expect(screen.getByText('Top Scored Matches')).toBeTruthy();
+      expect(screen.getByText('Needs a reply')).toBeTruthy();
+      expect(screen.getByText('Follow ups & upcoming')).toBeTruthy();
+      expect(screen.getByText('Worth a look')).toBeTruthy();
     });
 
-    const urlInput = screen.getByLabelText('Job posting URL') as HTMLInputElement;
-    const titleInput = screen.getByLabelText('Role title') as HTMLInputElement;
-    fireEvent.change(urlInput, {
-      target: { value: 'https://boards.greenhouse.io/example-cloud/jobs/999' },
-    });
-    fireEvent.change(titleInput, {
-      target: { value: 'Principal Systems Architect' },
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: /add & score/i }));
-
-    await waitFor(() => {
-      expect(screen.getAllByText(/Principal Systems Architect/i).length).toBeGreaterThanOrEqual(1);
-    });
+    fireEvent.click(screen.getByText('Staff Systems Engineer — Agent Runtime'));
+    expect(onSelectRole).toHaveBeenCalledWith('job-101');
   });
 });
 
-describe('TriageView state rendering', () => {
-  it('renders scored inbox jobs and updates status on triage action', async () => {
+describe('TriageView Focus Paper Sheet & Fit Horizon', () => {
+  it('renders single-role Focus Sheet, supports Queue Browser, Bookmark, Undo & Skip', async () => {
     const onSelectRole = vi.fn();
-    renderWithQuery(<TriageView onSelectRole={onSelectRole} />);
+    renderWithProviders(<TriageView onSelectRole={onSelectRole} undoDelayMs={50} />);
 
     expect(screen.getByTestId('triage-view')).toBeTruthy();
 
     await waitFor(() => {
       expect(screen.getByText('Staff Systems Engineer — Agent Runtime')).toBeTruthy();
-      expect(screen.getByText('Match 93/100')).toBeTruthy();
+      expect(screen.getByTestId('fit-horizon')).toBeTruthy();
+      expect(screen.getByText('93')).toBeTruthy();
+      expect(screen.getByText('Role 33/35')).toBeTruthy();
     });
 
-    const inspectButtons = screen.getAllByRole('button', { name: /inspect/i });
-    fireEvent.click(inspectButtons[0]);
+    // Inspect opens RoleDetailSheet callback
+    fireEvent.click(screen.getByRole('button', { name: /Read posting & deep analysis/i }));
     expect(onSelectRole).toHaveBeenCalledWith('job-101');
 
-    const shortlistButtons = screen.getAllByRole('button', { name: /shortlist/i });
-    fireEvent.click(shortlistButtons[0]);
+    // Keyboard S shortlists and shows bookmark notch
+    fireEvent.keyDown(window, { key: 's' });
+    await waitFor(() => {
+      expect(screen.getByTestId('bookmark-notch')).toBeTruthy();
+    });
+
+    // Keyboard X skips and offers Undo toast
+    fireEvent.keyDown(window, { key: 'x' });
+    await waitFor(() => {
+      expect(screen.getByText(/Skipped Northstar Systems/i)).toBeTruthy();
+    });
+
+    // Clicking Undo restores the first card
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await waitFor(() => {
+      expect(screen.getByText('Staff Systems Engineer — Agent Runtime')).toBeTruthy();
+    });
+
+    // Approve advances to next card
+    fireEvent.click(screen.getByRole('button', { name: /Approve/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/Approved Northstar Systems/i)).toBeTruthy();
+    });
+  });
+
+  it('opens RoleDetailSheet tabs cleanly', async () => {
+    renderWithProviders(<RoleDetailSheet jobId="job-101" onClose={() => {}} />);
 
     await waitFor(() => {
-      expect(screen.getAllByText('shortlisted').length).toBeGreaterThan(0);
+      expect(screen.getByText('Staff Systems Engineer — Agent Runtime')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Deep analysis' }));
+    await waitFor(() => {
+      expect(screen.getByText(/Deep Analysis \(Blocks A–G\)/i)).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Comms & reminders' }));
+    await waitFor(() => {
+      expect(screen.getByText('Linked Gmail threads')).toBeTruthy();
     });
   });
 });
