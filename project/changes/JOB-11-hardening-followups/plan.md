@@ -32,22 +32,22 @@ Single PR (`feat/job-11-hardening`), ~5 small commits. Verify after each task.
       `cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`
 
 ### 5. Web client hardening
-- [ ] `web/src/api/client.ts`: `LIVE_ONLY` on `getSettings`, `updateSettings`,
+- [x] `web/src/api/client.ts`: `LIVE_ONLY` on `getSettings`, `updateSettings`,
       `triageJob`, `getGoogleAuthStatus`, `startGoogleAuth`, `getJobCommute`,
       `previewCommute`.
-- [ ] `updateSettings`: PUT `home_location_area` / `travel_mode` when present;
+- [x] `updateSettings`: PUT `home_location_area` / `travel_mode` when present;
       `settingsFromApi` parses them.
-- [ ] Add `careerApi.getLinearStatus()` + query in `queries.ts`; update
+- [x] Add `careerApi.getLinearStatus()` + query in `queries.ts`; update
       `LinearJobIssue` in `types.ts` and `demoData.ts`.
-- [ ] Tests in `web/src/__tests__/` (500 → error, settings round-trip mapping,
+- [x] Tests in `web/src/__tests__/` (500 → error, settings round-trip mapping,
       linear mapping).
 - Verify: `cd web && npm run typecheck && npm test`
 
 ### 6. Settings UI
-- [ ] `web/src/routes/SettingsView.tsx`: Linear card from `getLinearStatus`
+- [x] `web/src/routes/SettingsView.tsx`: Linear card from `getLinearStatus`
       (configured/team key/issue list, no fake state); `?google=` banner +
       `history.replaceState`; error states for settings/commute queries.
-- [ ] Test in `trackerSourcesSettings.test.tsx` / `commuteAndAuth.test.tsx`.
+- [x] Test in `trackerSourcesSettings.test.tsx` / `commuteAndAuth.test.tsx`.
 - Verify: `cd web && npm run typecheck && npm test && npm run build`
 
 ### 7. Docs
@@ -68,3 +68,8 @@ Then `project-verify-archive` (deploy to M2, curl live endpoints).
   removed (no JSON body anymore).
 - A localhost `GOOGLE_REDIRECT_URI` redirects to localhost `/settings`, which
   still needs the Tailscale header like any other page — same as before.
+- Task 5/6: Linear moved out of `SettingsState` into its own `LinearStatus`
+  type + `useLinearStatusQuery` (fake `state`/`priority` dropped). Settings
+  now shows an error notice instead of an endless skeleton when `/api/settings`
+  fails, plus inline errors for commute preview/save. New tests live in
+  `web/src/__tests__/hardening.test.tsx`.

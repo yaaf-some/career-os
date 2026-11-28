@@ -31,6 +31,7 @@ import type {
   JobSource,
   JobsListResponse,
   JobSummary,
+  LinearStatus,
   ProfileStatusResponse,
   QuickAddJobRequest,
   RescoreRequest,
@@ -287,6 +288,7 @@ export const careerApi = {
         fellBack = true;
         return demoStore.triageJob(id, payload);
       },
+      LIVE_ONLY,
     );
     if (fellBack) return res as JobSummary;
     return careerApi.getJob(id);
@@ -308,6 +310,7 @@ export const careerApi = {
     return careerApi.getJob(id);
   },
 
+  /** Route not implemented yet (JOB-12): keeps the demo fallback until it ships. */
   tailorJob(id: string): Promise<TailorResponse> {
     return requestWithFallback(
       `/api/jobs/${encodeURIComponent(id)}/tailor`,
@@ -470,34 +473,62 @@ export const careerApi = {
   /** Builds settings from `GET /api/settings`; only `ai_routing` is stored server-side so far. */
   async getSettings(): Promise<SettingsState> {
     let fellBack = false;
-    const res = await requestWithFallback<unknown>('/api/settings', { method: 'GET' }, () => {
-      fellBack = true;
-      return demoStore.getSettings();
-    });
+    const res = await requestWithFallback<unknown>(
+      '/api/settings',
+      { method: 'GET' },
+      () => {
+        fellBack = true;
+        return demoStore.getSettings();
+      },
+      LIVE_ONLY,
+    );
     if (fellBack) return res as SettingsState;
     return settingsFromApi(res as ApiSettingsList);
   },
 
-  /** Unified routing preference is saved with `PUT /api/settings/ai_routing`. */
+  /**
+   * Saves each field present: `ai_routing` ({mode}), `home_location_area` and
+   * `travel_mode` (JSON strings read by the commute routes), then re-reads.
+   */
   async updateSettings(payload: UpdateSettingsRequest): Promise<SettingsState> {
-    if (payload.aiRoutingMode === undefined) {
-      // Commute preferences have no API yet (demo store only).
-      return demoStore.updateSettings(payload);
+    const writes: [string, unknown][] = [];
+    if (payload.aiRoutingMode !== undefined) {
+      writes.push([AI_ROUTING_KEY, { mode: payload.aiRoutingMode } satisfies AiRoutingSetting]);
     }
-    const value: AiRoutingSetting = {
-      mode: payload.aiRoutingMode,
-    };
+    const home = payload.homeLocationArea?.trim();
+    if (home) writes.push([HOME_LOCATION_AREA_KEY, home]);
+    if (payload.defaultTravelMode) writes.push([TRAVEL_MODE_KEY, payload.defaultTravelMode]);
+    if (writes.length === 0) return careerApi.getSettings();
+
+    let fellBack = false;
+    for (const [key, value] of writes) {
+      await requestWithFallback<unknown>(
+        `/api/settings/${key}`,
+        { method: 'PUT', body: JSON.stringify({ value }) },
+        () => {
+          fellBack = true;
+          return null;
+        },
+        LIVE_ONLY,
+      );
+      if (fellBack) return demoStore.updateSettings(payload);
+    }
+    return careerApi.getSettings();
+  },
+
+  /** `GET /api/integrations/linear`: configured flag, team key, stored issue identifiers. */
+  async getLinearStatus(): Promise<LinearStatus> {
     let fellBack = false;
     const res = await requestWithFallback<unknown>(
-      '/api/settings/ai_routing',
-      { method: 'PUT', body: JSON.stringify({ value }) },
+      '/api/integrations/linear',
+      { method: 'GET' },
       () => {
         fellBack = true;
-        return demoStore.updateSettings(payload);
+        return demoStore.getLinearStatus();
       },
+      LIVE_ONLY,
     );
-    if (fellBack) return res as SettingsState;
-    return careerApi.getSettings();
+    return fellBack ? (res as LinearStatus) : linearStatusFromApi(res as ApiLinearStatus);
   },
 
   async getGoogleAuthStatus(): Promise<GoogleAuthStatusResponse> {
@@ -505,6 +536,7 @@ export const careerApi = {
       '/api/auth/google/status',
       { method: 'GET' },
       () => demoStore.getGoogleAuthStatus() as unknown as Record<string, unknown>,
+      LIVE_ONLY,
     );
     return {
       connected: Boolean(raw.connected),
@@ -535,6 +567,7 @@ export const careerApi = {
       '/api/auth/google/url',
       { method: 'GET' },
       () => demoStore.startGoogleAuth() as unknown as Record<string, unknown>,
+      LIVE_ONLY,
     );
     return {
       authUrl: String(raw.url ?? raw.authUrl ?? ''),
@@ -574,6 +607,7 @@ export const careerApi = {
       `/api/jobs/${encodeURIComponent(id)}/commute`,
       { method: 'GET' },
       () => demoStore.getJobCommute(id) as unknown as Record<string, unknown>,
+      LIVE_ONLY,
     );
     return normalizeCommute(raw);
   },
@@ -590,6 +624,7 @@ export const careerApi = {
         }),
       },
       () => demoStore.previewCommute(payload) as unknown as Record<string, unknown>,
+      LIVE_ONLY,
     );
     return normalizeCommute(raw);
   },
@@ -626,6 +661,11 @@ export function toTriageRequest(payload: TriageActionRequest): { action: ApiTria
   return { action: map[payload.action] };
 }
 
+/** Setting keys the API validates (`crates/api/src/routes/settings.rs`). */
+const AI_ROUTING_KEY = 'ai_routing';
+const HOME_LOCATION_AREA_KEY = 'home_location_area';
+const TRAVEL_MODE_KEY = 'travel_mode';
+
 /** Value of the `ai_routing` setting (validated by the API). */
 export interface AiRoutingSetting {
   mode: AiRoutingMode;
@@ -643,28 +683,46 @@ function isRoutingMode(v: unknown): v is AiRoutingMode {
   return v === 'auto' || v === 'prefer_claude' || v === 'prefer_agy';
 }
 
-export function settingsFromApi(list: ApiSettingsList): SettingsState {
-  let routing = DEFAULT_ROUTING;
-  const row = list.settings?.find((s) => s.key === 'ai_routing');
-  if (row) {
-    try {
-      const v = JSON.parse(row.value_json) as Partial<AiRoutingSetting>;
-      routing = {
-        mode: isRoutingMode(v.mode) ? v.mode : DEFAULT_ROUTING.mode,
-      };
-    } catch {
-      // keep defaults
-    }
+function parseSettingValue(list: ApiSettingsList, key: string): unknown {
+  const row = list.settings?.find((s) => s.key === key);
+  if (!row) return undefined;
+  try {
+    return JSON.parse(row.value_json) as unknown;
+  } catch {
+    return undefined;
   }
+}
+
+export function settingsFromApi(list: ApiSettingsList): SettingsState {
+  const routing = parseSettingValue(list, AI_ROUTING_KEY) as Partial<AiRoutingSetting> | undefined;
+  const home = parseSettingValue(list, HOME_LOCATION_AREA_KEY);
+  const mode = parseSettingValue(list, TRAVEL_MODE_KEY);
+  const travel = typeof mode === 'string' ? mode.trim().toLowerCase() : '';
   return {
-    aiRoutingMode: routing.mode,
+    aiRoutingMode: isRoutingMode(routing?.mode) ? routing.mode : DEFAULT_ROUTING.mode,
     // Not stored by the API yet; neutral values instead of demo data.
     googleOAuthConnected: false,
     googleScopes: [],
-    linearTeamKey: '',
-    linearConnected: false,
-    linearIssues: [],
-    homeLocationArea: '',
-    defaultTravelMode: 'drive',
+    homeLocationArea: typeof home === 'string' ? home.trim() : '',
+    defaultTravelMode: travel === 'transit' ? 'transit' : 'drive',
+  };
+}
+
+interface ApiLinearStatus {
+  configured: boolean;
+  team_key: string | null;
+  issues: { identifier: string; job_id: string; company: string; title: string; updated_at: string }[];
+}
+
+export function linearStatusFromApi(raw: ApiLinearStatus): LinearStatus {
+  return {
+    configured: Boolean(raw.configured),
+    teamKey: raw.team_key ?? null,
+    issues: (raw.issues ?? []).map((i) => ({
+      key: i.identifier,
+      jobId: i.job_id,
+      company: i.company,
+      title: i.title,
+    })),
   };
 }

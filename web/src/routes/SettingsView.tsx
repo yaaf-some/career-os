@@ -1,17 +1,20 @@
 import { ChevronRight, Clock, ExternalLink, FolderSync, RefreshCw, ShieldCheck } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { type ReactNode, useEffect, useState } from 'react';
 import { describeAiError, describeGoogleError } from '@/api/client';
 import {
   useAiUsageQuery,
   useCommutePreviewMutation,
   useGoogleAuthMutation,
   useGoogleAuthStatusQuery,
+  useLinearStatusQuery,
   useProfileStatusQuery,
   useRescoreJobsMutation,
   useSettingsQuery,
   useSourcesQuery,
   useSyncProjectDocsMutation,
   useUpdateSettingsMutation,
+  queryKeys,
 } from '@/api/queries';
 import type { AiRoutingMode } from '@/api/types';
 import { CommuteBadgeDisplay } from '@/components/CommuteBadge';
@@ -37,6 +40,45 @@ const THEME_OPTIONS: readonly { value: ThemePreference; label: string }[] = [
   { value: 'system', label: 'System' },
 ];
 
+/** One-shot `?google=` result set by the OAuth callback redirect (JOB-11). */
+const GOOGLE_CALLBACK_MESSAGES: Record<string, string> = {
+  denied: 'Google sign-in was cancelled. Nothing was connected.',
+  invalid_state: 'That Google sign-in link expired. Start the connection again.',
+  not_configured: 'Google OAuth is not configured on the server (.env).',
+  exchange_failed: 'Google sign-in failed while saving the token. Try again.',
+};
+
+type GoogleCallbackResult = { tone: 'success' | 'danger'; message: string };
+
+function readGoogleCallbackResult(search: string): GoogleCallbackResult | null {
+  const params = new URLSearchParams(search);
+  const google = params.get('google');
+  if (google === 'connected') return { tone: 'success', message: 'Google connected.' };
+  if (google === 'error') {
+    const reason = params.get('reason') ?? '';
+    return {
+      tone: 'danger',
+      message: GOOGLE_CALLBACK_MESSAGES[reason] ?? 'Google sign-in failed. Try again.',
+    };
+  }
+  return null;
+}
+
+function Notice({ tone, children }: { tone: 'success' | 'danger'; children: ReactNode }) {
+  return (
+    <div
+      role={tone === 'danger' ? 'alert' : 'status'}
+      className={
+        tone === 'danger'
+          ? 'rounded-[10px] bg-[var(--wp-bad-soft)] px-3 py-2 text-xs text-[var(--wp-bad)]'
+          : 'rounded-[10px] bg-[var(--wp-good-soft)] px-3 py-2 text-xs text-[var(--wp-good)]'
+      }
+    >
+      {children}
+    </div>
+  );
+}
+
 const ROUTING_OPTIONS: readonly { value: AiRoutingMode; label: string }[] = [
   { value: 'auto', label: 'Auto' },
   { value: 'prefer_claude', label: 'Claude' },
@@ -49,6 +91,8 @@ export function SettingsView({ onOpenSources }: { onOpenSources?: () => void }) 
   const profileStatusQuery = useProfileStatusQuery();
   const usageQuery = useAiUsageQuery();
   const sourcesQuery = useSourcesQuery();
+  const linearQuery = useLinearStatusQuery();
+  const queryClient = useQueryClient();
 
   const updateMutation = useUpdateSettingsMutation();
   const googleAuthMutation = useGoogleAuthMutation();
@@ -68,6 +112,19 @@ export function SettingsView({ onOpenSources }: { onOpenSources?: () => void }) 
   const [travelMode, setTravelMode] = useState<'drive' | 'transit'>('drive');
   const [previewDestination, setPreviewDestination] = useState('Santa Monica, CA');
   const [includeSkippedRescore, setIncludeSkippedRescore] = useState(false);
+  const [googleCallback, setGoogleCallback] = useState<GoogleCallbackResult | null>(() =>
+    typeof window === 'undefined' ? null : readGoogleCallbackResult(window.location.search),
+  );
+
+  // Read the callback result once, then drop it from the URL so a reload doesn't repeat it.
+  useEffect(() => {
+    if (!googleCallback) return;
+    void queryClient.invalidateQueries({ queryKey: queryKeys.googleAuthStatus });
+    const url = new URL(window.location.href);
+    url.searchParams.delete('google');
+    url.searchParams.delete('reason');
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  }, []);
 
   useEffect(() => {
     if (settings?.homeLocationArea) setHomeArea(settings.homeLocationArea);
@@ -87,6 +144,19 @@ export function SettingsView({ onOpenSources }: { onOpenSources?: () => void }) 
           Appearance, AI routing, profile sync, and integrations
         </p>
       </div>
+
+      {googleCallback ? (
+        <div data-testid="google-callback-notice" className="space-y-1">
+          <Notice tone={googleCallback.tone}>{googleCallback.message}</Notice>
+          <button
+            type="button"
+            className="px-1 text-xs text-[var(--wp-muted)] underline"
+            onClick={() => setGoogleCallback(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
 
       {/* 1. Appearance */}
       <InsetGroup label="Appearance">
@@ -109,7 +179,11 @@ export function SettingsView({ onOpenSources }: { onOpenSources?: () => void }) 
         </div>
       </InsetGroup>
 
-      {settingsQuery.isLoading || !settings ? (
+      {settingsQuery.isError ? (
+        <Notice tone="danger">
+          Settings could not be loaded: {describeAiError(settingsQuery.error)}
+        </Notice>
+      ) : settingsQuery.isLoading || !settings ? (
         <div className="space-y-4">
           <Skeleton className="h-32 w-full" />
           <Skeleton className="h-44 w-full" />
@@ -574,6 +648,17 @@ export function SettingsView({ onOpenSources }: { onOpenSources?: () => void }) 
                 </label>
               </div>
 
+              {commutePreviewMutation.isError ? (
+                <Notice tone="danger">
+                  Commute preview failed: {describeAiError(commutePreviewMutation.error)}
+                </Notice>
+              ) : null}
+              {updateMutation.isError ? (
+                <Notice tone="danger">
+                  Commute settings were not saved: {describeAiError(updateMutation.error)}
+                </Notice>
+              ) : null}
+
               {commutePreviewMutation.data ? (
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] bg-[var(--wp-raised)]/60 p-3 text-xs">
                   <CommuteBadgeDisplay commute={commutePreviewMutation.data} />
@@ -589,29 +674,45 @@ export function SettingsView({ onOpenSources }: { onOpenSources?: () => void }) 
 
           {/* 7. Linear Integration */}
           <InsetGroup
-            label={`Linear ${settings.linearTeamKey}`}
-            trailing={settings.linearConnected ? 'Connected' : 'Offline'}
+            label={linearQuery.data?.teamKey ? `Linear ${linearQuery.data.teamKey}` : 'Linear'}
+            trailing={
+              linearQuery.data ? (linearQuery.data.configured ? 'Configured' : 'Not configured') : undefined
+            }
           >
-            {settings.linearIssues.length === 0 ? (
-              <div className="px-4 py-3 text-xs text-[var(--wp-muted)]">
-                No synced Linear issues yet.
-              </div>
-            ) : (
-              settings.linearIssues.map((issue) => (
-                <div
-                  key={issue.key}
-                  className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
-                >
-                  <div className="min-w-0">
-                    <div className="truncate font-medium text-[var(--wp-ink)]">{issue.title}</div>
-                    <div className="font-mono-meta text-xs text-[var(--wp-muted)]">
-                      {issue.key} · Priority {issue.priority}
-                    </div>
-                  </div>
-                  <Badge variant="neutral">{issue.state}</Badge>
+            <div data-testid="linear-card">
+              {linearQuery.isError ? (
+                <div className="px-4 py-3">
+                  <Notice tone="danger">
+                    Linear status could not be loaded: {describeAiError(linearQuery.error)}
+                  </Notice>
                 </div>
-              ))
-            )}
+              ) : linearQuery.isLoading || !linearQuery.data ? (
+                <div className="px-4 py-3">
+                  <Skeleton className="h-8 w-full" />
+                </div>
+              ) : linearQuery.data.issues.length === 0 ? (
+                <div className="px-4 py-3 text-xs text-[var(--wp-muted)]">
+                  {linearQuery.data.configured
+                    ? 'No Linear issues yet. One is created when an application is marked applied.'
+                    : 'Set LINEAR_API_KEY and LINEAR_TEAM_ID in .env to create an issue per application.'}
+                </div>
+              ) : (
+                linearQuery.data.issues.map((issue) => (
+                  <div
+                    key={issue.key}
+                    className="flex items-center justify-between gap-3 px-4 py-3 text-sm"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate font-medium text-[var(--wp-ink)]">{issue.title}</div>
+                      <div className="text-xs text-[var(--wp-muted)]">{issue.company}</div>
+                    </div>
+                    <Badge variant="neutral">
+                      <span className="font-mono-meta">{issue.key}</span>
+                    </Badge>
+                  </div>
+                ))
+              )}
+            </div>
           </InsetGroup>
         </div>
       )}
