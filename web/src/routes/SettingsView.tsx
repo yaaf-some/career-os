@@ -10,6 +10,7 @@ import {
   useLinearStatusQuery,
   useProfileStatusQuery,
   useRescoreJobsMutation,
+  useBackfillDescriptionsMutation,
   useSettingsQuery,
   useSourcesQuery,
   useSyncProjectDocsMutation,
@@ -99,6 +100,7 @@ export function SettingsView({ onOpenSources }: { onOpenSources?: () => void }) 
   const commutePreviewMutation = useCommutePreviewMutation();
   const syncDocsMutation = useSyncProjectDocsMutation();
   const rescoreMutation = useRescoreJobsMutation();
+  const backfillMutation = useBackfillDescriptionsMutation();
 
   const { preference, setPreference } = useTheme();
   const { showToast } = useToast();
@@ -454,6 +456,38 @@ export function SettingsView({ onOpenSources }: { onOpenSources?: () => void }) 
                 {rescoreMutation.isError ? (
                   <p role="alert" className="text-xs text-[var(--wp-bad)]">
                     {describeAiError(rescoreMutation.error)}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="space-y-2 px-4 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <span className="text-[var(--wp-secondary)]">
+                    Fill in jobs that have no description
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={backfillMutation.isPending}
+                    onClick={() => backfillMutation.mutate()}
+                  >
+                    {backfillMutation.isPending ? 'Fetching…' : 'Fetch missing descriptions'}
+                  </Button>
+                </div>
+                {backfillMutation.data ? (
+                  <p role="status" className="text-xs text-[var(--wp-secondary)]">
+                    Filled {backfillMutation.data.filled} of {backfillMutation.data.checked}.
+                    Already complete: {backfillMutation.data.unchanged}. No longer posted:{' '}
+                    {backfillMutation.data.gone}. Not available:{' '}
+                    {backfillMutation.data.unavailable}. Failed: {backfillMutation.data.failed}.
+                    {backfillMutation.data.aiSkippedWithoutDescription > 0
+                      ? ` ${backfillMutation.data.aiSkippedWithoutDescription} jobs were skipped by AI before they had a description. Rescore with skipped jobs included to review them.`
+                      : ''}
+                  </p>
+                ) : null}
+                {backfillMutation.isError ? (
+                  <p role="alert" className="text-xs text-[var(--wp-bad)]">
+                    {backfillMutation.error.message}
                   </p>
                 ) : null}
               </div>

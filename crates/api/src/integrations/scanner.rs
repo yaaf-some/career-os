@@ -525,6 +525,97 @@ impl SidecarRejected {
     }
 }
 
+/// Matches the sidecar's `MAX_FETCH_POSTINGS`.
+pub const MAX_POSTINGS_PER_REQUEST: usize = 25;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PostingRequest {
+    pub url: String,
+    pub board_provider: Option<String>,
+    pub board: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PostingResult {
+    pub status: String,
+    pub jd_text: Option<String>,
+}
+
+impl PostingResult {
+    pub fn description(&self) -> Option<&str> {
+        self.jd_text
+            .as_deref()
+            .filter(|t| self.status == "ok" && !t.trim().is_empty())
+    }
+}
+
+async fn post_sidecar<T: serde::de::DeserializeOwned>(
+    http: &reqwest::Client,
+    sidecar_url: &str,
+    path: &str,
+    body: serde_json::Value,
+) -> Result<T, AppError> {
+    let resp = http
+        .post(format!("{}{path}", sidecar_url.trim_end_matches('/')))
+        .timeout(std::time::Duration::from_secs(120))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| AppError::Upstream(format!("scanner sidecar request failed: {e}")))?;
+    if !resp.status().is_success() {
+        return Err(AppError::Upstream(format!(
+            "scanner sidecar returned {}",
+            resp.status()
+        )));
+    }
+    resp.json()
+        .await
+        .map_err(|e| AppError::Upstream(format!("invalid scanner sidecar JSON: {e}")))
+}
+
+/// Fetches descriptions for saved postings; results are in request order.
+pub async fn fetch_postings_via_sidecar(
+    http: &reqwest::Client,
+    sidecar_url: &str,
+    items: &[PostingRequest],
+) -> Result<Vec<PostingResult>, AppError> {
+    #[derive(Deserialize)]
+    struct Body {
+        results: Vec<PostingResult>,
+    }
+    let body: Body = post_sidecar(
+        http,
+        sidecar_url,
+        "/fetch/postings",
+        serde_json::json!({ "items": items }),
+    )
+    .await?;
+    Ok(body.results)
+}
+
+/// Runs user-pasted posting text through the sidecar's posting guard.
+pub async fn sanitize_via_sidecar(
+    http: &reqwest::Client,
+    sidecar_url: &str,
+    text: &str,
+) -> Result<Option<String>, AppError> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Body {
+        jd_text: Option<String>,
+    }
+    let body: Body = post_sidecar(
+        http,
+        sidecar_url,
+        "/sanitize",
+        serde_json::json!({ "text": text }),
+    )
+    .await?;
+    Ok(body.jd_text.filter(|t| !t.trim().is_empty()))
+}
+
 /// Scans sources through the scanner sidecar (provider registry, posting
 /// guard and the target title/location/experience filters).
 pub async fn scan_via_sidecar(

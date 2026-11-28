@@ -26,7 +26,7 @@ function mockApi() {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string) => {
-      if (url === '/api/jobs') return json(apiList);
+      if (url.startsWith('/api/jobs?')) return json(apiList);
       if (url === '/api/jobs/job-1') return json(apiDetail);
       return json({ error: 'not found', code: 'NOT_FOUND' }, 404);
     }),

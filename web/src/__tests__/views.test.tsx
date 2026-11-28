@@ -70,11 +70,9 @@ describe('TriageView Focus Paper Sheet & Fit Horizon', () => {
     fireEvent.click(screen.getByRole('button', { name: /Read posting & deep analysis/i }));
     expect(onSelectRole).toHaveBeenCalledWith('job-101');
 
-    // Keyboard S shortlists and shows bookmark notch
-    fireEvent.keyDown(window, { key: 's' });
-    await waitFor(() => {
-      expect(screen.getByTestId('bookmark-notch')).toBeTruthy();
-    });
+    // A held key is ignored
+    fireEvent.keyDown(window, { key: 'x', repeat: true });
+    expect(screen.queryByText(/Skipped Northstar Systems/i)).toBeNull();
 
     // Keyboard X skips and offers Undo toast
     fireEvent.keyDown(window, { key: 'x' });
@@ -88,11 +86,31 @@ describe('TriageView Focus Paper Sheet & Fit Horizon', () => {
       expect(screen.getByText('Staff Systems Engineer — Agent Runtime')).toBeTruthy();
     });
 
-    // Approve advances to next card
-    fireEvent.click(screen.getByRole('button', { name: /Approve/i }));
+    // Save advances to the next card
+    fireEvent.click(screen.getByRole('button', { name: /^Save/ }));
     await waitFor(() => {
-      expect(screen.getByText(/Approved Northstar Systems/i)).toBeTruthy();
+      expect(screen.getByText(/Saved Northstar Systems/i)).toBeTruthy();
     });
+  });
+
+  const drag = (dx: number, end: 'pointerUp' | 'pointerCancel') => {
+    const card = screen.getByTestId('focus-card');
+    fireEvent.pointerDown(card, { pointerId: 1, button: 0, clientX: 200 });
+    fireEvent.pointerMove(card, { pointerId: 1, clientX: 200 + dx });
+    fireEvent[end](card, { pointerId: 1, clientX: 200 + dx });
+  };
+
+  it('a cancelled drag decides nothing; a released one saves', async () => {
+    renderWithProviders(<TriageView onSelectRole={vi.fn()} undoDelayMs={5000} />);
+    await waitFor(() => expect(screen.getByTestId('focus-card')).toBeTruthy());
+    // The entrance animation lives on a wrapper so it cannot override the drag transform.
+    expect(screen.getByTestId('focus-card').className).not.toContain('calm-rise');
+
+    drag(180, 'pointerCancel');
+    expect(screen.queryByText(/Saved Northstar Systems/i)).toBeNull();
+
+    drag(180, 'pointerUp');
+    await waitFor(() => expect(screen.getByText(/Saved Northstar Systems/i)).toBeTruthy());
   });
 
   it('opens RoleDetailSheet tabs cleanly', async () => {

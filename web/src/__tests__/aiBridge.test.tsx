@@ -151,7 +151,7 @@ describe('client hits the real API routes (AC9)', () => {
     );
     await careerApi.triageJob('j1', { action: 'reject' });
     expect(calls[0]).toEqual({ url: '/api/triage/j1', method: 'POST', body: { action: 'blacklist' } });
-    expect(toTriageRequest({ action: 'approve' })).toEqual({ action: 'shortlist' });
+    expect(toTriageRequest({ action: 'shortlist' })).toEqual({ action: 'shortlist' });
     expect(toTriageRequest({ action: 'skip' })).toEqual({ action: 'skip' });
   });
 

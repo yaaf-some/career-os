@@ -71,16 +71,34 @@ describe('live API errors are not masked by demo data (JOB-11)', () => {
     });
   });
 
-  it('a network failure still falls back to demo data', async () => {
+  it('a network failure is an error, never demo data', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => {
         throw new TypeError('Failed to fetch');
       }),
     );
-    const linear = await careerApi.getLinearStatus();
-    expect(linear.teamKey).toBe('JOB');
-    expect(isDemoModeActive()).toBe(true);
+    await expect(careerApi.getLinearStatus()).rejects.toMatchObject({
+      name: 'ApiError',
+      code: 'NETWORK_ERROR',
+    });
+    expect(isDemoModeActive()).toBe(false);
+  });
+
+  it('listJobs reads every page', async () => {
+    const job = (id: string) => ({
+      id, title: id, company: 'Example Co', url: 'https://example.com', source_type: 'manual',
+      triage_status: 'pending_triage', created_at: '2026-11-01T00:00:00Z', jd_text: null,
+    });
+    const calls = mockFetch((url) =>
+      json({ jobs: [job(url.endsWith('offset=0') ? 'a' : 'b')], total: 2 }),
+    );
+    const res = await careerApi.listJobs();
+    expect(res.jobs.map((j) => j.id)).toEqual(['a', 'b']);
+    expect(calls.map((c) => c.url)).toEqual([
+      '/api/jobs?limit=200&offset=0',
+      '/api/jobs?limit=200&offset=1',
+    ]);
   });
 });
 

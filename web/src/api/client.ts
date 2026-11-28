@@ -57,14 +57,6 @@ export function isDemoModeActive(): boolean {
   return usingDemoFallback;
 }
 
-interface RequestOptions {
-  /**
-   * Fall back to demo data on 404/5xx (default). AI routes turn this off so a disabled
-   * or failing bridge shows its error instead of a fake demo answer.
-   */
-  fallbackOnServerError?: boolean;
-}
-
 /** Error from the API's `{error, code}` body. */
 export class ApiError extends Error {
   constructor(
@@ -137,47 +129,68 @@ async function toApiError(res: Response): Promise<ApiError> {
   return new ApiError(text || `API request failed (${res.status})`, res.status, null);
 }
 
+/**
+ * Calls the API. `fallback` supplies demo data only in a `VITE_DEMO_MODE` build;
+ * a live app always shows the real error.
+ */
 async function requestWithFallback<T>(
   path: string,
   init: RequestInit | undefined,
   fallback: () => T | Promise<T>,
-  { fallbackOnServerError = true }: RequestOptions = {},
 ): Promise<T> {
   if (import.meta.env.VITE_DEMO_MODE === 'true') {
     usingDemoFallback = true;
     return fallback();
   }
+  usingDemoFallback = false;
 
+  let res: Response;
   try {
-    const res = await fetch(path, {
+    res = await fetch(path, {
       ...init,
       headers: {
         'Content-Type': 'application/json',
         ...(init?.headers ?? {}),
       },
     });
+  } catch {
+    throw new ApiError(
+      'Cannot reach Career OS. Check your connection and Tailscale.',
+      0,
+      'NETWORK_ERROR',
+    );
+  }
+  if (!res.ok) throw await toApiError(res);
+  return (await res.json()) as T;
+}
 
-    if (!res.ok) {
-      if (fallbackOnServerError && (res.status === 404 || res.status >= 500)) {
-        usingDemoFallback = true;
-        return fallback();
-      }
-      throw await toApiError(res);
-    }
+/** The server caps one page at 200 jobs. */
+const JOBS_PAGE_SIZE = 200;
 
-    usingDemoFallback = false;
-    return (await res.json()) as T;
-  } catch (err) {
-    if (err instanceof TypeError || (err instanceof Error && /fetch|network/i.test(err.message))) {
-      usingDemoFallback = true;
-      return fallback();
+async function fetchAllJobs(): Promise<ApiListJobsResponse> {
+  const jobs: ApiListJobsResponse['jobs'] = [];
+  for (;;) {
+    const page = await requestWithFallback<ApiListJobsResponse>(
+      `/api/jobs?limit=${JOBS_PAGE_SIZE}&offset=${jobs.length}`,
+      { method: 'GET' },
+      () => ({ jobs: [], total: 0 }),
+    );
+    jobs.push(...page.jobs);
+    if (page.jobs.length === 0 || jobs.length >= page.total) {
+      return { jobs, total: page.total };
     }
-    throw err;
   }
 }
 
-/** Routes the API implements: show real errors, never demo data, outside demo mode. */
-const LIVE_ONLY: RequestOptions = { fallbackOnServerError: false };
+export interface BackfillResult {
+  checked: number;
+  filled: number;
+  unchanged: number;
+  gone: number;
+  unavailable: number;
+  failed: number;
+  aiSkippedWithoutDescription: number;
+}
 
 interface ApiSyncRun {
   id: string;
@@ -233,9 +246,7 @@ export const careerApi = {
 
   getAiUsage(): Promise<AiUsageResponse> {
     // No demo numbers on a live API error: the bar renders nothing instead.
-    return requestWithFallback('/api/ai/usage', { method: 'GET' }, () => demoStore.getUsage(), {
-      fallbackOnServerError: false,
-    });
+    return requestWithFallback('/api/ai/usage', { method: 'GET' }, () => demoStore.getUsage());
   },
 
   async getToday(): Promise<TodayResponse> {
@@ -247,24 +258,64 @@ export const careerApi = {
         fellBack = true;
         return demoStore.getToday();
       },
-      LIVE_ONLY,
     );
     return fellBack ? (res as TodayResponse) : todayFromApi(res as ApiTodayResponse);
   },
 
+  /** Every job, across all pages. */
   async listJobs(): Promise<JobsListResponse> {
-    let fellBack = false;
-    const res = await requestWithFallback<unknown>(
-      '/api/jobs',
-      { method: 'GET' },
-      () => {
-        fellBack = true;
-        const jobs = demoStore.listJobs();
-        return { jobs, total: jobs.length };
-      },
-      LIVE_ONLY,
+    if (import.meta.env.VITE_DEMO_MODE === 'true') {
+      usingDemoFallback = true;
+      const jobs = demoStore.listJobs();
+      return { jobs, total: jobs.length };
+    }
+    return jobsListFromApi(await fetchAllJobs());
+  },
+
+  /** Fetches the posting's description from its job board. Returns the status. */
+  async fetchDescription(id: string): Promise<{ status: string }> {
+    return requestWithFallback(
+      `/api/jobs/${encodeURIComponent(id)}/fetch-description`,
+      { method: 'POST' },
+      () => ({ status: 'unsupported' }),
     );
-    return fellBack ? (res as JobsListResponse) : jobsListFromApi(res as ApiListJobsResponse);
+  },
+
+  async setDescription(id: string, text: string): Promise<{ status: string }> {
+    return requestWithFallback(
+      `/api/jobs/${encodeURIComponent(id)}/description`,
+      { method: 'PUT', body: JSON.stringify({ text }) },
+      () => ({ status: 'ok' }),
+    );
+  },
+
+  async backfillDescriptions(): Promise<BackfillResult> {
+    const raw = await requestWithFallback<{
+      checked: number;
+      filled: number;
+      unchanged: number;
+      gone: number;
+      unavailable: number;
+      failed: number;
+      ai_skipped_without_description: number;
+    }>('/api/jobs/backfill-descriptions', { method: 'POST', body: '{}' }, () => ({
+      checked: 0,
+      filled: 0,
+      unchanged: 0,
+      gone: 0,
+      unavailable: 0,
+      failed: 0,
+      ai_skipped_without_description: 0,
+    }));
+    return {
+      checked: raw.checked,
+      filled: raw.filled,
+      unchanged: raw.unchanged,
+      gone: raw.gone,
+      unavailable: raw.unavailable,
+      failed: raw.failed,
+      aiSkippedWithoutDescription: raw.ai_skipped_without_description,
+    };
   },
 
   async quickAddJob(payload: QuickAddJobRequest): Promise<JobSummary> {
@@ -276,7 +327,6 @@ export const careerApi = {
         fellBack = true;
         return demoStore.quickAddJob(payload);
       },
-      LIVE_ONLY,
     );
     return fellBack ? (res as JobSummary) : jobSummaryFromApi(res as ApiJobRecord);
   },
@@ -292,7 +342,6 @@ export const careerApi = {
         if (!found) throw new Error(`Job ${id} not found`);
         return found;
       },
-      LIVE_ONLY,
     );
     return fellBack ? (res as JobDetail) : jobDetailFromApi(res as ApiJobDetailResponse);
   },
@@ -302,12 +351,11 @@ export const careerApi = {
     let fellBack = false;
     const res = await requestWithFallback<unknown>(
       `/api/triage/${encodeURIComponent(id)}`,
-      { method: 'POST', body: JSON.stringify(toTriageRequest(payload)) },
+      { method: 'POST', body: JSON.stringify(toTriageRequest(payload)), keepalive: true },
       () => {
         fellBack = true;
         return demoStore.triageJob(id, payload);
       },
-      LIVE_ONLY,
     );
     if (fellBack) return res as JobSummary;
     return careerApi.getJob(id);
@@ -323,7 +371,6 @@ export const careerApi = {
         fellBack = true;
         return demoStore.evaluateJob(id);
       },
-      { fallbackOnServerError: false },
     );
     if (fellBack) return res as JobDetail;
     return careerApi.getJob(id);
@@ -339,7 +386,6 @@ export const careerApi = {
         fellBack = true;
         return demoStore.tailorJob(id);
       },
-      LIVE_ONLY,
     );
     return fellBack ? (res as TailorResponse) : tailorResponseFromApi(res as ApiTailorJobResponse);
   },
@@ -357,7 +403,6 @@ export const careerApi = {
         fellBack = true;
         return demoStore.saveEmailDraft(id, payload);
       },
-      LIVE_ONLY,
     );
     return fellBack ? (res as JobDetail) : jobDetailFromApi(res as ApiJobDetailResponse);
   },
@@ -375,7 +420,6 @@ export const careerApi = {
         fellBack = true;
         return demoStore.addCalendarReminder(id, payload);
       },
-      LIVE_ONLY,
     );
     return fellBack ? (res as JobDetail) : jobDetailFromApi(res as ApiJobDetailResponse);
   },
@@ -389,7 +433,6 @@ export const careerApi = {
         fellBack = true;
         return demoStore.getTracker();
       },
-      LIVE_ONLY,
     );
     return fellBack
       ? (res as TrackerResponse)
@@ -402,7 +445,6 @@ export const careerApi = {
       '/api/sync/google',
       { method: 'POST' },
       () => demoSyncRun(),
-      LIVE_ONLY,
     );
     return syncRunFromApi(raw);
   },
@@ -412,7 +454,6 @@ export const careerApi = {
       '/api/sync-runs',
       { method: 'GET' },
       () => ({ runs: [] }),
-      LIVE_ONLY,
     );
     return raw.runs.map(syncRunFromApi);
   },
@@ -426,7 +467,6 @@ export const careerApi = {
         fellBack = true;
         return demoStore.updateTracker(payload);
       },
-      LIVE_ONLY,
     );
     return fellBack
       ? (res as TrackerResponse)
@@ -442,7 +482,6 @@ export const careerApi = {
         fellBack = true;
         return demoStore.getSources();
       },
-      LIVE_ONLY,
     );
     return fellBack
       ? (res as SourcesResponse)
@@ -458,7 +497,6 @@ export const careerApi = {
         fellBack = true;
         return demoStore.addSource(payload);
       },
-      LIVE_ONLY,
     );
     return fellBack ? (res as JobSource) : sourceFromApi(res as ApiSourceRecord);
   },
@@ -473,7 +511,6 @@ export const careerApi = {
         fellBack = true;
         return demoStore.setSourceEnabled(id, enabled);
       },
-      LIVE_ONLY,
     );
     return fellBack ? (res as JobSource) : sourceFromApi(res as ApiSourceRecord);
   },
@@ -488,7 +525,6 @@ export const careerApi = {
         fellBack = true;
         return demoStore.scanSources();
       },
-      LIVE_ONLY,
     );
     return fellBack
       ? (res as ScanSourcesResponse)
@@ -505,7 +541,6 @@ export const careerApi = {
         fellBack = true;
         return demoStore.getSettings();
       },
-      LIVE_ONLY,
     );
     if (fellBack) return res as SettingsState;
     return settingsFromApi(res as ApiSettingsList);
@@ -534,7 +569,6 @@ export const careerApi = {
           fellBack = true;
           return null;
         },
-        LIVE_ONLY,
       );
       if (fellBack) return demoStore.updateSettings(payload);
     }
@@ -551,7 +585,6 @@ export const careerApi = {
         fellBack = true;
         return demoStore.getLinearStatus();
       },
-      LIVE_ONLY,
     );
     return fellBack ? (res as LinearStatus) : linearStatusFromApi(res as ApiLinearStatus);
   },
@@ -561,7 +594,6 @@ export const careerApi = {
       '/api/auth/google/status',
       { method: 'GET' },
       () => demoStore.getGoogleAuthStatus() as unknown as Record<string, unknown>,
-      LIVE_ONLY,
     );
     return {
       connected: Boolean(raw.connected),
@@ -592,7 +624,6 @@ export const careerApi = {
       '/api/auth/google/url',
       { method: 'GET' },
       () => demoStore.startGoogleAuth() as unknown as Record<string, unknown>,
-      LIVE_ONLY,
     );
     return {
       authUrl: String(raw.url ?? raw.authUrl ?? ''),
@@ -605,7 +636,6 @@ export const careerApi = {
       '/api/profile/status',
       { method: 'GET' },
       () => demoStore.getProfileStatus(),
-      LIVE_ONLY,
     );
   },
 
@@ -614,7 +644,6 @@ export const careerApi = {
       '/api/profile/sync-docs',
       { method: 'POST' },
       () => demoStore.syncProjectDocs(),
-      LIVE_ONLY,
     );
   },
 
@@ -623,7 +652,6 @@ export const careerApi = {
       '/api/ai/rescore',
       { method: 'POST', body: JSON.stringify(payload) },
       () => demoStore.rescoreJobs(payload),
-      LIVE_ONLY,
     );
   },
 
@@ -632,7 +660,6 @@ export const careerApi = {
       `/api/jobs/${encodeURIComponent(id)}/commute`,
       { method: 'GET' },
       () => demoStore.getJobCommute(id) as unknown as Record<string, unknown>,
-      LIVE_ONLY,
     );
     return normalizeCommute(raw);
   },
@@ -649,7 +676,6 @@ export const careerApi = {
         }),
       },
       () => demoStore.previewCommute(payload) as unknown as Record<string, unknown>,
-      LIVE_ONLY,
     );
     return normalizeCommute(raw);
   },
@@ -678,7 +704,6 @@ type ApiTriageAction = 'shortlist' | 'skip' | 'blacklist' | 'restore';
 
 export function toTriageRequest(payload: TriageActionRequest): { action: ApiTriageAction } {
   const map: Record<TriageActionRequest['action'], ApiTriageAction> = {
-    approve: 'shortlist',
     shortlist: 'shortlist',
     skip: 'skip',
     reject: 'blacklist',

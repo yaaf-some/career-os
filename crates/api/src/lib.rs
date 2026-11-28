@@ -53,6 +53,18 @@ pub fn build_router(state: AppState) -> Router {
             post(routes::commute::preview_commute),
         )
         .route("/api/jobs/ingest", post(routes::jobs::ingest_jobs))
+        .route(
+            "/api/jobs/backfill-descriptions",
+            post(routes::descriptions::backfill_descriptions),
+        )
+        .route(
+            "/api/jobs/{id}/fetch-description",
+            post(routes::descriptions::fetch_description),
+        )
+        .route(
+            "/api/jobs/{id}/description",
+            put(routes::descriptions::set_description),
+        )
         .route("/api/triage/{id}", post(routes::triage::triage_job))
         .route("/api/triage/batch", post(routes::triage::triage_batch))
         .route("/api/applications", get(routes::tracker::list_applications))
@@ -145,6 +157,10 @@ pub fn build_router(state: AppState) -> Router {
     }
 
     router
+        .layer(axum::middleware::from_fn_with_state(
+            state.config.cors_origin.clone(),
+            middleware::csrf::same_origin_writes,
+        ))
         .layer(axum::middleware::from_fn_with_state(
             auth_policy,
             tailscale_auth_middleware,

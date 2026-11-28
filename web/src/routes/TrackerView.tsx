@@ -112,7 +112,7 @@ export function TrackerView({
       ) : grouped.length === 0 ? (
         <Empty
           title="No roles in this view"
-          description="Approve roles from Triage or capture a posting URL to start tracking."
+          description="Save roles in Triage or capture a posting URL to start tracking."
         />
       ) : (
         <div className="space-y-6">

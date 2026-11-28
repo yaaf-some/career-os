@@ -127,13 +127,17 @@ export function QuickAddDialog({
           ) : null}
 
           <div className="flex items-center justify-between gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => setUrl('https://boards.greenhouse.io/example-cloud/jobs/101')}
-              className="text-xs text-[var(--wp-muted)] underline hover:text-[var(--wp-ink)]"
-            >
-              Try sample link
-            </button>
+            {import.meta.env.VITE_DEMO_MODE === 'true' ? (
+              <button
+                type="button"
+                onClick={() => setUrl('https://boards.greenhouse.io/example-cloud/jobs/101')}
+                className="text-xs text-[var(--wp-muted)] underline hover:text-[var(--wp-ink)]"
+              >
+                Try sample link
+              </button>
+            ) : (
+              <span />
+            )}
             <Button
               type="submit"
               variant="primary"

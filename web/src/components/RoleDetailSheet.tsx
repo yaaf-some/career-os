@@ -18,6 +18,7 @@ import {
   useTriageMutation,
 } from '@/api/queries';
 import { CommuteBadge } from '@/components/CommuteBadge';
+import { DescriptionSection } from '@/components/DescriptionSection';
 import { FitHorizon } from '@/components/FitHorizon';
 import {
   Badge,
@@ -35,6 +36,12 @@ import {
   Textarea,
   useToast,
 } from '@/components/ui';
+
+/** `datetime-local` inputs hold local time; `toISOString` would shift it to UTC. */
+export function toLocalInputValue(date: Date): string {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
 
 export function RoleDetailSheet({
   jobId,
@@ -62,9 +69,23 @@ export function RoleDetailSheet({
   const [reminderStartsAt, setReminderStartsAt] = useState('');
   const [reminderNotes, setReminderNotes] = useState('');
 
+  // The sheet stays mounted, so clear results that belong to the previous job.
+  const resetEvaluate = evaluateMutation.reset;
+  const resetTailor = tailorMutation.reset;
+  const resetTriage = triageMutation.reset;
+  const resetDraft = saveDraftMutation.reset;
+  const resetCalendar = calendarMutation.reset;
+  useEffect(() => {
+    resetEvaluate();
+    resetTailor();
+    resetTriage();
+    resetDraft();
+    resetCalendar();
+  }, [jobId, resetCalendar, resetDraft, resetEvaluate, resetTailor, resetTriage]);
+
   useEffect(() => {
     if (!job) return;
-    setEmailTo(job.gmailDraft?.to ?? 'recruiting@example.com');
+    setEmailTo(job.gmailDraft?.to ?? '');
     setEmailSubject(job.gmailDraft?.subject ?? `Application: ${job.title}`);
     setEmailBody(
       job.gmailDraft?.body ??
@@ -72,9 +93,11 @@ export function RoleDetailSheet({
     );
     setConfirmReady(Boolean(job.gmailDraft?.confirmed));
     setReminderTitle(`${job.company} — Follow-up / Interview Prep`);
-    setReminderStartsAt(new Date(Date.now() + 86_400_000).toISOString().slice(0, 16));
-    setReminderNotes('Grounded talking points from Experience List.md');
-  }, [job]);
+    setReminderStartsAt(toLocalInputValue(new Date(Date.now() + 86_400_000)));
+    setReminderNotes('');
+    // Seed once per job: a background refetch must not discard unsaved edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.id]);
 
   return (
     <Sheet
@@ -125,7 +148,7 @@ export function RoleDetailSheet({
           {/* Quick Status & Action Bar */}
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--wp-hairline)] bg-[var(--wp-canvas)]/60 px-6 py-2.5">
             <div className="flex flex-wrap items-center gap-1.5">
-              <Badge variant={job.triageStatus === 'approved' ? 'success' : 'neutral'}>
+              <Badge variant={job.triageStatus === 'shortlisted' ? 'success' : 'neutral'}>
                 {job.triageStatus}
               </Badge>
               <Badge variant="neutral">stage: {job.stage}</Badge>
@@ -134,18 +157,19 @@ export function RoleDetailSheet({
               <Button
                 size="sm"
                 variant="primary"
-                disabled={triageMutation.isPending}
+                disabled={triageMutation.isPending || job.triageStatus === 'shortlisted'}
                 onClick={() =>
                   triageMutation.mutate(
-                    { id: job.id, payload: { action: 'approve' } },
+                    { id: job.id, payload: { action: 'shortlist' } },
                     {
                       onSuccess: () =>
-                        showToast({ tone: 'success', message: `Approved ${job.company}` }),
+                        showToast({ tone: 'success', message: `Saved ${job.company}` }),
+                      onError: (err) => showToast({ message: `Could not save: ${err.message}` }),
                     },
                   )
                 }
               >
-                Approve
+                {job.triageStatus === 'shortlisted' ? 'Saved' : 'Save'}
               </Button>
               <a
                 href={job.url}
@@ -191,24 +215,18 @@ export function RoleDetailSheet({
                   ) : null}
                 </PaperSheet>
 
-                <PaperSheet className="space-y-3 p-4">
-                  <h3 className="text-xs font-medium text-[var(--wp-muted)]">Job description</h3>
-                  <p className="whitespace-pre-line text-sm leading-relaxed text-[var(--wp-secondary)]">
-                    {job.descriptionText || 'No description captured for this posting.'}
-                  </p>
-                  {job.requirements.length > 0 ? (
-                    <div className="border-t border-[var(--wp-hairline)] pt-3">
-                      <h4 className="text-xs font-medium text-[var(--wp-muted)]">
-                        Key requirements
-                      </h4>
-                      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-[var(--wp-secondary)]">
-                        {job.requirements.map((req) => (
-                          <li key={req}>{req}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                </PaperSheet>
+                <DescriptionSection key={job.id} jobId={job.id} text={job.descriptionText} />
+
+                {job.requirements.length > 0 ? (
+                  <PaperSheet className="space-y-2 p-4">
+                    <h4 className="text-xs font-medium text-[var(--wp-muted)]">Key requirements</h4>
+                    <ul className="list-disc space-y-1 pl-5 text-sm text-[var(--wp-secondary)]">
+                      {job.requirements.map((req) => (
+                        <li key={req}>{req}</li>
+                      ))}
+                    </ul>
+                  </PaperSheet>
+                ) : null}
               </TabsPanel>
 
               <TabsPanel value="eval" className="space-y-4">
@@ -423,7 +441,7 @@ export function RoleDetailSheet({
                     <Button
                       size="sm"
                       variant="primary"
-                      disabled={!confirmReady || saveDraftMutation.isPending}
+                      disabled={!confirmReady || !emailTo.trim() || saveDraftMutation.isPending}
                       onClick={() =>
                         saveDraftMutation.mutate(
                           {

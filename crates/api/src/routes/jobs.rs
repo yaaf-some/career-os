@@ -492,7 +492,18 @@ pub async fn quick_add_job(
         source_type: "manual".to_string(),
         jd_text: None,
     };
-    state.ingest_scanned_jobs(&[scanned], None).await?;
+    let created = state.ingest_scanned_jobs(&[scanned], None).await?.ingested > 0;
+
+    if created && state.config.scanner_url.is_some() {
+        let id: String = sqlx::query_scalar("SELECT id FROM jobs WHERE canonical_key = ?1")
+            .bind(&canonical_key)
+            .fetch_one(&state.pool)
+            .await?;
+        // Best effort: the job is saved either way, and can be retried later.
+        if let Err(err) = crate::routes::descriptions::fetch_description_for(&state, &id).await {
+            tracing::warn!(error = %err, "could not fetch description for new job");
+        }
+    }
 
     let job = sqlx::query_as::<_, JobRecord>(
         r#"

@@ -78,6 +78,7 @@ const INITIAL_JOBS: JobDetail[] = [
     },
     matchSummary:
       'Strong overlap in Rust orchestration, deterministic tool-use sandboxing, and TypeScript control planes.',
+    hasDescription: true,
     hasDeepEval: true,
     gmailStatus: 'none',
     nextFollowUpAt: null,
@@ -183,7 +184,7 @@ const INITIAL_JOBS: JobDetail[] = [
     compensation: '$180k–$210k',
     source: 'Greenhouse · example-cloud',
     url: 'https://boards.greenhouse.io/example-cloud/jobs/40219',
-    triageStatus: 'approved',
+    triageStatus: 'shortlisted',
     stage: 'screen',
     matchScore: 89,
     scoreBreakdown: {
@@ -193,6 +194,7 @@ const INITIAL_JOBS: JobDetail[] = [
       logisticsComp: 14,
     },
     matchSummary: 'Clean platform infra scope with strong emphasis on CI/CD speed and edge deployments.',
+    hasDescription: true,
     hasDeepEval: true,
     gmailStatus: 'reply_received',
     nextFollowUpAt: hoursFromNowIso(6),
@@ -276,6 +278,7 @@ const INITIAL_JOBS: JobDetail[] = [
       logisticsComp: 11,
     },
     matchSummary: 'Strong AI workflow product match; verify remote flexibility vs hybrid expectation.',
+    hasDescription: true,
     hasDeepEval: false,
     gmailStatus: 'none',
     nextFollowUpAt: null,
@@ -325,6 +328,7 @@ const INITIAL_JOBS: JobDetail[] = [
       logisticsComp: 13,
     },
     matchSummary: 'Solid search/indexing backend role; awaiting initial recruiter response.',
+    hasDescription: true,
     hasDeepEval: false,
     gmailStatus: 'awaiting_reply',
     nextFollowUpAt: daysAgoIso(1),
@@ -454,6 +458,7 @@ class DemoStore {
       matchScore: job.matchScore,
       scoreBreakdown: job.scoreBreakdown,
       matchSummary: job.matchSummary,
+      hasDescription: Boolean(job.descriptionText),
       hasDeepEval: job.deepEval !== null,
       gmailStatus: job.gmailStatus,
       nextFollowUpAt: job.nextFollowUpAt,
@@ -560,6 +565,7 @@ class DemoStore {
       matchScore: 82,
       scoreBreakdown: { roleStack: 29, levelReachability: 21, vibeCulture: 20, logisticsComp: 12 },
       matchSummary: 'Queued via Quick Add URL and scored via fast triage.',
+      hasDescription: true,
       hasDeepEval: false,
       gmailStatus: 'none',
       nextFollowUpAt: null,
@@ -586,7 +592,6 @@ class DemoStore {
     if (!job) throw new Error(`Job ${id} not found`);
 
     const map: Record<TriageActionRequest['action'], JobSummary['triageStatus']> = {
-      approve: 'approved',
       shortlist: 'shortlisted',
       skip: 'skipped',
       reject: 'rejected',
