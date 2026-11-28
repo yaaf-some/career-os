@@ -445,6 +445,29 @@ async fn scan_sources_filtered(
     Ok((fetched, ingested, filtered, errored))
 }
 
+pub fn router() -> axum::Router<AppState> {
+    axum::Router::new()
+        .route(
+            "/api/sources",
+            axum::routing::get(list_sources).post(create_source),
+        )
+        .route(
+            "/api/sources/{id}",
+            axum::routing::patch(update_source).delete(delete_source),
+        )
+        .route("/api/sources/scan", axum::routing::post(trigger_scan))
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(
+    list_sources,
+    create_source,
+    update_source,
+    delete_source,
+    trigger_scan
+))]
+pub struct Doc;
+
 #[cfg(test)]
 mod sidecar_tests {
     use std::sync::{Arc, Mutex};

@@ -564,6 +564,20 @@ pub async fn ingest_jobs(
     }))
 }
 
+pub fn router() -> axum::Router<AppState> {
+    axum::Router::new()
+        .route(
+            "/api/jobs",
+            axum::routing::get(list_jobs).post(quick_add_job),
+        )
+        .route("/api/jobs/ingest", axum::routing::post(ingest_jobs))
+        .route("/api/jobs/{id}", axum::routing::get(get_job))
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(list_jobs, quick_add_job, ingest_jobs, get_job))]
+pub struct Doc;
+
 #[cfg(test)]
 mod tests {
     use super::*;

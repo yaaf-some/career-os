@@ -357,6 +357,19 @@ fn is_cache_fresh(fetched_at: &str, now: DateTime<Utc>) -> bool {
         .unwrap_or(false)
 }
 
+pub fn router() -> axum::Router<AppState> {
+    axum::Router::new()
+        .route(
+            "/api/jobs/{id}/commute",
+            axum::routing::get(get_job_commute),
+        )
+        .route("/api/commute/preview", axum::routing::post(preview_commute))
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(get_job_commute, preview_commute))]
+pub struct Doc;
+
 #[cfg(test)]
 mod tests {
     use std::sync::{

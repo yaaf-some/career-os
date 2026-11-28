@@ -225,6 +225,22 @@ pub async fn create_calendar_reminder(
     get_job(State(state), Path(job_id)).await
 }
 
+pub fn router() -> axum::Router<AppState> {
+    axum::Router::new()
+        .route(
+            "/api/jobs/{id}/email-draft",
+            axum::routing::post(save_email_draft),
+        )
+        .route(
+            "/api/jobs/{id}/calendar-reminder",
+            axum::routing::post(create_calendar_reminder),
+        )
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(save_email_draft, create_calendar_reminder))]
+pub struct Doc;
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};

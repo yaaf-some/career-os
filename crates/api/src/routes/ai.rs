@@ -435,6 +435,24 @@ pub async fn get_ai_usage(
     )))
 }
 
+pub fn router() -> axum::Router<AppState> {
+    axum::Router::new()
+        .route(
+            "/api/ai/score-pending",
+            axum::routing::post(score_pending_jobs),
+        )
+        .route("/api/ai/rescore", axum::routing::post(rescore_jobs))
+        .route(
+            "/api/ai/evaluate/{job_id}",
+            axum::routing::post(evaluate_job),
+        )
+        .route("/api/ai/usage", axum::routing::get(get_ai_usage))
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(score_pending_jobs, rescore_jobs, evaluate_job, get_ai_usage))]
+pub struct Doc;
+
 #[cfg(test)]
 mod tests {
     use super::*;

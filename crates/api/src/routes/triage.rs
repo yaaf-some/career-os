@@ -156,3 +156,13 @@ pub async fn triage_batch(
         results,
     }))
 }
+
+pub fn router() -> axum::Router<AppState> {
+    axum::Router::new()
+        .route("/api/triage/{id}", axum::routing::post(triage_job))
+        .route("/api/triage/batch", axum::routing::post(triage_batch))
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(triage_job, triage_batch))]
+pub struct Doc;

@@ -480,6 +480,30 @@ pub async fn create_linear_issue_once(
     }
 }
 
+pub fn router() -> axum::Router<AppState> {
+    axum::Router::new()
+        .route("/api/applications", axum::routing::get(list_applications))
+        .route(
+            "/api/applications/{id}",
+            axum::routing::patch(update_application),
+        )
+        .route("/api/tracker/stats", axum::routing::get(tracker_stats))
+        .route(
+            "/api/tracker",
+            axum::routing::get(get_tracker).patch(patch_tracker),
+        )
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(
+    list_applications,
+    update_application,
+    tracker_stats,
+    get_tracker,
+    patch_tracker
+))]
+pub struct Doc;
+
 #[cfg(test)]
 mod linear_tests {
     use std::sync::{

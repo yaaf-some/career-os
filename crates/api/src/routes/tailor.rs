@@ -262,6 +262,14 @@ pub async fn tailor_job(
     }))
 }
 
+pub fn router() -> axum::Router<AppState> {
+    axum::Router::new().route("/api/jobs/{id}/tailor", axum::routing::post(tailor_job))
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(tailor_job))]
+pub struct Doc;
+
 #[cfg(test)]
 mod tests {
     use std::{

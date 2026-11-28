@@ -178,6 +178,17 @@ pub async fn list_sync_runs(
     Ok(Json(ListSyncRunsResponse { runs }))
 }
 
+pub fn router() -> axum::Router<AppState> {
+    axum::Router::new()
+        .route("/api/settings", axum::routing::get(list_settings))
+        .route("/api/settings/{key}", axum::routing::put(upsert_setting))
+        .route("/api/sync-runs", axum::routing::get(list_sync_runs))
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(list_settings, upsert_setting, list_sync_runs))]
+pub struct Doc;
+
 #[cfg(test)]
 mod tests {
     use super::*;

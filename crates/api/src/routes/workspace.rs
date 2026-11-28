@@ -363,3 +363,17 @@ pub(crate) mod tests {
         );
     }
 }
+
+pub fn router() -> axum::Router<AppState> {
+    axum::Router::new()
+        .route("/api/today", axum::routing::get(get_today))
+        .route("/api/sync/google", axum::routing::post(sync_google_now))
+        .route(
+            "/api/gmail-threads/{id}/application",
+            axum::routing::put(link_thread),
+        )
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(get_today, sync_google_now, link_thread))]
+pub struct Doc;

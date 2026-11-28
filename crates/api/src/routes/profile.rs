@@ -117,3 +117,19 @@ pub async fn sync_project_docs_now(
         skipped_unchanged: outcome.skipped_unchanged,
     }))
 }
+
+pub fn router() -> axum::Router<AppState> {
+    axum::Router::new()
+        .route(
+            "/api/profile/status",
+            axum::routing::get(get_profile_status),
+        )
+        .route(
+            "/api/profile/sync-docs",
+            axum::routing::post(sync_project_docs_now),
+        )
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(get_profile_status, sync_project_docs_now))]
+pub struct Doc;

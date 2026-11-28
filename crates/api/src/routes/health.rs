@@ -33,3 +33,11 @@ pub async fn healthz(State(state): State<AppState>) -> Json<HealthResponse> {
         db_ok,
     })
 }
+
+pub fn router() -> axum::Router<AppState> {
+    axum::Router::new().route("/healthz", axum::routing::get(healthz))
+}
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(healthz))]
+pub struct Doc;
