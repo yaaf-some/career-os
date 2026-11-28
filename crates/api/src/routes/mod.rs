@@ -2,6 +2,7 @@ pub mod ai;
 pub mod auth;
 pub mod comms;
 pub mod commute;
+pub mod descriptions;
 pub mod health;
 pub mod integrations;
 pub mod jobs;

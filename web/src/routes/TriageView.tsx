@@ -1,6 +1,5 @@
 import {
   Bookmark,
-  Check,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -31,15 +30,14 @@ import {
   useToast,
 } from '@/components/ui';
 import { cn } from '@/lib/cn';
-import { prefersReducedMotion } from '@/lib/theme';
 
-type FilterTab = 'inbox' | 'approved' | 'all';
 type ViewMode = 'queue' | 'list';
+type Verdict = 'shortlist' | 'skip';
 
 interface PendingVerdict {
   jobId: string;
-  action: 'approve' | 'skip';
-  prevIndex: number;
+  company: string;
+  action: Verdict;
   timerId: number;
 }
 
@@ -57,42 +55,61 @@ export function TriageView({
   const { openQuickAdd } = useAppActions();
   const { showToast, dismissToast } = useToast();
 
-  const [filter, setFilter] = useState<FilterTab>('inbox');
   const [viewMode, setViewMode] = useState<ViewMode>('queue');
   const [focusIndex, setFocusIndex] = useState(0);
   const [browserOpen, setBrowserOpen] = useState(false);
-  const [approvingId, setApprovingId] = useState<string | null>(null);
-  const [hiddenVerdicts, setHiddenVerdicts] = useState<Record<string, 'approve' | 'skip'>>({});
+  const [hiddenVerdicts, setHiddenVerdicts] = useState<Record<string, Verdict>>({});
   const [dragDx, setDragDx] = useState(0);
   const [dragging, setDragging] = useState(false);
 
   const pendingRef = useRef<PendingVerdict | null>(null);
-  const mutateRef = useRef(triageMutation.mutate);
-  mutateRef.current = triageMutation.mutate;
-  const dragStartRef = useRef<number | null>(null);
+  const mutateRef = useRef(triageMutation.mutateAsync);
+  mutateRef.current = triageMutation.mutateAsync;
+  const dragRef = useRef<{ pointerId: number; startX: number } | null>(null);
+
+  const unhide = useCallback((jobId: string) => {
+    setHiddenVerdicts((prev) => {
+      const copy = { ...prev };
+      delete copy[jobId];
+      return copy;
+    });
+  }, []);
 
   const flushPending = useCallback(() => {
     const p = pendingRef.current;
     if (!p) return;
     window.clearTimeout(p.timerId);
     pendingRef.current = null;
-    mutateRef.current({ id: p.jobId, payload: { action: p.action } });
-  }, []);
+    // `mutateAsync` so a failure is still reported after leaving this view.
+    mutateRef.current({ id: p.jobId, payload: { action: p.action } }).catch(() => {
+      unhide(p.jobId);
+      showToast({ message: `Could not save your choice for ${p.company}. It is back in the queue.` });
+    });
+  }, [showToast, unhide]);
 
-  useEffect(() => () => flushPending(), [flushPending]);
+  // Send the held verdict before the page is hidden, closed or suspended.
+  useEffect(() => {
+    const onHidden = () => {
+      if (document.visibilityState === 'hidden') flushPending();
+    };
+    document.addEventListener('visibilitychange', onHidden);
+    window.addEventListener('pagehide', flushPending);
+    return () => {
+      document.removeEventListener('visibilitychange', onHidden);
+      window.removeEventListener('pagehide', flushPending);
+      flushPending();
+    };
+  }, [flushPending]);
 
   const jobs = jobsQuery.data?.jobs ?? [];
 
-  const visibleJobs = useMemo(() => {
-    const sorted = [...jobs].sort((a, b) => (b.matchScore ?? -1) - (a.matchScore ?? -1));
-    const afterFilter =
-      filter === 'inbox'
-        ? sorted.filter((j) => j.triageStatus === 'pending' || j.triageStatus === 'shortlisted')
-        : filter === 'approved'
-          ? sorted.filter((j) => j.triageStatus === 'approved')
-          : sorted;
-    return afterFilter.filter((j) => !hiddenVerdicts[j.id]);
-  }, [jobs, filter, hiddenVerdicts]);
+  const visibleJobs = useMemo(
+    () =>
+      jobs
+        .filter((j) => j.triageStatus === 'pending' && !hiddenVerdicts[j.id])
+        .sort((a, b) => (b.matchScore ?? -1) - (a.matchScore ?? -1)),
+    [jobs, hiddenVerdicts],
+  );
 
   const clampedIndex = visibleJobs.length === 0 ? 0 : Math.min(focusIndex, visibleJobs.length - 1);
   const currentJob: JobSummary | undefined = visibleJobs[clampedIndex];
@@ -100,82 +117,44 @@ export function TriageView({
     visibleJobs.length > 0 ? Math.round(((clampedIndex + 1) / visibleJobs.length) * 100) : 0;
 
   const commitVerdict = useCallback(
-    (action: 'approve' | 'skip' | 'shortlist', targetJob?: JobSummary) => {
+    (action: Verdict, targetJob?: JobSummary) => {
       const job = targetJob ?? currentJob;
-      if (!job || approvingId) return;
-
-      if (action === 'shortlist') {
-        triageMutation.mutate(
-          { id: job.id, payload: { action: 'shortlist' } },
-          {
-            onSuccess: () => showToast({ tone: 'success', message: `Saved ${job.company}` }),
-          },
-        );
-        return;
-      }
+      if (!job) return;
 
       flushPending();
       const capturedIdx = clampedIndex;
+      setHiddenVerdicts((prev) => ({ ...prev, [job.id]: action }));
+      setFocusIndex(Math.max(0, Math.min(capturedIdx, visibleJobs.length - 2)));
 
-      const applyDeferred = () => {
-        setApprovingId(null);
-        setHiddenVerdicts((prev) => ({ ...prev, [job.id]: action }));
-        setFocusIndex(Math.max(0, Math.min(capturedIdx, visibleJobs.length - 2)));
+      const timerId = window.setTimeout(() => {
+        if (pendingRef.current?.jobId === job.id) flushPending();
+      }, undoDelayMs);
+      pendingRef.current = { jobId: job.id, company: job.company, action, timerId };
 
-        const timerId = window.setTimeout(() => {
-          if (pendingRef.current?.jobId === job.id) {
-            pendingRef.current = null;
-            mutateRef.current({ id: job.id, payload: { action } });
-          }
-        }, undoDelayMs);
-
-        pendingRef.current = { jobId: job.id, action, prevIndex: capturedIdx, timerId };
-
-        showToast({
-          tone: action === 'approve' ? 'success' : 'neutral',
-          message: `${action === 'approve' ? 'Approved' : 'Skipped'} ${job.company}`,
-          durationMs: undoDelayMs,
-          actionLabel: 'Undo',
-          onAction: () => {
-            const p = pendingRef.current;
-            if (p && p.jobId === job.id) {
-              window.clearTimeout(p.timerId);
-              pendingRef.current = null;
-            }
-            setHiddenVerdicts((prev) => {
-              const copy = { ...prev };
-              delete copy[job.id];
-              return copy;
-            });
-            setFocusIndex(capturedIdx);
-          },
-        });
-      };
-
-      if (action === 'approve' && !prefersReducedMotion() && undoDelayMs >= 500) {
-        setApprovingId(job.id);
-        window.setTimeout(applyDeferred, 240);
-      } else {
-        applyDeferred();
-      }
+      showToast({
+        tone: action === 'shortlist' ? 'success' : 'neutral',
+        message: `${action === 'shortlist' ? 'Saved' : 'Skipped'} ${job.company}`,
+        durationMs: undoDelayMs,
+        actionLabel: 'Undo',
+        onAction: () => {
+          const p = pendingRef.current;
+          if (p?.jobId !== job.id) return;
+          window.clearTimeout(p.timerId);
+          pendingRef.current = null;
+          unhide(job.id);
+          setFocusIndex(capturedIdx);
+        },
+      });
     },
-    [
-      approvingId,
-      clampedIndex,
-      currentJob,
-      flushPending,
-      showToast,
-      triageMutation,
-      undoDelayMs,
-      visibleJobs.length,
-    ],
+    [clampedIndex, currentJob, flushPending, showToast, undoDelayMs, unhide, visibleJobs.length],
   );
 
   // Keyboard shortcuts for Focus Queue
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (viewMode !== 'queue' || browserOpen || !currentJob) return;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // A held key must not run through the queue.
+      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
       const activeEl = document.activeElement;
       const tag = activeEl?.tagName ?? '';
       if (
@@ -187,10 +166,7 @@ export function TriageView({
       }
 
       const key = e.key.toLowerCase();
-      if (key === 'a') {
-        e.preventDefault();
-        commitVerdict('approve');
-      } else if (key === 's') {
+      if (key === 's') {
         e.preventDefault();
         commitVerdict('shortlist');
       } else if (key === 'x') {
@@ -215,7 +191,7 @@ export function TriageView({
       let changed = false;
       const next = { ...prev };
       for (const job of jobs) {
-        if (next[job.id] && job.triageStatus !== 'pending' && job.triageStatus !== 'shortlisted') {
+        if (next[job.id] && job.triageStatus !== 'pending') {
           delete next[job.id];
           changed = true;
         }
@@ -224,10 +200,16 @@ export function TriageView({
     });
   }, [jobs, hiddenVerdicts]);
 
+  const endDrag = () => {
+    dragRef.current = null;
+    setDragging(false);
+    setDragDx(0);
+  };
+
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (prefersReducedMotion()) return;
+    if (dragRef.current || e.button > 0) return;
     if ((e.target as HTMLElement).closest('button, a')) return;
-    dragStartRef.current = e.clientX;
+    dragRef.current = { pointerId: e.pointerId, startX: e.clientX };
     setDragging(true);
     setDragDx(0);
     if (typeof e.currentTarget.setPointerCapture === 'function') {
@@ -236,18 +218,18 @@ export function TriageView({
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragging || dragStartRef.current === null) return;
-    setDragDx(e.clientX - dragStartRef.current);
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    setDragDx(e.clientX - drag.startX);
   };
 
-  const handlePointerRelease = () => {
-    if (!dragging) return;
-    const dx = dragDx;
-    dragStartRef.current = null;
-    setDragging(false);
-    setDragDx(0);
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    const dx = e.clientX - drag.startX;
+    endDrag();
     if (dx > DRAG_COMMIT_PX) {
-      commitVerdict('approve');
+      commitVerdict('shortlist');
     } else if (dx < -DRAG_COMMIT_PX) {
       commitVerdict('skip');
     }
@@ -312,28 +294,28 @@ export function TriageView({
 
       {jobsQuery.isLoading ? (
         <Skeleton className="h-80 w-full rounded-[20px]" />
+      ) : jobsQuery.isError ? (
+        <Empty
+          title="Could not load your jobs"
+          description={jobsQuery.error.message}
+          action={
+            <Button variant="primary" onClick={() => void jobsQuery.refetch()}>
+              Try again
+            </Button>
+          }
+        />
       ) : visibleJobs.length === 0 ? (
         <Empty
           title="Queue complete"
-          description="Every role in this filter has been reviewed."
+          description="No jobs are waiting for review. Saved jobs are in the Tracker."
           action={
-            <div className="flex flex-wrap justify-center gap-2">
-              {filter !== 'all' ? (
-                <Button variant="secondary" onClick={() => setFilter('all')}>
-                  Show all roles
-                </Button>
-              ) : null}
-              <Button variant="primary" onClick={openQuickAdd}>
-                Add posting
-              </Button>
-            </div>
+            <Button variant="primary" onClick={openQuickAdd}>
+              Add posting
+            </Button>
           }
         />
       ) : viewMode === 'list' ? (
-        <InsetGroup
-          label={filter === 'inbox' ? 'Inbox' : filter === 'approved' ? 'Approved' : 'All roles'}
-          trailing={visibleJobs.length}
-        >
+        <InsetGroup label="Waiting for review" trailing={visibleJobs.length}>
           {visibleJobs.map((job, idx) => (
             <div
               key={job.id}
@@ -344,14 +326,7 @@ export function TriageView({
                 onClick={() => onSelectRole(job.id)}
                 className="min-w-0 flex-1 text-left"
               >
-                <div className="flex items-center gap-2">
-                  <span className="truncate text-sm font-medium text-[var(--wp-ink)]">
-                    {job.title}
-                  </span>
-                  {job.triageStatus === 'shortlisted' ? (
-                    <Badge variant="brand">Saved</Badge>
-                  ) : null}
-                </div>
+                <div className="truncate text-sm font-medium text-[var(--wp-ink)]">{job.title}</div>
                 <div className="mt-0.5 truncate text-xs text-[var(--wp-muted)]">
                   {job.company} · {job.location}
                 </div>
@@ -388,13 +363,13 @@ export function TriageView({
         <div className="flex flex-1 flex-col justify-between gap-5">
           {/* Focus Paper Sheet */}
           <div className="relative flex flex-1 items-center justify-center">
+            <div key={currentJob.id} className="calm-rise w-full max-w-[540px]">
             <PaperSheet
-              key={currentJob.id}
               data-testid="focus-card"
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerRelease}
-              onPointerCancel={handlePointerRelease}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={endDrag}
               style={{
                 transform: dragging
                   ? `translate3d(${dragDx}px, 0, 0) rotate(${dragRotate}deg)`
@@ -403,25 +378,15 @@ export function TriageView({
                   ? 'none'
                   : 'transform 260ms var(--ease-calm), opacity 220ms var(--ease-calm)',
               }}
-              className="calm-rise relative w-full max-w-[540px] touch-pan-y select-none rounded-[20px] p-6"
+              className="relative w-full touch-pan-y select-none rounded-[20px] p-6"
             >
-              {/* Signature Terracotta Bookmark Notch */}
-              {currentJob.triageStatus === 'shortlisted' ? (
-                <div
-                  title="Saved"
-                  data-testid="bookmark-notch"
-                  className="absolute right-6 top-0 h-5 w-3 bg-[var(--wp-accent)]"
-                  style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%)' }}
-                />
-              ) : null}
-
               {/* Drag Intent Labels */}
               {dragDx > 12 ? (
                 <div
                   className="pointer-events-none absolute left-6 top-4 text-xs font-medium text-[var(--wp-good)]"
                   style={{ opacity: dragRatio }}
                 >
-                  Approve
+                  Save
                 </div>
               ) : null}
               {dragDx < -12 ? (
@@ -462,6 +427,14 @@ export function TriageView({
                   {currentJob.matchSummary || 'Role queued for evaluation.'}
                 </p>
 
+                {!currentJob.hasDescription ? (
+                  <Badge variant="neutral">
+                    {currentJob.matchScore === null
+                      ? 'No description yet'
+                      : 'No description yet: the score may rest on the title alone'}
+                  </Badge>
+                ) : null}
+
                 <div className="border-t border-[var(--wp-hairline)] pt-3.5">
                   <FitHorizon
                     score={currentJob.matchScore}
@@ -480,16 +453,16 @@ export function TriageView({
                 </button>
               </div>
             </PaperSheet>
+            </div>
           </div>
 
           {/* Thumb-Zone Action Dock */}
           <div className="mx-auto w-full max-w-[540px] space-y-2 pb-1">
-            <div className="grid grid-cols-[1fr_auto_1.3fr] items-center gap-3">
+            <div className="grid grid-cols-[1fr_1.3fr] items-center gap-3">
               <button
                 type="button"
-                disabled={Boolean(approvingId)}
                 onClick={() => commitVerdict('skip')}
-                className="tap-control paper-sheet flex h-12 items-center justify-center gap-2 rounded-[12px] text-sm font-medium text-[var(--wp-secondary)] hover:text-[var(--wp-ink)] disabled:opacity-50"
+                className="tap-control paper-sheet flex h-12 items-center justify-center gap-2 rounded-[12px] text-sm font-medium text-[var(--wp-secondary)] hover:text-[var(--wp-ink)]"
               >
                 <X className="h-4 w-4" />
                 <span>Skip</span>
@@ -498,48 +471,14 @@ export function TriageView({
 
               <button
                 type="button"
-                aria-label="Save bookmark"
-                disabled={Boolean(approvingId) || triageMutation.isPending}
                 onClick={() => commitVerdict('shortlist')}
-                className={cn(
-                  'tap-control paper-sheet flex h-12 w-12 items-center justify-center rounded-[12px]',
-                  currentJob.triageStatus === 'shortlisted'
-                    ? 'text-[var(--wp-accent)]'
-                    : 'text-[var(--wp-muted)] hover:text-[var(--wp-ink)]',
-                )}
+                className="tap-control flex h-12 items-center justify-center gap-2 rounded-[12px] bg-[var(--wp-btn-bg)] text-sm font-medium text-[var(--wp-btn-ink)]"
               >
-                <Bookmark className="h-4.5 w-4.5" />
-              </button>
-
-              <button
-                type="button"
-                disabled={Boolean(approvingId)}
-                onClick={() => commitVerdict('approve')}
-                className="tap-control flex h-12 items-center justify-center gap-2 rounded-[12px] bg-[var(--wp-btn-bg)] text-sm font-medium text-[var(--wp-btn-ink)] disabled:opacity-80"
-              >
-                {approvingId === currentJob.id ? (
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path className="draw-check" d="M20 6 9 17l-5-5" />
-                  </svg>
-                ) : (
-                  <Check className="h-4 w-4" />
-                )}
-                <span>{approvingId === currentJob.id ? 'Approved' : 'Approve'}</span>
-                {approvingId !== currentJob.id ? (
-                  <Kbd className="hidden border-transparent bg-white/15 text-inherit md:inline-flex">
-                    A
-                  </Kbd>
-                ) : null}
+                <Bookmark className="h-4 w-4" />
+                <span>Save</span>
+                <Kbd className="hidden border-transparent bg-white/15 text-inherit md:inline-flex">
+                  S
+                </Kbd>
               </button>
             </div>
 
@@ -586,24 +525,10 @@ export function TriageView({
             </SheetClose>
           </div>
 
-          <SegmentedControl
-            ariaLabel="Triage filter"
-            value={filter}
-            onValueChange={(next) => {
-              setFilter(next);
-              setFocusIndex(0);
-            }}
-            options={[
-              { value: 'inbox', label: 'Inbox' },
-              { value: 'approved', label: 'Approved' },
-              { value: 'all', label: 'All' },
-            ]}
-          />
-
           <div className="paper-sheet flex-1 divide-y divide-[var(--wp-hairline)] overflow-y-auto rounded-[14px]">
             {visibleJobs.length === 0 ? (
               <div className="p-6 text-center text-xs text-[var(--wp-muted)]">
-                No roles in this filter
+                No jobs waiting for review
               </div>
             ) : (
               visibleJobs.map((j, idx) => (

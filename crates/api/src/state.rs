@@ -42,6 +42,10 @@ pub struct AppState {
 
 pub type ScannerClientRef = crate::integrations::scanner::ScannerClient;
 
+/// The scanner used to cut descriptions at 4,000 characters (slightly fewer
+/// after the posting guard).
+pub const TRUNCATED_DESCRIPTION: &str = "LENGTH(jd_text) BETWEEN 3900 AND 4000";
+
 #[derive(Debug, Clone)]
 pub struct IngestOutcome {
     pub ingested: i64,
@@ -170,6 +174,7 @@ impl AppState {
                 ingested += 1;
             } else {
                 duplicates += 1;
+                self.fill_missing_description(job).await?;
             }
         }
 
@@ -177,6 +182,79 @@ impl AppState {
             ingested,
             duplicates,
         })
+    }
+
+    /// A re-seen posting fills in a description the saved job never had, or
+    /// completes one that was cut off.
+    async fn fill_missing_description(&self, job: &ScannedJob) -> Result<(), AppError> {
+        let Some(text) = job.jd_text.as_deref().filter(|t| !t.trim().is_empty()) else {
+            return Ok(());
+        };
+        let id: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM jobs WHERE canonical_key = ?1 AND COALESCE(TRIM(jd_text), '') = ''",
+        )
+        .bind(&job.canonical_key)
+        .fetch_optional(&self.pool)
+        .await?;
+        match id {
+            Some(id) => {
+                self.save_description(&id, text).await?;
+            }
+            None => {
+                sqlx::query(sqlx::AssertSqlSafe(format!(
+                    "UPDATE jobs SET jd_text = ?1, updated_at = ?2 \
+                     WHERE canonical_key = ?3 AND {TRUNCATED_DESCRIPTION} AND LENGTH(?1) > LENGTH(jd_text)"
+                )))
+                .bind(text)
+                .bind(now_iso())
+                .bind(&job.canonical_key)
+                .execute(&self.pool)
+                .await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Replaces a cut-off copy of the same text. Scores are kept.
+    pub async fn extend_description(&self, job_id: &str, text: &str) -> Result<(), AppError> {
+        sqlx::query("UPDATE jobs SET jd_text = ?1, updated_at = ?2 WHERE id = ?3")
+            .bind(text)
+            .bind(now_iso())
+            .bind(job_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Stores a description. A job still waiting in triage goes back to scoring,
+    /// since its old score did not see this text. Any other job that was scored
+    /// without a description is only marked. Returns false for an unknown job.
+    pub async fn save_description(&self, job_id: &str, text: &str) -> Result<bool, AppError> {
+        const REQUEUE: &str =
+            "(triage_status = 'pending_triage' AND id NOT IN (SELECT job_id FROM applications))";
+        let sql = format!(
+            r#"
+            UPDATE jobs SET
+                jd_text = ?1,
+                triage_status = CASE WHEN {REQUEUE} THEN 'pending_scoring' ELSE triage_status END,
+                tier1_score = CASE WHEN {REQUEUE} THEN NULL ELSE tier1_score END,
+                tier1_json = CASE
+                    WHEN {REQUEUE} THEN NULL
+                    WHEN COALESCE(TRIM(jd_text), '') = '' AND json_valid(tier1_json)
+                        THEN json_set(tier1_json, '$.scored_without_description', json('true'))
+                    ELSE tier1_json
+                END,
+                updated_at = ?2
+            WHERE id = ?3
+            "#
+        );
+        let res = sqlx::query(sqlx::AssertSqlSafe(sql))
+            .bind(text)
+            .bind(now_iso())
+            .bind(job_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(res.rows_affected() > 0)
     }
 
     pub async fn score_pending_batch(&self, limit: i64) -> Result<ScoreBatchOutcome, AppError> {

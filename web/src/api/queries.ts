@@ -91,6 +91,38 @@ export function useTriageMutation() {
   });
 }
 
+function useRefreshJobs() {
+  const qc = useQueryClient();
+  return () => {
+    void qc.invalidateQueries({ queryKey: queryKeys.jobs });
+    void qc.invalidateQueries({ queryKey: queryKeys.today });
+  };
+}
+
+export function useFetchDescriptionMutation() {
+  const refresh = useRefreshJobs();
+  return useMutation({
+    mutationFn: (id: string) => careerApi.fetchDescription(id),
+    onSuccess: refresh,
+  });
+}
+
+export function useSetDescriptionMutation() {
+  const refresh = useRefreshJobs();
+  return useMutation({
+    mutationFn: ({ id, text }: { id: string; text: string }) => careerApi.setDescription(id, text),
+    onSuccess: refresh,
+  });
+}
+
+export function useBackfillDescriptionsMutation() {
+  const refresh = useRefreshJobs();
+  return useMutation({
+    mutationFn: () => careerApi.backfillDescriptions(),
+    onSuccess: refresh,
+  });
+}
+
 export function useEvaluateJobMutation() {
   const qc = useQueryClient();
   return useMutation({

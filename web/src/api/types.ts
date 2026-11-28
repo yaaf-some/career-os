@@ -1,4 +1,4 @@
-export type TriageStatus = 'pending' | 'approved' | 'shortlisted' | 'skipped' | 'rejected';
+export type TriageStatus = 'pending' | 'shortlisted' | 'skipped' | 'rejected';
 
 export type PipelineStage =
   | 'saved'
@@ -83,6 +83,7 @@ export interface JobSummary {
   /** Set when a hard dealbreaker triggered during triage scoring. */
   dealbreakerReason?: string | null;
   matchSummary: string;
+  hasDescription: boolean;
   hasDeepEval: boolean;
   gmailStatus: GmailThreadStatus;
   nextFollowUpAt: string | null;
@@ -199,7 +200,7 @@ export interface JobsListResponse {
 }
 
 export interface TriageActionRequest {
-  action: 'approve' | 'shortlist' | 'skip' | 'reject';
+  action: 'shortlist' | 'skip' | 'reject';
   reason?: string;
 }
 

@@ -1,0 +1,27 @@
+{
+  "jobs": [
+    {
+      "url": "https://example.com/jobs/1",
+      "company": "Example Cloud",
+      "title": "Platform Engineer",
+      "location": "Remote - US",
+      "workplace_type": "remote",
+      "jd_text": "Run Kubernetes and Terraform for our developer platform.\n\nYou will own CI pipelines, observability and on-call. 2-3 years of experience."
+    },
+    {
+      "url": "https://example.com/jobs/2",
+      "company": "Sample Systems",
+      "title": "Site Reliability Engineer",
+      "location": "Los Angeles, CA",
+      "workplace_type": "hybrid",
+      "jd_text": "Keep services healthy. Build dashboards and alerts."
+    },
+    {
+      "url": "https://example.com/jobs/3",
+      "company": "Placeholder Labs",
+      "title": "DevOps Engineer",
+      "location": "Remote - US",
+      "workplace_type": "remote"
+    }
+  ]
+}

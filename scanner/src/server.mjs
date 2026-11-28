@@ -4,6 +4,8 @@
  * Endpoints:
  *   GET  /healthz      -> 200 {"ok":true}
  *   POST /scan/ats     -> { sources, portalsConfig? } => { accepted, rejected, errors }
+ *   POST /sanitize     -> { text } => { jdText } (posting guard for pasted text)
+ *   POST /fetch/postings -> { items: [{ url, boardProvider?, board? }] } => { results }
  *   POST /scan/reddit  -> { subreddits?, portalsConfig? } => { accepted, rejected, errors }
  */
 
@@ -11,7 +13,8 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isMainModule } from './lib/is-main-module.mjs';
-import { processRawJobs, resolveFilterOptions } from './pipeline.mjs';
+import { deriveCanonicalKey, processRawJobs, resolveFilterOptions, sanitizePostingWithGuard } from './pipeline.mjs';
+import { fetchPostingDescription, parsePostingRef } from './posting-detail.mjs';
 import { makeHttpCtx } from './providers/_http.mjs';
 import { loadProviders, resolveProvider } from './providers/_registry.mjs';
 import { scanReddit } from './reddit.mjs';
@@ -23,6 +26,9 @@ const PROVIDERS_DIR = path.join(SRC_DIR, 'providers');
 const DEFAULT_PORT = 8081;
 const DEFAULT_CONCURRENCY = 6;
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
+const DETAIL_CONCURRENCY = 4;
+const MAX_SCAN_DETAIL_FETCHES = 500;
+export const MAX_FETCH_POSTINGS = 25;
 
 let cachedProvidersPromise = null;
 
@@ -179,7 +185,7 @@ export async function scanAts(opts = {}) {
   });
 
   const filterOpts = resolveFilterOptions(portalsConfig);
-  const processed = processRawJobs(rawJobs, {
+  const runPipeline = () => processRawJobs(rawJobs, {
     sourceType: 'ats_board',
     sinceDays: filterOpts.sinceDays,
     maxYoe: filterOpts.maxYoe,
@@ -190,11 +196,65 @@ export async function scanAts(opts = {}) {
     now: opts.now,
   });
 
+  let processed = runPipeline();
+  // Some boards list postings without bodies (Greenhouse boards over the size
+  // cap). Fetch bodies only for postings that survived the title and location
+  // filters, then filter again so the description-based rules apply to them.
+  if (await fillMissingDescriptions(rawJobs, processed.accepted, httpCtx)) {
+    processed = runPipeline();
+  }
+
   return {
     accepted: processed.accepted,
     rejected: processed.rejected,
     errors,
   };
+}
+
+async function fillMissingDescriptions(rawJobs, accepted, httpCtx) {
+  const missing = new Set(accepted.filter((job) => !job.jdText).map((job) => job.canonicalKey));
+  if (missing.size === 0) return false;
+
+  const pending = [];
+  for (const raw of rawJobs) {
+    const key = deriveCanonicalKey(String(raw.url ?? '').trim());
+    if (!missing.delete(key)) continue;
+    const identity = raw.listingIdentity;
+    const target = parsePostingRef(raw.url, {
+      provider: identity?.ats_provider,
+      board: identity?.board_slug,
+    });
+    if (target) pending.push({ raw, target });
+  }
+
+  const boardCache = new Map();
+  let filled = 0;
+  await mapWithConcurrency(pending.slice(0, MAX_SCAN_DETAIL_FETCHES), DETAIL_CONCURRENCY, async ({ raw, target }) => {
+    const result = await fetchPostingDescription(target, httpCtx, boardCache);
+    if (result.status === 'ok') {
+      raw.description = result.description;
+      filled += 1;
+    }
+  });
+  return filled > 0;
+}
+
+/**
+ * Descriptions for already-saved postings, sanitized like scanned ones.
+ *
+ * @param {{ items: Array<{ url?: string, boardProvider?: string, board?: string }>, fetchImpl?: typeof fetch }} opts
+ */
+export async function fetchPostings({ items, fetchImpl }) {
+  const httpCtx = buildHttpCtx(fetchImpl);
+  const boardCache = new Map();
+  return mapWithConcurrency(items, DETAIL_CONCURRENCY, async (item) => {
+    const url = typeof item?.url === 'string' ? item.url : '';
+    const target = parsePostingRef(url, { provider: item?.boardProvider, board: item?.board });
+    const result = await fetchPostingDescription(target, httpCtx, boardCache);
+    if (result.status !== 'ok') return { url, status: result.status, error: result.error ?? null };
+    const jdText = sanitizePostingWithGuard({ description: result.description }).jdText;
+    return jdText ? { url, status: 'ok', jdText } : { url, status: 'empty' };
+  });
 }
 
 function sendJson(res, status, payload) {
@@ -285,6 +345,50 @@ export function createScannerServer(opts = {}) {
           fetchImpl: opts.fetchImpl,
         });
         sendJson(res, 200, result);
+      } catch (err) {
+        sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+
+    if (pathname === '/sanitize') {
+      if (method !== 'POST') {
+        sendJson(res, 405, { error: 'Method not allowed' });
+        return;
+      }
+      let body;
+      try {
+        body = await readJsonBody(req);
+      } catch (err) {
+        sendJson(res, err.statusCode ?? 400, { error: err.message });
+        return;
+      }
+      if (typeof body.text !== 'string') {
+        sendJson(res, 400, { error: '`text` must be a string' });
+        return;
+      }
+      sendJson(res, 200, { jdText: sanitizePostingWithGuard({ description: body.text }).jdText });
+      return;
+    }
+
+    if (pathname === '/fetch/postings') {
+      if (method !== 'POST') {
+        sendJson(res, 405, { error: 'Method not allowed' });
+        return;
+      }
+      let body;
+      try {
+        body = await readJsonBody(req);
+      } catch (err) {
+        sendJson(res, err.statusCode ?? 400, { error: err.message });
+        return;
+      }
+      if (!Array.isArray(body.items) || body.items.length === 0 || body.items.length > MAX_FETCH_POSTINGS) {
+        sendJson(res, 400, { error: `\`items\` must be an array of 1-${MAX_FETCH_POSTINGS} postings` });
+        return;
+      }
+      try {
+        sendJson(res, 200, { results: await fetchPostings({ items: body.items, fetchImpl: opts.fetchImpl }) });
       } catch (err) {
         sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
       }

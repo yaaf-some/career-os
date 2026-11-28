@@ -242,7 +242,7 @@ export function buildOfficeMap(json) {
  * @param {unknown} content
  */
 export function contentToText(content) {
-  return htmlToText(content);
+  return htmlToText(content, { keepBreaks: true });
 }
 
 /** @type {Provider} */

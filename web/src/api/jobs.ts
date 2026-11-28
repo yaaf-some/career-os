@@ -277,6 +277,7 @@ export function jobSummaryFromApi(
     scoreBreakdown: tier1.breakdown,
     dealbreakerReason: tier1.dealbreakerReason,
     matchSummary: tier1.rationale,
+    hasDescription: Boolean(job.jd_text?.trim()),
     hasDeepEval: extra?.hasDeepEval ?? false,
     gmailStatus: app?.gmail_thread_id ? 'awaiting_reply' : 'none',
     nextFollowUpAt: app?.next_followup_at ?? null,

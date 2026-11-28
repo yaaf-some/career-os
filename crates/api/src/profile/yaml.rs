@@ -41,6 +41,14 @@ pub fn parse_yaml_to_json(input: &str) -> Result<Value, String> {
 
     let mut cursor = 0usize;
     let val = parse_block(&lines, &mut cursor, lines[0].indent)?;
+    // A leftover line means the parser stopped early; returning `val` would
+    // silently drop everything after it.
+    if let Some(line) = lines.get(cursor) {
+        return Err(format!(
+            "line {}: unexpected indentation or unsupported YAML",
+            line.line_no
+        ));
+    }
     Ok(val)
 }
 
@@ -239,6 +247,15 @@ fn unquote_key(raw: &str, line_no: usize) -> Result<String, String> {
 
 fn parse_value_str(raw: &str, line_no: usize) -> Result<Value, String> {
     let s = raw.trim();
+    if matches!(s, "|" | "|-" | "|+" | ">" | ">-" | ">+") {
+        return Err(format!("line {line_no}: block scalars are not supported"));
+    }
+    if s == "{}" {
+        return Ok(Value::Object(Map::new()));
+    }
+    if s.starts_with('{') {
+        return Err(format!("line {line_no}: inline maps are not supported"));
+    }
     if s.starts_with('[') && s.ends_with(']') {
         return parse_inline_array(s, line_no);
     }
@@ -388,6 +405,18 @@ url_note: "https://example.com/a#b"
         assert_eq!(json["scoring_weights"]["vibe_culture"], 25);
         assert_eq!(json["use_in"][2], "cover_letter");
         assert_eq!(json["url_note"], "https://example.com/a#b");
+    }
+
+    #[test]
+    fn rejects_input_it_would_otherwise_silently_drop() {
+        for yaml in [
+            "a: 1\n   b: 2\nc: 3",
+            "note: |\n  long text\nafter: 1",
+            "candidate: {years: 2}",
+            "- one\nkey: value",
+        ] {
+            assert!(parse_yaml_to_json(yaml).is_err(), "{yaml:?}");
+        }
     }
 
     #[test]

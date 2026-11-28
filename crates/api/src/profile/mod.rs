@@ -216,14 +216,17 @@ pub struct LoadedProfile {
 }
 
 /// Parses optional leading `--- ... ---` YAML frontmatter from Markdown.
-pub fn parse_markdown_frontmatter(raw: &str) -> (MarkdownFrontmatter, &str) {
+///
+/// Frontmatter that exists but cannot be read is an error: it may carry
+/// `status: tbd`, so callers must not use the body.
+pub fn parse_markdown_frontmatter(raw: &str) -> Result<(MarkdownFrontmatter, &str), String> {
     let normalized = raw.strip_prefix('\u{feff}').unwrap_or(raw);
     let after_open = if let Some(rest) = normalized.strip_prefix("---\n") {
         rest
     } else if let Some(rest) = normalized.strip_prefix("---\r\n") {
         rest
     } else {
-        return (MarkdownFrontmatter::default(), raw);
+        return Ok((MarkdownFrontmatter::default(), raw));
     };
 
     if let Some(end_idx) = after_open
@@ -237,14 +240,12 @@ pub fn parse_markdown_frontmatter(raw: &str) -> (MarkdownFrontmatter, &str) {
             .unwrap_or(after_marker)
             .strip_prefix('\n')
             .unwrap_or(after_marker);
-        let fm = parse_yaml_to_json(fm_str)
-            .ok()
-            .and_then(|v| serde_json::from_value::<MarkdownFrontmatter>(v).ok())
-            .unwrap_or_default();
-        return (fm, body);
+        let fm = serde_json::from_value::<MarkdownFrontmatter>(parse_yaml_to_json(fm_str)?)
+            .map_err(|err| err.to_string())?;
+        return Ok((fm, body));
     }
 
-    (MarkdownFrontmatter::default(), raw)
+    Ok((MarkdownFrontmatter::default(), raw))
 }
 
 /// Strips markdown sections whose heading indicates `tbd` (e.g. `## TBD ...` or `(status: tbd)`)
@@ -376,7 +377,15 @@ fn read_markdown_file(
         }
     };
 
-    let (fm, body) = parse_markdown_frontmatter(&raw);
+    let (fm, body) = match parse_markdown_frontmatter(&raw) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            warnings.push(format!(
+                "invalid frontmatter in {rel_path}, file not used: {err}"
+            ));
+            return None;
+        }
+    };
     let status = fm
         .status
         .clone()
