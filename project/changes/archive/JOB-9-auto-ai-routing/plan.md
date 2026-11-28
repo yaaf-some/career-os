@@ -38,5 +38,5 @@ Branch per PR off `main`. Merge `origin/main` to catch up; never rebase pushed h
 
 ## Verify & Archive
 
-- [ ] **3.1 Host Bridge Rebuild & Live M2 Check** — Rebuild `~/.local/bin/career-os-ai-bridge` (`cargo build --release -p career-os-ai-bridge`), restart `com.career-os.ai-bridge`, run `cli_smoke -- --ignored`, pull updated `career-os-app` container, verify equal Claude/Gemini routing and `>= 75` escalation live.
-- [ ] **3.2 `project-verify-archive`** — Tick all ACs, archive `JOB-9-auto-ai-routing`, update `project/STATE.md`.
+- [x] **3.1 Host Bridge Rebuild & Live M2 Check** — Rebuild `~/.local/bin/career-os-ai-bridge` (`cargo build --release -p career-os-ai-bridge`), restart `com.career-os.ai-bridge`, run `cli_smoke -- --ignored`, pull updated `career-os-app` container, verify equal Claude/Gemini routing and `>= 75` escalation live.
+- [x] **3.2 `project-verify-archive`** — Tick all ACs, archive `JOB-9-auto-ai-routing`, update `project/STATE.md`.

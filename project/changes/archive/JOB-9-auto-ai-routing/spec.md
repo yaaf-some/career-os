@@ -1,11 +1,11 @@
 # JOB-9 — Automatic AI Capability Tiers & Equal Claude/Gemini Load Balancing
 
-**Status:** In Progress (PR 9A merged; PR 9B open)
-**Issue:** JOB-9 (Linear) · Target Branches: `feat/job-9a-bridge-auto-balance`, `feat/job-9b-api-auto-tiers`
+**Status:** Verified
+**Issue:** JOB-9 (Linear) · Target Branches: `feat/job-9a-bridge-auto-balance` (PR #28), `feat/job-9b-api-auto-tiers` (PR #29)
 
 ## Problem / Context
 
-1. **Antigravity codenames leaked into the app:** `AiTier` (`hydrogen`, `neon`, `carbon`) in [`crates/ai-bridge/src/runner.rs`](../../../crates/ai-bridge/src/runner.rs), [`crates/api/src/ai/mod.rs`](../../../crates/api/src/ai/mod.rs), `ai_usage` SQLite rows, Settings (`AppShell.tsx`, `SettingsView.tsx`), and docs exposes Antigravity-internal model tier names inside Career OS instead of task-focused capability tiers.
+1. **Antigravity codenames leaked into the app:** `AiTier` (`hydrogen`, `neon`, `carbon`) in [`crates/ai-bridge/src/runner.rs`](../../../../crates/ai-bridge/src/runner.rs), [`crates/api/src/ai/mod.rs`](../../../../crates/api/src/ai/mod.rs), `ai_usage` SQLite rows, Settings (`AppShell.tsx`, `SettingsView.tsx`), and docs exposes Antigravity-internal model tier names inside Career OS instead of task-focused capability tiers.
 2. **Manual per-tier routing in Settings:** `ai_routing` (`hydrogenPrimary`, `neonPrimary`, `autoFailover`) forces the user to manually pick a CLI per tier rather than letting the app choose the right capability tier per task and balance load across Claude and Gemini (`agy`) automatically.
 3. **Under-used Gemini capacity & no score-based escalation:** `BridgeRouter::complete` sends every request to `AI_BRIDGE_PRIMARY` (Claude) unless that provider is already on cooldown, leaving Gemini (`agy`) largely idle until a 429 occurs, while deep A–G evaluation uses the mid tier regardless of whether a role is a high-conviction top match.
 
@@ -44,13 +44,13 @@
 
 ## Acceptance Criteria
 
-- [ ] **AC1 — Capability Tiers & Backward Aliases:** `AiTier` uses `Fast | Balanced | Deep` in both `ai-bridge` and `api`, parses legacy `"hydrogen"|"neon"|"carbon"` aliases cleanly, and reads both new (`AI_BRIDGE_*_FAST/BALANCED/DEEP_MODEL`) and legacy env vars.
-- [ ] **AC2 — Automatic Task Routing & `>= 75` Escalation:** `evaluate_job` defaults to `Balanced` for roles `< 75` (or unscored) and automatically upgrades to `Deep` when `tier1_score >= 75.0`; batch triage, doc digests, and email triage use `Fast`; follow-up drafts use `Balanced`.
-- [ ] **AC3 — Equal Quota-Aware Balancing in `BridgeRouter`:** Unit tests verify `mode: "auto"` balances requests across `claude` and `agy`, skips cooldown/unavailable providers, shifts load to `agy` when Claude 5h/7d usage `>= 85%`, and fails over cleanly on eligible errors.
-- [ ] **AC4 — `ai_routing` Setting Migration & Validation:** `PUT /api/settings/ai_routing` validates `{ mode: "auto" | "prefer_claude" | "prefer_agy" }` and reads legacy `{ hydrogenPrimary, neonPrimary, autoFailover }` rows without 500s.
-- [ ] **AC5 — Migration `0006`:** Running migrations converts `ai_usage.tier` rows (`hydrogen -> fast`, `neon -> balanced`, `carbon -> deep`) idempotently and updates `db_stats_by_tier` labels.
-- [ ] **AC6 — Clean App Terminology & Docs:** App UI, OpenAPI schema, and docs contain zero `hydrogen`/`neon`/`carbon` capability-tier labels; full checks pass (`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, `web` `npm run typecheck && npm test && npm run build`).
-- [ ] **AC7 — Live M2 Verification:** Rebuild host `~/.local/bin/career-os-ai-bridge` + restart launchd service, deploy updated `career-os-app` container, verify both `claude` and `agy` handle requests under `auto` mode, and confirm `>= 75` deep-eval escalation live.
+- [x] **AC1 — Capability Tiers & Backward Aliases:** `AiTier` uses `Fast | Balanced | Deep` in both `ai-bridge` and `api`, parses legacy `"hydrogen"|"neon"|"carbon"` aliases cleanly, and reads both new (`AI_BRIDGE_*_FAST/BALANCED/DEEP_MODEL`) and legacy env vars.
+- [x] **AC2 — Automatic Task Routing & `>= 75` Escalation:** `evaluate_job` defaults to `Balanced` for roles `< 75` (or unscored) and automatically upgrades to `Deep` when `tier1_score >= 75.0`; batch triage, doc digests, and email triage use `Fast`; follow-up drafts use `Balanced`.
+- [x] **AC3 — Equal Quota-Aware Balancing in `BridgeRouter`:** Unit tests verify `mode: "auto"` balances requests across `claude` and `agy`, skips cooldown/unavailable providers, shifts load to `agy` when Claude 5h/7d usage `>= 85%`, and fails over cleanly on eligible errors.
+- [x] **AC4 — `ai_routing` Setting Migration & Validation:** `PUT /api/settings/ai_routing` validates `{ mode: "auto" | "prefer_claude" | "prefer_agy" }` and reads legacy `{ hydrogenPrimary, neonPrimary, autoFailover }` rows without 500s.
+- [x] **AC5 — Migration `0006`:** Running migrations converts `ai_usage.tier` rows (`hydrogen -> fast`, `neon -> balanced`, `carbon -> deep`) idempotently and updates `db_stats_by_tier` labels.
+- [x] **AC6 — Clean App Terminology & Docs:** App UI, OpenAPI schema, and docs contain zero `hydrogen`/`neon`/`carbon` capability-tier labels; full checks pass (`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, `web` `npm run typecheck && npm test && npm run build`).
+- [x] **AC7 — Live M2 Verification:** Rebuild host `~/.local/bin/career-os-ai-bridge` + restart launchd service, deploy updated `career-os-app` container, verify both `claude` and `agy` handle requests under `auto` mode, and confirm `>= 75` deep-eval escalation live.
 
 ## Docs Impact
 
