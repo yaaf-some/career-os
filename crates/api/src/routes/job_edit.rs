@@ -311,7 +311,9 @@ pub async fn update_job(
     if (req.salary_min.is_some() || req.salary_max.is_some())
         && matches!((job.salary_min, job.salary_max), (Some(min), Some(max)) if min > max)
     {
-        return Err(bad("the starting salary cannot be higher than the top salary"));
+        return Err(bad(
+            "the starting salary cannot be higher than the top salary",
+        ));
     }
     if let Some(raw) = &req.url {
         // An unchanged URL is not re-validated, so odd stored URLs stay editable.

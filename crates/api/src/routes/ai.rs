@@ -303,6 +303,8 @@ pub async fn score_job(
     .await?
     .ok_or_else(|| AppError::NotFound(format!("job {job_id} not found")))?;
 
+    // What the model reads, to notice an edit made while it is thinking.
+    let scored_text = job.jd_text.clone();
     let profile = crate::profile::load_effective_profile(&state.pool, &state.config.data_dir).await;
     let weights = profile.scoring_weights();
     let doc_digests = state.load_project_doc_digests().await;
@@ -373,7 +375,7 @@ pub async fn score_job(
 
     // The status is decided in SQL so a verdict given while the model was
     // thinking is never overwritten.
-    let triage_status: String = sqlx::query_scalar(
+    let updated: Option<String> = sqlx::query_scalar(
         r#"
         UPDATE jobs
         SET tier1_score = ?1,
@@ -385,7 +387,7 @@ pub async fn score_job(
                 ELSE triage_status
             END,
             updated_at = ?4
-        WHERE id = ?5
+        WHERE id = ?5 AND jd_text IS ?6
         RETURNING triage_status
         "#,
     )
@@ -394,9 +396,16 @@ pub async fn score_job(
     .bind(next_status)
     .bind(now_iso())
     .bind(&job_id)
+    .bind(scored_text)
     .fetch_optional(&state.pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound(format!("job {job_id} not found")))?;
+    .await?;
+    let Some(triage_status) = updated else {
+        return Err(AppError::Conflict(
+            "the job was deleted or its description changed while it was being scored; \
+             rescore it again"
+                .to_string(),
+        ));
+    };
 
     Ok(Json(ScoreJobResponse {
         job_id,
@@ -753,6 +762,45 @@ mod tests {
                 .unwrap();
         assert_eq!(other, ("pending_scoring".to_string(), None));
         assert!(matches!(score("missing").await, Err(AppError::NotFound(_))));
+    }
+
+    /// Replaces the description while "thinking", as a user or a scan might.
+    struct EditsWhileThinking(sqlx::SqlitePool);
+
+    impl crate::ai::AiProvider for EditsWhileThinking {
+        fn name(&self) -> &'static str {
+            "mock"
+        }
+
+        fn complete<'a>(
+            &'a self,
+            req: AiRequest,
+        ) -> crate::ai::BoxFuture<'a, Result<crate::ai::AiResponse, AppError>> {
+            Box::pin(async move {
+                sqlx::query("UPDATE jobs SET jd_text = 'New text'")
+                    .execute(&self.0)
+                    .await?;
+                crate::ai::MockAiProvider.complete(req).await
+            })
+        }
+
+        fn usage<'a>(&'a self) -> crate::ai::BoxFuture<'a, Result<AiUsageReport, AppError>> {
+            crate::ai::MockAiProvider.usage()
+        }
+    }
+
+    #[tokio::test]
+    async fn a_score_for_an_outdated_description_is_dropped() {
+        let mut state = state_with_jobs(&[("job-a", "pending_scoring")]).await;
+        state.ai = std::sync::Arc::new(EditsWhileThinking(state.pool.clone()));
+        let res = score_job(State(state.clone()), Path("job-a".into())).await;
+        assert!(matches!(res, Err(AppError::Conflict(_))));
+        let job: (String, Option<f64>) =
+            sqlx::query_as("SELECT triage_status, tier1_score FROM jobs WHERE id = 'job-a'")
+                .fetch_one(&state.pool)
+                .await
+                .unwrap();
+        assert_eq!(job, ("pending_scoring".to_string(), None));
     }
 
     /// The tier picker offers `fast`, which must still produce a deep report.

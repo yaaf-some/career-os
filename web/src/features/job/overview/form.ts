@@ -37,14 +37,17 @@ export function toForm(job: JobRow): DetailsForm {
   };
 }
 
-/** `150000`, `150,000` or `150k`; blank is `null`, anything else `undefined`. */
+/**
+ * `150000`, `150,000`, `150k` or `92.5k`; blank is `null`, anything else
+ * `undefined`. A dot without `k` is refused: `150.000` must not become 150.
+ */
 export function parseSalary(raw: string): number | null | undefined {
   const text = raw.replace(/[,\s]/g, '');
   if (!text) return null;
-  const match = /^(\d+(?:\.\d+)?)(k?)$/i.exec(text);
+  const match = /^(?:(\d+)|(\d+(?:\.\d{1,2})?)k)$/i.exec(text);
   if (!match) return undefined;
-  const value = Number(match[1]) * (match[2] ? 1000 : 1);
-  return Number.isSafeInteger(Math.round(value)) ? Math.round(value) : undefined;
+  const value = match[1] ? Number(match[1]) : Math.round(Number(match[2]) * 1000);
+  return Number.isSafeInteger(value) ? value : undefined;
 }
 
 /**

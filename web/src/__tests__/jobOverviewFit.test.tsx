@@ -53,6 +53,8 @@ describe('job details form', () => {
     expect(parseSalary('150,000')).toBe(150000);
     expect(parseSalary('92.5k')).toBe(92500);
     expect(parseSalary('-1')).toBeUndefined();
+    expect(parseSalary('150.000')).toBeUndefined();
+    expect(parseSalary('150.000k')).toBeUndefined();
   });
 
   it('drops the error kind from API messages', () => {
