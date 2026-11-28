@@ -1,7 +1,7 @@
 # JOB-8 — Personalized Profile Scoring, Profile-Driven Scanner Filters & Google Docs Project Sync
 
-**Status:** In Progress
-**Issue:** JOB-8 (placeholder until created in Linear) · Branch `feat/job-8-profile-scoring`
+**Status:** Verified 2026-11-28 (PRs #24, #25, #26; live M2 verified)
+**Issue:** JOB-8 (Linear) · PRs #24 (`ec84921`), #25 (`3922056`), #26 (`87beb90`)
 
 ## Problem / Context
 
@@ -59,15 +59,27 @@
 
 ## Acceptance Criteria
 
-- [ ] **AC1 — Profile Loader:** With a test `DATA_DIR/profile/` directory containing `targeting.yml`, `skills.yml`, `identity.md`, `psych-and-vibe.md`, `experience.md`, and `projects/*.md`, `GET /api/profile/status` returns parsed file statuses (`verified`/`draft`/`tbd`), weights, and `tbd` exclusions; when `DATA_DIR/profile/` is missing, the API boots cleanly and falls back to `CAREER_OS_PROFILE_SUMMARY` / default text.
-- [ ] **AC2 — Profile-Driven Scanner Filters:** Unit tests in `scanner/` verify that `portalsConfig` overrides (`target_title_keywords`, `excluded_seniority`, `excluded_domains`, `max_yoe`) are applied, and default + configured domain exclusions reject aerospace/hardware "Systems Engineer" postings while accepting software Platform/DevOps/SRE postings. Rust `sources.rs` test verifies `portalsConfig` includes serialized `targeting.yml` `scanner_filters`.
-- [ ] **AC3 — Hydrogen Personalized Prompt & 4-Dimension Breakdown:** `build_hydrogen_triage_batch_prompt` embeds the compiled Hydrogen Scoring Digest (targeting, skills, vibe green/red flags, project cards, dealbreakers) and parses `breakdown` (`role_stack`, `level_reachability`, `vibe_culture`, `logistics_comp`) + `dealbreaker` while remaining backward-compatible with legacy `tier1_json` payloads.
-- [ ] **AC4 — Neon Personalized Prompt:** `build_neon_evaluation_prompt` embeds the compiled Neon Dossier (including relevant full `project_docs.raw_markdown` bounded by a character/token budget) and enforces zero-fabrication / anti-hype instructions.
-- [ ] **AC5 — Google Drive Project Docs Scope & Sync:** `DEFAULT_GOOGLE_SCOPES` includes `drive.readonly`, `missing_scopes()` flags existing grants lacking it, and wiremock tests verify `DriveClient` lists Docs strictly in `GOOGLE_DRIVE_PROJECTS_FOLDER_ID`, exports Markdown (with `text/plain` fallback), upserts `project_docs`, and only re-runs Hydrogen digest generation when `modifiedTime` changes.
-- [ ] **AC6 — Bulk Rescore (`POST /api/ai/rescore`):** Integration tests verify unapplied `pending_triage` (and optional `skipped`) jobs reset to `pending_scoring`, jobs with `applications` rows or `blacklisted` status are never reset, and a Hydrogen batch executes when requested.
-- [ ] **AC7 — Web UI & Contract Fixtures:** `web/src/api/jobs.ts` maps `breakdown` and `dealbreaker` from `tier1_json`; `RoleDetailDrawer.tsx` and `TriageView.tsx` display the 4-dimension scores; `SettingsView.tsx` displays read-only profile status, synced `project_docs`, **Sync Project Docs**, and **Rescore** actions; Vitest + fixture tests pass.
-- [ ] **AC8 — Full Repo Checks & PII Hygiene:** `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, `scanner` `npm test`, `web` `npm run typecheck && npm test && npm run build`, and PII scan all pass.
-- [ ] **AC9 — Live M2 Verification:** On the live Mac mini stack (`career-os`), reconnect Google OAuth with `drive.readonly`, sync a test Project Reports Drive folder, verify `/api/profile/status` sees `~/career-data/profile/`, rescore existing jobs, and inspect score breakdowns + filtered aerospace rejections.
+- [x] **AC1 — Profile Loader:** With a test `DATA_DIR/profile/` directory containing `targeting.yml`, `skills.yml`, `identity.md`, `psych-and-vibe.md`, `experience.md`, and `projects/*.md`, `GET /api/profile/status` returns parsed file statuses (`verified`/`draft`/`tbd`), weights, and `tbd` exclusions; when `DATA_DIR/profile/` is missing, the API boots cleanly and falls back to `CAREER_OS_PROFILE_SUMMARY` / default text.
+- [x] **AC2 — Profile-Driven Scanner Filters:** Unit tests in `scanner/` verify that `portalsConfig` overrides (`target_title_keywords`, `excluded_seniority`, `excluded_domains`, `max_yoe`) are applied, and default + configured domain exclusions reject aerospace/hardware "Systems Engineer" postings while accepting software Platform/DevOps/SRE postings. Rust `sources.rs` test verifies `portalsConfig` includes serialized `targeting.yml` `scanner_filters`.
+- [x] **AC3 — Hydrogen Personalized Prompt & 4-Dimension Breakdown:** `build_hydrogen_triage_batch_prompt` embeds the compiled Hydrogen Scoring Digest (targeting, skills, vibe green/red flags, project cards, dealbreakers) and parses `breakdown` (`role_stack`, `level_reachability`, `vibe_culture`, `logistics_comp`) + `dealbreaker` while remaining backward-compatible with legacy `tier1_json` payloads.
+- [x] **AC4 — Neon Personalized Prompt:** `build_neon_evaluation_prompt` embeds the compiled Neon Dossier (including relevant full `project_docs.raw_markdown` bounded by a character/token budget) and enforces zero-fabrication / anti-hype instructions.
+- [x] **AC5 — Google Drive Project Docs Scope & Sync:** `DEFAULT_GOOGLE_SCOPES` includes `drive.readonly`, `missing_scopes()` flags existing grants lacking it, and wiremock tests verify `DriveClient` lists Docs strictly in `GOOGLE_DRIVE_PROJECTS_FOLDER_ID`, exports Markdown (with `text/plain` fallback), upserts `project_docs`, and only re-runs Hydrogen digest generation when `modifiedTime` changes.
+- [x] **AC6 — Bulk Rescore (`POST /api/ai/rescore`):** Integration tests verify unapplied `pending_triage` (and optional `skipped`) jobs reset to `pending_scoring`, jobs with `applications` rows or `blacklisted` status are never reset, and a Hydrogen batch executes when requested.
+- [x] **AC7 — Web UI & Contract Fixtures:** `web/src/api/jobs.ts` maps `breakdown` and `dealbreaker` from `tier1_json`; `RoleDetailDrawer.tsx` and `TriageView.tsx` display the 4-dimension scores; `SettingsView.tsx` displays read-only profile status, synced `project_docs`, **Sync Project Docs**, and **Rescore** actions; Vitest + fixture tests pass.
+- [x] **AC8 — Full Repo Checks & PII Hygiene:** `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, `scanner` `npm test`, `web` `npm run typecheck && npm test && npm run build`, and PII scan all pass.
+- [x] **AC9 — Live M2 Verification:** On the live Mac mini stack (`career-os`), reconnect Google OAuth with `drive.readonly`, sync a test Project Reports Drive folder, verify `/api/profile/status` sees `~/career-data/profile/`, rescore existing jobs, and inspect score breakdowns + filtered aerospace rejections.
+
+## Decisions & Verification (2026-11-28)
+
+- **Merged PRs (CI Gate green):** PR #24 (`ec84921`, profile loader + scanner pre-filters + 4-dim breakdown + rescore), PR #25 (`3922056`, `drive.readonly` + `project_docs` sync & auto-digest), PR #26 (`87beb90`, web breakdown UI + read-only Settings profile panel + living docs).
+- **`CAREER_OS_DATA_DIR` separation:** Because `docker-compose.yml` loads host `.env` via `env_file` (where `DATA_DIR` holds the macOS host mount path), `AppConfig` reads `CAREER_OS_DATA_DIR` (default `/data`) so the Linux container always loads `${DATA_DIR}:/data:ro`.
+- **Zero-dependency YAML parser:** `crates/api/src/profile/yaml.rs` implements a hermetic YAML subset parser with no external crate additions.
+- **Live M2 verification:**
+  - Pulled updated GHCR images and verified `/healthz` (`200`, `db_ok: true`).
+  - `GET /api/profile/status` loaded all 10 modular files under `/data/profile/` with `0` warnings and configured weights (`35/25/25/15`).
+  - `POST /api/ai/rescore` + batch drain rescored `100` unapplied jobs with personalized 4-dimension breakdowns (`pending_triage` trimmed from `100` to `54`; `0` pending).
+  - Google OAuth reconnected with `drive.readonly` (`missing_scopes: []`) and `POST /api/profile/sync-docs` returned `200 OK` against the configured Drive projects folder.
+  - Host `.env` also enabled Google Maps (`POST /api/commute/preview` verified live via `routes_api`) and Linear (`JOB` team UUID configured).
 
 ## Docs Impact
 
