@@ -3,6 +3,7 @@ import {
   jobDetailFromApi,
   jobsListFromApi,
   jobSummaryFromApi,
+  tailorResponseFromApi,
   todayFromApi,
   trackerFromApi,
   trackerPatchToApi,
@@ -13,6 +14,7 @@ import type {
   ApiJobDetailResponse,
   ApiJobRecord,
   ApiListJobsResponse,
+  ApiTailorJobResponse,
   ApiTodayResponse,
   ApiTrackerEntry,
 } from './jobs';
@@ -103,6 +105,23 @@ export function describeAiError(err: unknown): string {
     return err.code ? `${err.message} (${err.code})` : err.message;
   }
   return err instanceof Error ? err.message : 'AI request failed';
+}
+
+/** One-line message for a failed tailor call (profile, Google OAuth, or AI). */
+export function describeTailorError(err: unknown): string {
+  if (err instanceof ApiError) {
+    switch (err.code) {
+      case 'PROFILE_NOT_LOADED':
+        return 'Candidate profile is not loaded; mount DATA_DIR/profile before tailoring.';
+      case 'GOOGLE_NOT_CONNECTED':
+        return 'Connect Google in Settings first to create tailored Google Docs.';
+      case 'GOOGLE_RECONNECT_REQUIRED':
+        return 'Reconnect Google in Settings to allow creating tailored Google Docs.';
+      default:
+        return describeAiError(err);
+    }
+  }
+  return err instanceof Error ? err.message : 'Tailoring failed';
 }
 
 async function toApiError(res: Response): Promise<ApiError> {
@@ -310,13 +329,19 @@ export const careerApi = {
     return careerApi.getJob(id);
   },
 
-  /** Route not implemented yet (JOB-12): keeps the demo fallback until it ships. */
-  tailorJob(id: string): Promise<TailorResponse> {
-    return requestWithFallback(
+  /** Generates tailored Resume & Cover Letter Google Docs (`POST /api/jobs/{id}/tailor`). */
+  async tailorJob(id: string): Promise<TailorResponse> {
+    let fellBack = false;
+    const res = await requestWithFallback<unknown>(
       `/api/jobs/${encodeURIComponent(id)}/tailor`,
       { method: 'POST', body: JSON.stringify({}) },
-      () => demoStore.tailorJob(id),
+      () => {
+        fellBack = true;
+        return demoStore.tailorJob(id);
+      },
+      LIVE_ONLY,
     );
+    return fellBack ? (res as TailorResponse) : tailorResponseFromApi(res as ApiTailorJobResponse);
   },
 
   /** Saves the draft; with `confirmed` it also goes to Gmail Drafts. Never sends. */
