@@ -17,9 +17,9 @@ export function GoogleSyncPanel({ connected }: { connected: boolean }) {
   const last = runsQuery.data?.find((r) => r.runType === 'gmail_sync');
 
   return (
-    <div className="rounded-lg border border-border bg-secondary/40 p-3 text-xs space-y-2">
+    <div className="rounded-[12px] border border-[var(--wp-hairline)] bg-[var(--wp-raised)] p-3 text-xs space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-muted-foreground">Gmail & Calendar sync (twice daily)</span>
+        <span className="text-[var(--wp-secondary)]">Gmail & Calendar sync (twice daily)</span>
         <Button
           size="sm"
           variant="secondary"
@@ -33,17 +33,17 @@ export function GoogleSyncPanel({ connected }: { connected: boolean }) {
       {last ? (
         <div className="flex flex-wrap items-center gap-2" data-testid="last-sync">
           <Badge variant={STATUS_VARIANT[last.status]}>{last.status}</Badge>
-          <span className="text-muted-foreground">
+          <span className="font-mono-meta text-[var(--wp-muted)]">
             {new Date(last.finishedAt ?? last.startedAt).toLocaleString()} · {last.itemsFetched}{' '}
             items
           </span>
-          {last.errorMessage ? <span className="text-destructive">{last.errorMessage}</span> : null}
+          {last.errorMessage ? <span className="text-[var(--wp-bad)]">{last.errorMessage}</span> : null}
         </div>
       ) : (
-        <div className="text-muted-foreground">No sync yet.</div>
+        <div className="text-[var(--wp-muted)]">No sync yet.</div>
       )}
       {syncMutation.isError ? (
-        <p role="alert" className="text-destructive">
+        <p role="alert" className="text-[var(--wp-bad)]">
           {describeGoogleError(syncMutation.error)}
         </p>
       ) : null}

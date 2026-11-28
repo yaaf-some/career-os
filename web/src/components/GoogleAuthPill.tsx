@@ -25,7 +25,7 @@ export function GoogleAuthPill({
   if (isLoading || !status) {
     return (
       <div
-        className="flex items-center gap-1.5 rounded-lg border border-border bg-card/60 px-2.5 py-1.5 text-xs text-muted-foreground"
+        className="flex items-center gap-1.5 rounded-[10px] border border-[var(--wp-hairline)] bg-[var(--wp-surface)] px-2.5 py-1.5 text-xs text-[var(--wp-muted)]"
         data-testid="google-auth-pill-loading"
       >
         <KeyRound className="h-3.5 w-3.5" />
@@ -38,10 +38,10 @@ export function GoogleAuthPill({
   const countdown = formatCountdown(status.hoursRemaining);
 
   const tone = !status.connected
-    ? 'border-rose-500/40 bg-rose-500/10 text-rose-300'
+    ? 'border-transparent bg-[var(--wp-bad-soft)] text-[var(--wp-bad)]'
     : status.needsReconnect
-      ? 'border-amber-500/40 bg-amber-500/10 text-amber-300'
-      : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+      ? 'border-transparent bg-[var(--wp-warn-soft)] text-[var(--wp-warn)]'
+      : 'border-transparent bg-[var(--wp-good-soft)] text-[var(--wp-good)]';
 
   const statusText = !status.connected
     ? 'Sign in'
@@ -52,7 +52,7 @@ export function GoogleAuthPill({
   return (
     <div
       className={cn(
-        'flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-medium',
+        'flex items-center gap-2 rounded-[10px] border px-2.5 py-1.5 text-xs font-medium',
         tone,
       )}
       data-testid="google-auth-pill"
@@ -71,7 +71,7 @@ export function GoogleAuthPill({
           type="button"
           onClick={onReconnect}
           disabled={isReconnecting}
-          className="inline-flex items-center gap-1 rounded bg-background/50 px-1.5 py-0.5 text-[11px] font-semibold hover:bg-background/80 disabled:opacity-50"
+          className="inline-flex items-center gap-1 rounded-[7px] bg-[var(--wp-surface)] px-2 py-0.5 text-[11px] font-semibold text-[var(--wp-ink)] hover:opacity-90 disabled:opacity-50"
           data-testid="google-auth-reconnect-btn"
         >
           <RefreshCw className={cn('h-3 w-3', isReconnecting && 'animate-spin')} />
