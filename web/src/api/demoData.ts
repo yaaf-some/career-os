@@ -11,6 +11,7 @@ import type {
   JobDetail,
   JobSource,
   JobSummary,
+  LinearStatus,
   ProfileStatusResponse,
   QuickAddJobRequest,
   RescoreRequest,
@@ -412,17 +413,19 @@ const INITIAL_FILTERED_AUDIT: FilteredAuditEntry[] = [
   },
 ];
 
+const DEMO_LINEAR_STATUS: LinearStatus = {
+  configured: true,
+  teamKey: 'JOB',
+  issues: [
+    { key: 'JOB-42', jobId: 'job-101', company: 'Northstar Systems', title: 'Staff Systems Engineer — Agent Runtime' },
+    { key: 'JOB-41', jobId: 'job-102', company: 'Example Cloud', title: 'Senior Platform Engineer — Developer Infrastructure' },
+  ],
+};
+
 const INITIAL_SETTINGS: SettingsState = {
   aiRoutingMode: 'auto',
   googleOAuthConnected: true,
   googleScopes: ['gmail.compose', 'gmail.readonly', 'calendar.events', 'documents'],
-  linearTeamKey: 'JOB',
-  linearConnected: true,
-  linearIssues: [
-    { key: 'JOB-4', title: 'Phase 2: Google OAuth 7-day Testing-mode UX & LA Commute', state: 'In Progress', priority: 'Medium' },
-    { key: 'JOB-5', title: 'Phase 3: Host ai-bridge daemon (claude -p / agy -p) & Usage Bar', state: 'Todo', priority: 'Medium' },
-    { key: 'JOB-6', title: 'Phase 4: Live Google Workspace sync, Linear ops & scheduler', state: 'Todo', priority: 'Medium' },
-  ],
   homeLocationArea: 'West Los Angeles, CA',
   defaultTravelMode: 'drive',
   mapsConfigured: true,
@@ -788,6 +791,10 @@ class DemoStore {
 
   getSettings(): SettingsState {
     return structuredClone(this.settings);
+  }
+
+  getLinearStatus(): LinearStatus {
+    return structuredClone(DEMO_LINEAR_STATUS);
   }
 
   updateSettings(req: UpdateSettingsRequest): SettingsState {

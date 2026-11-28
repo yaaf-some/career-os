@@ -1,5 +1,6 @@
 use axum::{
     extract::{Query, State},
+    response::Redirect,
     Json,
 };
 use chrono::Utc;
@@ -40,19 +41,17 @@ pub struct GoogleAuthUrlResponse {
     pub state: String,
 }
 
-#[derive(Debug, Deserialize, IntoParams)]
+/// Google's redirect: `code` + `state` on consent, `error` (e.g. `access_denied`) otherwise.
+#[derive(Debug, Default, Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct GoogleAuthCallbackQuery {
-    pub code: String,
-    pub state: String,
+    pub code: Option<String>,
+    pub state: Option<String>,
+    pub error: Option<String>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
-pub struct GoogleAuthCallbackResponse {
-    pub connected: bool,
-    pub provider: String,
-    pub expires_at: Option<String>,
-}
+/// Where the browser lands after the OAuth callback (the SPA's Settings route).
+const SETTINGS_PATH: &str = "/settings";
 
 #[utoipa::path(
     get,
@@ -134,32 +133,81 @@ pub async fn google_auth_url(
     path = "/api/auth/google/callback",
     params(GoogleAuthCallbackQuery),
     responses(
-        (status = 200, description = "OAuth callback completed and encrypted token stored", body = GoogleAuthCallbackResponse),
-        (status = 400, description = "Invalid OAuth state", body = crate::error::ErrorResponse)
+        (status = 303, description = "Redirects to `/settings?google=connected`, or `/settings?google=error&reason=<denied|invalid_state|not_configured|exchange_failed>`")
     ),
     tag = "auth"
 )]
 pub async fn google_auth_callback(
     State(state): State<AppState>,
     Query(query): Query<GoogleAuthCallbackQuery>,
-) -> Result<Json<GoogleAuthCallbackResponse>, AppError> {
+) -> Redirect {
+    let result = complete_google_callback(&state, &query).await;
+    if let Err(err) = &result {
+        tracing::warn!(error = %err, "google oauth callback failed");
+    }
+    callback_redirect(&result)
+}
+
+/// Maps the callback outcome to a Settings URL. Fixed reason codes only: raw
+/// error text never goes into the URL (history, logs, referrers).
+fn callback_redirect(result: &Result<(), CallbackError>) -> Redirect {
+    let target = match result {
+        Ok(()) => format!("{SETTINGS_PATH}?google=connected"),
+        Err(err) => format!("{SETTINGS_PATH}?google=error&reason={}", err.reason()),
+    };
+    Redirect::to(&target)
+}
+
+#[derive(Debug, thiserror::Error)]
+enum CallbackError {
+    #[error("google returned no code (error: {0})")]
+    Denied(String),
+    #[error(transparent)]
+    App(#[from] AppError),
+}
+
+impl CallbackError {
+    fn reason(&self) -> &'static str {
+        match self {
+            Self::Denied(_) => "denied",
+            Self::App(AppError::BadRequest(_)) => "invalid_state",
+            Self::App(AppError::Config(_)) => "not_configured",
+            Self::App(_) => "exchange_failed",
+        }
+    }
+}
+
+async fn complete_google_callback(
+    state: &AppState,
+    query: &GoogleAuthCallbackQuery,
+) -> Result<(), CallbackError> {
     let expected_state = sqlx::query_scalar::<_, String>(
         "SELECT cursor_value FROM sync_cursors WHERE cursor_key = ?1",
     )
     .bind(OAUTH_STATE_CURSOR_KEY)
     .fetch_optional(&state.pool)
-    .await?;
+    .await
+    .map_err(AppError::from)?;
 
-    if expected_state.as_deref() != Some(query.state.as_str()) {
-        return Err(AppError::BadRequest(
-            "invalid or expired OAuth state".to_string(),
-        ));
+    if expected_state.is_none() || expected_state.as_deref() != query.state.as_deref() {
+        return Err(AppError::BadRequest("invalid or expired OAuth state".to_string()).into());
     }
 
+    // The state is single-use whether consent was granted or not.
     sqlx::query("DELETE FROM sync_cursors WHERE cursor_key = ?1")
         .bind(OAUTH_STATE_CURSOR_KEY)
         .execute(&state.pool)
-        .await?;
+        .await
+        .map_err(AppError::from)?;
+
+    let Some(code) = query.code.as_deref().filter(|c| !c.is_empty()) else {
+        return Err(CallbackError::Denied(
+            query
+                .error
+                .clone()
+                .unwrap_or_else(|| "missing code".to_string()),
+        ));
+    };
 
     let client = state.build_google_oauth_client().ok_or_else(|| {
         AppError::Config("Google OAuth credentials are not configured".to_string())
@@ -169,15 +217,9 @@ pub async fn google_auth_callback(
         .as_ref()
         .ok_or_else(|| AppError::Config("CAREER_OS_TOKEN_KEY is not configured".to_string()))?;
 
-    let tokens = client.exchange_code(&query.code).await?;
+    let tokens = client.exchange_code(code).await?;
     store_google_tokens(&state.pool, cipher, None, &tokens).await?;
-    let stored = load_google_token_row(&state.pool).await?;
-
-    Ok(Json(GoogleAuthCallbackResponse {
-        connected: true,
-        provider: GOOGLE_PROVIDER_NAME.to_string(),
-        expires_at: stored.and_then(|r| r.expires_at),
-    }))
+    Ok(())
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -201,4 +243,118 @@ pub async fn google_auth_disconnect(
         .execute(&state.pool)
         .await?;
     Ok(Json(GoogleAuthDisconnectResponse { connected: false }))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use axum::{http::header::LOCATION, response::IntoResponse};
+
+    use super::*;
+    use crate::{
+        ai::MockAiProvider,
+        config::AppConfig,
+        db::init_pool,
+        integrations::{
+            calendar::CalendarClient, drive::DriveClient, gmail::GmailClient, maps::MapsClient,
+            scanner::ScannerClient,
+        },
+    };
+
+    async fn state_with_oauth_state(value: Option<&str>) -> AppState {
+        let pool = init_pool("sqlite::memory:").await.unwrap();
+        if let Some(v) = value {
+            sqlx::query("INSERT INTO sync_cursors (cursor_key, cursor_value) VALUES (?1, ?2)")
+                .bind(OAUTH_STATE_CURSOR_KEY)
+                .bind(v)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        AppState {
+            pool,
+            config: Arc::new(AppConfig {
+                scheduler_enabled: false,
+                ..AppConfig::default()
+            }),
+            ai: Arc::new(MockAiProvider),
+            cipher: None,
+            scanner: ScannerClient::new(),
+            gmail: GmailClient::new(),
+            drive: DriveClient::new(),
+            calendar: CalendarClient::new(),
+            maps: MapsClient::new(None),
+            sync_lock: Default::default(),
+            linear: None,
+        }
+    }
+
+    async fn location(state: AppState, query: GoogleAuthCallbackQuery) -> (u16, String) {
+        let res = google_auth_callback(State(state), Query(query))
+            .await
+            .into_response();
+        let loc = res.headers()[LOCATION].to_str().unwrap().to_string();
+        (res.status().as_u16(), loc)
+    }
+
+    fn query(
+        code: Option<&str>,
+        state: Option<&str>,
+        error: Option<&str>,
+    ) -> GoogleAuthCallbackQuery {
+        GoogleAuthCallbackQuery {
+            code: code.map(str::to_string),
+            state: state.map(str::to_string),
+            error: error.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn success_redirects_to_settings_connected() {
+        let res = callback_redirect(&Ok(())).into_response();
+        assert_eq!(res.status().as_u16(), 303);
+        assert_eq!(res.headers()[LOCATION], "/settings?google=connected");
+    }
+
+    #[tokio::test]
+    async fn bad_or_missing_state_redirects_invalid_state() {
+        for (stored, sent) in [(Some("good"), Some("bad")), (None, Some("x")), (None, None)] {
+            let (status, loc) = location(
+                state_with_oauth_state(stored).await,
+                query(Some("c"), sent, None),
+            )
+            .await;
+            assert_eq!(status, 303);
+            assert_eq!(loc, "/settings?google=error&reason=invalid_state");
+        }
+    }
+
+    #[tokio::test]
+    async fn consent_denied_redirects_denied_and_consumes_state() {
+        let state = state_with_oauth_state(Some("s1")).await;
+        let (_, loc) = location(
+            state.clone(),
+            query(None, Some("s1"), Some("access_denied")),
+        )
+        .await;
+        assert_eq!(loc, "/settings?google=error&reason=denied");
+        let left: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM sync_cursors WHERE cursor_key = ?1")
+                .bind(OAUTH_STATE_CURSOR_KEY)
+                .fetch_one(&state.pool)
+                .await
+                .unwrap();
+        assert_eq!(left, 0);
+    }
+
+    #[tokio::test]
+    async fn unconfigured_oauth_redirects_not_configured() {
+        let (_, loc) = location(
+            state_with_oauth_state(Some("s1")).await,
+            query(Some("code"), Some("s1"), None),
+        )
+        .await;
+        assert_eq!(loc, "/settings?google=error&reason=not_configured");
+    }
 }

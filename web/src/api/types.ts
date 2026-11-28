@@ -289,20 +289,25 @@ export interface ScanSourcesResponse {
   ranAt: string;
 }
 
+/** An application with a Linear issue (identifier stored by the API, e.g. `JOB-42`). */
 export interface LinearJobIssue {
   key: string;
+  jobId: string;
+  company: string;
   title: string;
-  state: 'Backlog' | 'Todo' | 'In Progress' | 'In Review' | 'Done';
-  priority: 'Urgent' | 'High' | 'Medium' | 'Low';
+}
+
+/** `GET /api/integrations/linear`. */
+export interface LinearStatus {
+  configured: boolean;
+  teamKey: string | null;
+  issues: LinearJobIssue[];
 }
 
 export interface SettingsState {
   aiRoutingMode: AiRoutingMode;
   googleOAuthConnected: boolean;
   googleScopes: string[];
-  linearTeamKey: string;
-  linearConnected: boolean;
-  linearIssues: LinearJobIssue[];
   homeLocationArea: string;
   defaultTravelMode: 'drive' | 'transit';
   mapsConfigured?: boolean;

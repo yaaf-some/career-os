@@ -11,6 +11,7 @@ use crate::{
     db::{new_id, now_iso},
     error::AppError,
     integrations::maps::{normalize_travel_mode, CommuteEstimate},
+    routes::settings::{HOME_LOCATION_AREA_KEY, TRAVEL_MODE_KEY},
     state::AppState,
 };
 
@@ -305,8 +306,8 @@ fn build_response(
 }
 
 async fn load_commute_prefs(state: &AppState) -> Result<(Option<String>, String), AppError> {
-    let home_setting = load_string_setting(&state.pool, "home_location_area").await?;
-    let mode_setting = load_string_setting(&state.pool, "travel_mode").await?;
+    let home_setting = load_string_setting(&state.pool, HOME_LOCATION_AREA_KEY).await?;
+    let mode_setting = load_string_setting(&state.pool, TRAVEL_MODE_KEY).await?;
 
     let origin = home_setting.or_else(|| state.config.home_location_area.clone());
     let mode = mode_setting
@@ -472,5 +473,51 @@ mod tests {
         assert!(second.cached);
         assert_eq!(second.distance_miles, Some(7.4));
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn saved_commute_settings_override_env_defaults() {
+        use crate::routes::settings::{upsert_setting, UpsertSettingRequest};
+
+        let pool = init_pool("sqlite::memory:").await.unwrap();
+        let state = AppState {
+            pool,
+            config: Arc::new(AppConfig {
+                home_location_area: Some("Env Area, CA".to_string()),
+                scheduler_enabled: false,
+                ..AppConfig::default()
+            }),
+            ai: Arc::new(MockAiProvider),
+            cipher: None,
+            scanner: ScannerClient::new(),
+            gmail: GmailClient::new(),
+            drive: DriveClient::new(),
+            calendar: CalendarClient::new(),
+            maps: MapsClient::new(None),
+            sync_lock: Default::default(),
+            linear: None,
+        };
+
+        let (origin, mode) = load_commute_prefs(&state).await.unwrap();
+        assert_eq!(origin.as_deref(), Some("Env Area, CA"));
+        assert_eq!(mode, state.config.default_travel_mode);
+
+        for (key, value) in [
+            (HOME_LOCATION_AREA_KEY, "Pasadena, CA"),
+            (TRAVEL_MODE_KEY, "transit"),
+        ] {
+            let _saved = upsert_setting(
+                State(state.clone()),
+                Path(key.to_string()),
+                Json(UpsertSettingRequest {
+                    value: serde_json::json!(value),
+                }),
+            )
+            .await
+            .unwrap();
+        }
+        let (origin, mode) = load_commute_prefs(&state).await.unwrap();
+        assert_eq!(origin.as_deref(), Some("Pasadena, CA"));
+        assert_eq!(mode, "TRANSIT");
     }
 }

@@ -23,6 +23,7 @@ export const queryKeys = {
   tracker: ['tracker'] as const,
   sources: ['sources'] as const,
   settings: ['settings'] as const,
+  linearStatus: ['integrations', 'linear'] as const,
   syncRuns: ['sync-runs'] as const,
   profileStatus: ['profile', 'status'] as const,
 };
@@ -209,6 +210,13 @@ export function useSettingsQuery() {
   return useQuery({
     queryKey: queryKeys.settings,
     queryFn: () => careerApi.getSettings(),
+  });
+}
+
+export function useLinearStatusQuery() {
+  return useQuery({
+    queryKey: queryKeys.linearStatus,
+    queryFn: () => careerApi.getLinearStatus(),
   });
 }
 
