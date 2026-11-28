@@ -184,6 +184,9 @@ export async function scanAts(opts = {}) {
     sinceDays: filterOpts.sinceDays,
     maxYoe: filterOpts.maxYoe,
     strictLocation: filterOpts.strictLocation,
+    targetTitleKeywords: filterOpts.targetTitleKeywords,
+    excludedSeniority: filterOpts.excludedSeniority,
+    excludedDomains: filterOpts.excludedDomains,
     now: opts.now,
   });
 

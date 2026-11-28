@@ -89,3 +89,41 @@ test('filterJob applies full title + location + YOE pipeline', () => {
   assert.equal(rejected.accepted, false);
   assert.equal(rejected.reasonCode, FILTER_REASON_CODES.LOCATION_NOT_REMOTE_OR_LA_OC);
 });
+
+test('filterJob rejects aerospace/hardware Systems Engineer and applies custom scanner_filters', () => {
+  const aeroTitle = filterJob({
+    title: 'Aerospace Systems Engineer',
+    location: 'El Segundo, CA',
+    jdText: '2 years of experience.',
+  });
+  assert.equal(aeroTitle.accepted, false);
+  assert.equal(aeroTitle.reasonCode, FILTER_REASON_CODES.TITLE_EXCLUDED_DOMAIN);
+
+  const aeroJd = filterJob({
+    title: 'Systems Engineer',
+    location: 'El Segundo, CA',
+    jdText: 'Support MBSE, SysML, and spacecraft propulsion integration. 2 years of experience.',
+  });
+  assert.equal(aeroJd.accepted, false);
+  assert.equal(aeroJd.reasonCode, FILTER_REASON_CODES.TITLE_EXCLUDED_DOMAIN);
+
+  const cloudSystems = filterJob({
+    title: 'Systems Engineer',
+    location: 'Remote - US',
+    jdText: 'Manage Linux, Kubernetes clusters, and CI/CD pipelines. 2 years of experience.',
+  });
+  assert.equal(cloudSystems.accepted, true);
+
+  const customAccepted = filterJob(
+    {
+      title: 'Developer Experience Engineer',
+      location: 'Remote - US',
+      jdText: '2 years of experience.',
+    },
+    {
+      targetTitleKeywords: ['Developer Experience Engineer'],
+      excludedDomains: ['Avionics'],
+    },
+  );
+  assert.equal(customAccepted.accepted, true);
+});

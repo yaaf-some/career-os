@@ -77,7 +77,41 @@ const EXCLUDED_DOMAIN_PATTERNS = [
   { re: /\bios\b|\bandroid\b/i, label: 'Mobile' },
   { re: /\bblockchain\b|\bweb3\b|\bcrypto\b/i, label: 'Web3/Crypto' },
   { re: /\bsalesforce\s+admin\b|\bsap\b|\boracle\s+ebs\b|\bmainframe\b|\bcobol\b/i, label: 'Legacy ERP/Mainframe' },
+  { re: /\b(?:aerospace|avionics|propulsion|guidance|gnc|mbse|spacecraft|satellite|flight\s+systems?|weapons?|munitions?)\b/i, label: 'Aerospace/Defense Hardware' },
+  { re: /\b(?:helpdesk|it\s+support|noc)\b/i, label: 'IT Support/NOC' },
 ];
+
+const EXPLICIT_SW_INFRA_TITLE_RE =
+  /\b(?:platform|devops|devsecops|site\s+reliability|sre|cloud|infrastructure|kubernetes|k8s|build\s+(?:and|&)\s+release|release|ci\s*\/\s*cd|production|developer\s+(?:infrastructure|platform|productivity))\b/i;
+
+const JD_NON_SOFTWARE_SYSTEMS_RE =
+  /\b(?:aerospace|avionics|propulsion|spacecraft|satellite|mbse|sysml|matlab|simulink|flight\s+hardware|missile|radar\s+hardware|mechanical\s+systems|hardware\s+integration)\b/i;
+
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Compile plain keyword strings (e.g. from `targeting.yml` `scanner_filters`)
+ * into boundary-aware case-insensitive matchers.
+ *
+ * @param {unknown} list
+ * @returns {Array<{ re: RegExp, label: string }>}
+ */
+export function compileKeywordPatterns(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const item of list) {
+    if (typeof item !== 'string') continue;
+    const label = item.trim();
+    if (!label) continue;
+    const body = escapeRegex(label).replace(/\s+/g, '\\s+');
+    const prefix = /^\w/.test(label) ? '\\b' : '(?:^|\\W)';
+    const suffix = /\w$/.test(label) ? '\\b' : '(?:$|\\W)';
+    out.push({ re: new RegExp(`${prefix}${body}${suffix}`, 'i'), label });
+  }
+  return out;
+}
 
 // Los Angeles & Orange County metro cities/regions
 const LA_OC_PATTERNS = [
@@ -164,12 +198,18 @@ const REMOTE_SIGNAL_RE = /\b(?:remote|work\s+from\s+home|wfh|distributed|telecom
 
 /**
  * Evaluate job title against target Platform/DevOps/SRE/Cloud keywords and
- * seniority/domain exclusion rules.
+ * seniority/domain exclusion rules (with optional overrides from `portalsConfig`).
  *
  * @param {string} title
+ * @param {{
+ *   targetTitleKeywords?: string[],
+ *   excludedSeniority?: string[],
+ *   excludedDomains?: string[],
+ *   jdText?: string | null,
+ * }} [opts]
  * @returns {{ ok: boolean, reasonCode: string | null, reasonDetail: string | null }}
  */
-export function evaluateTitle(title) {
+export function evaluateTitle(title, opts = {}) {
   const raw = typeof title === 'string' ? title.trim() : '';
   if (!raw) {
     return {
@@ -179,7 +219,9 @@ export function evaluateTitle(title) {
     };
   }
 
-  for (const { re, label } of EXCLUDED_SENIORITY_PATTERNS) {
+  const customSeniority = compileKeywordPatterns(opts.excludedSeniority);
+  const seniorityPatterns = customSeniority.length > 0 ? customSeniority : EXCLUDED_SENIORITY_PATTERNS;
+  for (const { re, label } of seniorityPatterns) {
     if (re.test(raw)) {
       return {
         ok: false,
@@ -189,7 +231,9 @@ export function evaluateTitle(title) {
     }
   }
 
-  for (const { re, label } of EXCLUDED_DOMAIN_PATTERNS) {
+  const customDomains = compileKeywordPatterns(opts.excludedDomains);
+  const domainPatterns = customDomains.length > 0 ? customDomains : EXCLUDED_DOMAIN_PATTERNS;
+  for (const { re, label } of domainPatterns) {
     if (re.test(raw)) {
       return {
         ok: false,
@@ -199,12 +243,28 @@ export function evaluateTitle(title) {
     }
   }
 
-  const matched = TARGET_TITLE_PATTERNS.some((re) => re.test(raw));
+  const customTargets = compileKeywordPatterns(opts.targetTitleKeywords);
+  const targetPatterns = customTargets.length > 0 ? customTargets.map((p) => p.re) : TARGET_TITLE_PATTERNS;
+  const matched = targetPatterns.some((re) => re.test(raw));
   if (!matched) {
     return {
       ok: false,
       reasonCode: FILTER_REASON_CODES.TITLE_NOT_TARGET,
       reasonDetail: `Title outside Platform/DevOps/SRE/Cloud target: "${raw}"`,
+    };
+  }
+
+  if (
+    typeof opts.jdText === 'string' &&
+    opts.jdText.trim() &&
+    /\bsystems\s+engineer(?:ing)?\b/i.test(raw) &&
+    !EXPLICIT_SW_INFRA_TITLE_RE.test(raw) &&
+    JD_NON_SOFTWARE_SYSTEMS_RE.test(opts.jdText)
+  ) {
+    return {
+      ok: false,
+      reasonCode: FILTER_REASON_CODES.TITLE_EXCLUDED_DOMAIN,
+      reasonDetail: `Systems Engineer JD matched aerospace/hardware domain: "${raw}"`,
     };
   }
 
@@ -408,7 +468,14 @@ export function evaluateYoe(jdText, opts = {}) {
  *   yoeMin?: number | null,
  *   yoeMax?: number | null,
  * }} job
- * @param {{ maxYoe?: number, strictLocation?: boolean, skipTitleCheck?: boolean }} [opts]
+ * @param {{
+ *   maxYoe?: number,
+ *   strictLocation?: boolean,
+ *   skipTitleCheck?: boolean,
+ *   targetTitleKeywords?: string[],
+ *   excludedSeniority?: string[],
+ *   excludedDomains?: string[],
+ * }} [opts]
  * @returns {{
  *   accepted: boolean,
  *   reasonCode: string | null,
@@ -430,7 +497,12 @@ export function filterJob(job, opts = {}) {
   });
 
   if (!opts.skipTitleCheck) {
-    const titleResult = evaluateTitle(job.title);
+    const titleResult = evaluateTitle(job.title, {
+      targetTitleKeywords: opts.targetTitleKeywords,
+      excludedSeniority: opts.excludedSeniority,
+      excludedDomains: opts.excludedDomains,
+      jdText,
+    });
     if (!titleResult.ok) {
       return {
         accepted: false,

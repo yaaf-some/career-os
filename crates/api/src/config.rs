@@ -1,10 +1,11 @@
-use std::env;
+use std::{env, path::PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct AppConfig {
     pub bind_addr: String,
     pub database_url: String,
     pub static_dir: Option<String>,
+    pub data_dir: PathBuf,
     pub allowed_tailscale_user: Option<String>,
     pub exempt_local_google_callback: bool,
     pub token_encryption_key: Option<String>,
@@ -14,6 +15,7 @@ pub struct AppConfig {
     pub google_client_id: Option<String>,
     pub google_client_secret: Option<String>,
     pub google_redirect_uri: Option<String>,
+    pub google_drive_projects_folder_id: Option<String>,
     pub google_maps_api_key: Option<String>,
     pub home_location_area: Option<String>,
     pub default_travel_mode: String,
@@ -37,6 +39,7 @@ impl Default for AppConfig {
             bind_addr: "127.0.0.1:3000".to_string(),
             database_url: "sqlite://./data/career-os.db".to_string(),
             static_dir: None,
+            data_dir: PathBuf::from("/data"),
             allowed_tailscale_user: None,
             exempt_local_google_callback: true,
             token_encryption_key: None,
@@ -46,6 +49,7 @@ impl Default for AppConfig {
             google_client_id: None,
             google_client_secret: None,
             google_redirect_uri: None,
+            google_drive_projects_folder_id: None,
             google_maps_api_key: None,
             home_location_area: None,
             default_travel_mode: "DRIVE".to_string(),
@@ -74,6 +78,9 @@ impl AppConfig {
             database_url: env_non_empty("DATABASE_URL")
                 .unwrap_or_else(|| "sqlite://./data/career-os.db".to_string()),
             static_dir: env_non_empty("STATIC_DIR"),
+            data_dir: env_non_empty("CAREER_OS_DATA_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("/data")),
             allowed_tailscale_user: env_non_empty("ALLOWED_TAILSCALE_USER"),
             exempt_local_google_callback: env_bool("EXEMPT_LOCAL_GOOGLE_CALLBACK", true),
             token_encryption_key: env_non_empty("CAREER_OS_TOKEN_KEY")
@@ -84,6 +91,7 @@ impl AppConfig {
             google_client_id: env_non_empty("GOOGLE_CLIENT_ID"),
             google_client_secret: env_non_empty("GOOGLE_CLIENT_SECRET"),
             google_redirect_uri: env_non_empty("GOOGLE_REDIRECT_URI"),
+            google_drive_projects_folder_id: env_non_empty("GOOGLE_DRIVE_PROJECTS_FOLDER_ID"),
             google_maps_api_key: env_non_empty("GOOGLE_MAPS_API_KEY"),
             home_location_area: env_non_empty("HOME_LOCATION_AREA"),
             default_travel_mode: travel_mode,
