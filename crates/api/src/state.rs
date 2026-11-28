@@ -4,9 +4,10 @@ use sqlx::SqlitePool;
 
 use crate::{
     ai::{
-        build_hydrogen_triage_batch_prompt, parse_hydrogen_batch_response, AiProvider, AiRequest,
-        AiResponse, AiRouting, AiTier, HydrogenJobInput, HydrogenScoreItem, AI_DISABLED_MESSAGE,
-        AI_ROUTING_KEY,
+        build_hydrogen_triage_batch_prompt, build_project_doc_digest_prompt,
+        parse_hydrogen_batch_response, parse_project_doc_digest_response, AiProvider, AiRequest,
+        AiResponse, AiRouting, AiTier, HydrogenJobInput, HydrogenScoreItem, ProjectDocDigest,
+        AI_DISABLED_MESSAGE, AI_ROUTING_KEY,
     },
     config::AppConfig,
     crypto::TokenCipher,
@@ -100,6 +101,13 @@ impl<'a> AiUsageRecord<'a> {
             job_id,
         }
     }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ProjectDocsSyncOutcome {
+    pub docs_synced: i64,
+    pub docs_digested: i64,
+    pub skipped_unchanged: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -224,7 +232,8 @@ impl AppState {
 
         let profile = crate::profile::load_profile(&self.config.data_dir);
         let weights = profile.scoring_weights();
-        let compiled_digest = profile.build_hydrogen_digest(&[]);
+        let doc_digests = self.load_project_doc_digests().await;
+        let compiled_digest = profile.build_hydrogen_digest(&doc_digests);
         let profile_summary = compiled_digest
             .as_deref()
             .or(self.config.profile_summary.as_deref())
@@ -512,6 +521,214 @@ impl AppState {
 
         crate::sync::link::relink_all(&self.pool).await?;
 
+        if self
+            .config
+            .google_drive_projects_folder_id
+            .as_deref()
+            .is_some_and(|s| !s.trim().is_empty())
+        {
+            if let Err(err) = self.sync_project_docs(&access_token).await {
+                tracing::warn!(
+                    error = %err,
+                    "project docs sync failed during google workspace sync"
+                );
+            }
+        }
+
         Ok((gmail_count, cal_count))
+    }
+
+    /// Syncs Google Docs inside `GOOGLE_DRIVE_PROJECTS_FOLDER_ID` into SQLite `project_docs`
+    /// and runs a compact Hydrogen digest pass for any new or modified Doc.
+    pub async fn sync_project_docs(
+        &self,
+        access_token: &str,
+    ) -> Result<ProjectDocsSyncOutcome, AppError> {
+        let Some(folder_id) = self
+            .config
+            .google_drive_projects_folder_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        else {
+            return Ok(ProjectDocsSyncOutcome::default());
+        };
+
+        let files = self
+            .drive
+            .list_files_in_folder(access_token, folder_id)
+            .await?;
+
+        let mut outcome = ProjectDocsSyncOutcome::default();
+        let routing = self.ai_routing().await;
+
+        for file in files {
+            if file.mime_type.as_deref() != Some("application/vnd.google-apps.document") {
+                continue;
+            }
+
+            let existing: Option<(Option<String>, Option<String>)> = sqlx::query_as(
+                "SELECT modified_time, digest_json FROM project_docs WHERE drive_file_id = ?1",
+            )
+            .bind(&file.id)
+            .fetch_optional(&self.pool)
+            .await?;
+
+            let now = now_iso();
+            if let Some((prev_mod, prev_digest)) = &existing {
+                if *prev_mod == file.modified_time && prev_digest.is_some() {
+                    sqlx::query(
+                        "UPDATE project_docs SET title = ?1, drive_url = ?2, synced_at = ?3 WHERE drive_file_id = ?4",
+                    )
+                    .bind(&file.name)
+                    .bind(&file.web_view_link)
+                    .bind(&now)
+                    .bind(&file.id)
+                    .execute(&self.pool)
+                    .await?;
+                    outcome.skipped_unchanged += 1;
+                    continue;
+                }
+            }
+
+            let raw_markdown = self
+                .drive
+                .export_doc_markdown(access_token, &file.id)
+                .await?;
+            let modified_changed = existing
+                .as_ref()
+                .is_some_and(|(prev_mod, _)| *prev_mod != file.modified_time);
+
+            sqlx::query(
+                r#"
+                INSERT INTO project_docs (
+                    id, drive_file_id, title, drive_url, modified_time, raw_markdown, synced_at
+                )
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                ON CONFLICT(drive_file_id) DO UPDATE SET
+                    title = excluded.title,
+                    drive_url = excluded.drive_url,
+                    modified_time = excluded.modified_time,
+                    raw_markdown = excluded.raw_markdown,
+                    digest_json = CASE WHEN ?8 THEN NULL ELSE project_docs.digest_json END,
+                    digested_at = CASE WHEN ?8 THEN NULL ELSE project_docs.digested_at END,
+                    synced_at = excluded.synced_at
+                "#,
+            )
+            .bind(new_id())
+            .bind(&file.id)
+            .bind(&file.name)
+            .bind(&file.web_view_link)
+            .bind(&file.modified_time)
+            .bind(&raw_markdown)
+            .bind(&now)
+            .bind(modified_changed)
+            .execute(&self.pool)
+            .await?;
+            outcome.docs_synced += 1;
+
+            let needs_digest = existing.is_none()
+                || modified_changed
+                || existing.is_some_and(|(_, d)| d.is_none());
+            if needs_digest && self.ai.is_enabled() && !raw_markdown.trim().is_empty() {
+                let (sys, usr) = build_project_doc_digest_prompt(&file.name, &raw_markdown);
+                let started = Instant::now();
+                let req = AiRequest {
+                    tier: AiTier::Hydrogen,
+                    system_prompt: Some(sys),
+                    prompt: usr,
+                    max_tokens: Some(1000),
+                    temperature: Some(0.1),
+                    json_mode: true,
+                    timeout_secs: Some(60),
+                    primary: Some(routing.primary_for(AiTier::Hydrogen)),
+                    allow_failover: routing.auto_failover,
+                };
+                match self.ai.complete(req).await {
+                    Ok(resp) => {
+                        let _ = self
+                            .record_ai_usage(AiUsageRecord::success(AiTier::Hydrogen, &resp, None))
+                            .await;
+                        match parse_project_doc_digest_response(&resp.content) {
+                            Ok(digest) => {
+                                if let Ok(digest_json) = serde_json::to_string(&digest) {
+                                    sqlx::query(
+                                        "UPDATE project_docs SET digest_json = ?1, digested_at = ?2 WHERE drive_file_id = ?3",
+                                    )
+                                    .bind(digest_json)
+                                    .bind(now_iso())
+                                    .bind(&file.id)
+                                    .execute(&self.pool)
+                                    .await?;
+                                    outcome.docs_digested += 1;
+                                }
+                            }
+                            Err(err) => {
+                                tracing::warn!(title = %file.name, error = %err, "invalid project doc digest JSON");
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        let msg = err.to_string();
+                        let _ = self
+                            .record_ai_usage(AiUsageRecord::failure(
+                                AiTier::Hydrogen,
+                                self.ai.name(),
+                                started.elapsed().as_millis() as i64,
+                                &msg,
+                                None,
+                            ))
+                            .await;
+                        tracing::warn!(title = %file.name, error = %msg, "failed to digest project doc");
+                    }
+                }
+            }
+        }
+
+        Ok(outcome)
+    }
+
+    pub async fn load_project_doc_digests(&self) -> Vec<String> {
+        let rows: Vec<(String, String)> = match sqlx::query_as(
+            "SELECT title, digest_json FROM project_docs WHERE digest_json IS NOT NULL ORDER BY title ASC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        {
+            Ok(r) => r,
+            Err(err) => {
+                tracing::warn!(error = %err, "failed loading project doc digests");
+                return Vec::new();
+            }
+        };
+
+        rows.into_iter()
+            .filter_map(|(title, raw)| {
+                let d: ProjectDocDigest = serde_json::from_str(&raw).ok()?;
+                let mut parts = vec![format!("{}: {}", title, d.summary)];
+                if !d.stack.is_empty() {
+                    parts.push(format!("Stack: {}", d.stack.join(", ")));
+                }
+                if !d.verified_claims.is_empty() {
+                    parts.push(format!("Claims: {}", d.verified_claims.join("; ")));
+                }
+                Some(parts.join(" | "))
+            })
+            .collect()
+    }
+
+    pub async fn load_project_docs_raw(&self) -> Vec<(String, String)> {
+        match sqlx::query_as(
+            "SELECT title, raw_markdown FROM project_docs WHERE length(trim(raw_markdown)) > 0 ORDER BY title ASC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        {
+            Ok(r) => r,
+            Err(err) => {
+                tracing::warn!(error = %err, "failed loading raw project docs");
+                Vec::new()
+            }
+        }
     }
 }

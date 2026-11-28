@@ -19,6 +19,8 @@ pub const DEFAULT_GOOGLE_SCOPES: &[&str] = &[
     // Drafts only: the API calls drafts.create / drafts.update and never sends (JOB-6).
     "https://www.googleapis.com/auth/gmail.compose",
     "https://www.googleapis.com/auth/drive.file",
+    // Read-only access restricted by DriveClient to the configured Project Reports folder (JOB-8).
+    "https://www.googleapis.com/auth/drive.readonly",
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/userinfo.email",
 ];
@@ -448,7 +450,10 @@ mod scope_tests {
         let old = "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/calendar.events openid email";
         assert_eq!(
             missing_scopes(Some(old)),
-            vec!["https://www.googleapis.com/auth/gmail.compose".to_string()]
+            vec![
+                "https://www.googleapis.com/auth/gmail.compose".to_string(),
+                "https://www.googleapis.com/auth/drive.readonly".to_string(),
+            ]
         );
         let all = DEFAULT_GOOGLE_SCOPES.join(" ");
         assert!(missing_scopes(Some(&all)).is_empty());

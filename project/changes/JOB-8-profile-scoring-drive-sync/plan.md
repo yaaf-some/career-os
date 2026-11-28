@@ -39,17 +39,17 @@ Branch per PR off `main`. Merge `origin/main` into a branch to catch up; never r
 
 ## PR B — Google Drive Project Reports Sync & Auto-Digest (`feat/job-8b-drive-project-docs`)
 
-- [ ] **2.1 Migration 0005** — `crates/api/migrations/0005_profile_project_docs.sql`:
+- [x] **2.1 Migration 0005** — `crates/api/migrations/0005_profile_project_docs.sql`:
   - Create `project_docs` table (`id`, `drive_file_id` unique, `title`, `drive_url`, `modified_time`, `raw_markdown`, `digest_json`, `digested_at`, `synced_at`).
   - Verify: `cargo test -p career-os-api`
 
-- [ ] **2.2 OAuth scope & Drive folder export** — `crates/api/src/integrations/google_auth.rs`, `crates/api/src/integrations/drive.rs`:
+- [x] **2.2 OAuth scope & Drive folder export** — `crates/api/src/integrations/google_auth.rs`, `crates/api/src/integrations/drive.rs`:
   - Add `https://www.googleapis.com/auth/drive.readonly` to `DEFAULT_GOOGLE_SCOPES` and verify `missing_scopes()` flags grants without it.
   - Extend `DriveClient` (`list_files_in_folder` including `modifiedTime`, plus `export_doc_markdown` exporting Google Docs via `files/{id}/export?mimeType=text/markdown` with `text/plain` fallback).
   - Wiremock tests for listing, Markdown export, fallback, and folder scoping.
-  - Verify: `cargo test -p career-os-api drive google_auth`
+  - Verify: `cargo test -p career-os-api drive` and `cargo test -p career-os-api google_auth`
 
-- [ ] **2.3 Sync & Hydrogen auto-digest** — `crates/api/src/state.rs`, `crates/api/src/routes/profile.rs`, `crates/api/src/ai/mod.rs`, `crates/api/src/scheduler.rs`:
+- [x] **2.3 Sync & Hydrogen auto-digest** — `crates/api/src/state.rs`, `crates/api/src/routes/profile.rs`, `crates/api/src/ai/mod.rs`, `crates/api/src/routes/ai.rs`:
   - Sync `GOOGLE_DRIVE_PROJECTS_FOLDER_ID` during `sync_google_workspace` (when configured) and via `POST /api/profile/sync-docs`.
   - When a Doc is new or `modifiedTime` changed (and AI is enabled), run a compact Hydrogen pass (`build_project_doc_digest_prompt`) to store a structured Project Card in `digest_json` (`summary`, `stack`, `verified_claims`, `role_tags`).
   - Wire cached `project_docs` digests into `score_pending_batch` and full `raw_markdown` (budgeted) into `evaluate_job`.

@@ -5,7 +5,7 @@ use utoipa::OpenApi;
 use crate::{
     ai::{
         AiRouting, AiTier, CliKind, DealbreakerFlag, HydrogenScoreBreakdown, HydrogenScoreItem,
-        NeonEvaluationResult,
+        NeonEvaluationResult, ProjectDocDigest,
     },
     error::ErrorResponse,
     profile::{ProfileFileStatus, ProfileTargetingSummary, ScoringWeights},
@@ -27,7 +27,7 @@ use crate::{
             EvaluationRecord, GmailThreadRecord, IngestJobInput, IngestJobsRequest,
             IngestJobsResponse, JobDetailResponse, JobRecord, ListJobsResponse, QuickAddJobRequest,
         },
-        profile::{ProfileStatusResponse, ProjectDocSummary},
+        profile::{ProfileStatusResponse, ProjectDocSummary, SyncProjectDocsResponse},
         settings::{
             ListSettingsResponse, ListSyncRunsResponse, SettingRecord, SyncRunRecord,
             UpsertSettingRequest,
@@ -85,6 +85,7 @@ use crate::{
         crate::routes::ai::evaluate_job,
         crate::routes::ai::get_ai_usage,
         crate::routes::profile::get_profile_status,
+        crate::routes::profile::sync_project_docs_now,
         crate::routes::auth::google_auth_status,
         crate::routes::auth::google_auth_url,
         crate::routes::auth::google_auth_callback,
@@ -148,6 +149,7 @@ use crate::{
             HydrogenScoreBreakdown,
             DealbreakerFlag,
             HydrogenScoreItem,
+            ProjectDocDigest,
             NeonEvaluationResult,
             ScorePendingRequest,
             ScorePendingResponse,
@@ -159,6 +161,7 @@ use crate::{
             ProfileTargetingSummary,
             ProjectDocSummary,
             ProfileStatusResponse,
+            SyncProjectDocsResponse,
             AiUsageTierStat,
             AiUsageResponse,
             ClaudeUsageWindow,

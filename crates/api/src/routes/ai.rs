@@ -298,7 +298,8 @@ pub async fn evaluate_job(
 
     let tier = req.tier.unwrap_or(AiTier::Neon);
     let profile = crate::profile::load_profile(&state.config.data_dir);
-    let compiled_dossier = profile.build_neon_dossier(&[], 16_000);
+    let raw_docs = state.load_project_docs_raw().await;
+    let compiled_dossier = profile.build_neon_dossier(&raw_docs, 16_000);
     let profile_summary = compiled_dossier
         .as_deref()
         .or(state.config.profile_summary.as_deref())
