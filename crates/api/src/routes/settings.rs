@@ -120,7 +120,7 @@ fn validate_setting(key: &str, value: &serde_json::Value) -> Result<(), AppError
     if key == AI_ROUTING_KEY {
         serde_json::from_value::<AiRouting>(value.clone()).map_err(|e| {
             AppError::BadRequest(format!(
-                "ai_routing must be {{hydrogenPrimary: claude|agy, neonPrimary: claude|agy, autoFailover: bool}}: {e}"
+                "ai_routing must be {{mode: auto|prefer_claude|prefer_agy}}: {e}"
             ))
         })?;
     }
@@ -160,13 +160,17 @@ mod tests {
 
     #[test]
     fn ai_routing_validation() {
-        let ok = json!({"hydrogenPrimary": "agy", "neonPrimary": "claude", "autoFailover": false});
-        assert!(validate_setting(AI_ROUTING_KEY, &ok).is_ok());
+        for ok in [
+            json!({"mode": "auto"}),
+            json!({"mode": "prefer_claude"}),
+            json!({"mode": "prefer_agy"}),
+        ] {
+            assert!(validate_setting(AI_ROUTING_KEY, &ok).is_ok(), "{ok}");
+        }
         for bad in [
-            json!({"hydrogenPrimary": "codex", "neonPrimary": "claude", "autoFailover": true}),
-            json!({"hydrogenPrimary": "claude", "neonPrimary": "claude"}),
-            json!({"hydrogenPrimary": "claude", "neonPrimary": "claude", "autoFailover": "yes"}),
-            json!({"hydrogenPrimary": "claude", "neonPrimary": "claude", "autoFailover": true, "x": 1}),
+            json!({"mode": "codex"}),
+            json!({"mode": "auto", "x": 1}),
+            json!({"hydrogenPrimary": "agy", "neonPrimary": "claude", "autoFailover": false}),
             json!("claude"),
         ] {
             assert!(

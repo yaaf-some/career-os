@@ -20,7 +20,7 @@ import {
   useTriageMutation,
 } from '@/api/queries';
 import { describeAiError, describeGoogleError } from '@/api/client';
-import { formatHydrogenScore } from '@/api/jobs';
+import { formatMatchScore } from '@/api/jobs';
 import { Badge, Button, Card } from '@/components/ui';
 import { CommuteBadge } from '@/components/CommuteBadge';
 import { cn } from '@/lib/cn';
@@ -117,7 +117,7 @@ export function RoleDetailDrawer({
               {/* Quick Action Bar */}
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-card/40 px-5 py-2.5">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge variant="brand">hydrogen {formatHydrogenScore(job.hydrogenScore)}</Badge>
+                  <Badge variant="brand">Match {formatMatchScore(job.matchScore)}</Badge>
                   <Badge variant={job.triageStatus === 'approved' ? 'success' : 'neutral'}>
                     {job.triageStatus}
                   </Badge>
@@ -150,7 +150,7 @@ export function RoleDetailDrawer({
                 <Tabs.List className="flex gap-1 border-b border-border px-5 pt-2">
                   {[
                     { value: 'jd', label: 'JD & Score' },
-                    { value: 'eval', label: 'Neon Eval (A–G)' },
+                    { value: 'eval', label: 'Deep Analysis (A–G)' },
                     { value: 'tailor', label: 'Tailor Docs' },
                     { value: 'comms', label: 'Gmail & Calendar' },
                   ].map((tab) => (
@@ -169,14 +169,14 @@ export function RoleDetailDrawer({
                     <Card className="p-4">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                          Hydrogen Triage Summary
+                          Triage Match Summary
                         </div>
                         {job.dealbreakerReason ? (
                           <Badge variant="danger">Dealbreaker: {job.dealbreakerReason}</Badge>
                         ) : null}
                       </div>
                       <p className="mt-1.5 text-sm">
-                        {job.hydrogenSummary || (
+                        {job.matchSummary || (
                           <span className="text-muted-foreground">Not scored yet.</span>
                         )}
                       </p>
@@ -224,9 +224,9 @@ export function RoleDetailDrawer({
                   <Tabs.Panel value="eval" className="space-y-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
-                        <h3 className="text-sm font-semibold">Neon Deep Evaluation (Blocks A–G)</h3>
+                        <h3 className="text-sm font-semibold">Deep Analysis (Blocks A–G)</h3>
                         <p className="text-xs text-muted-foreground">
-                          Structured rubric + Block G posting integrity check.
+                          Structured rubric + Block G posting integrity check (roles &ge; 75 auto-escalate to Deep).
                         </p>
                       </div>
                       <Button
@@ -239,9 +239,9 @@ export function RoleDetailDrawer({
                         <span>
                           {evaluateMutation.isPending
                             ? 'Evaluating…'
-                            : job.neonEval
-                              ? 'Re-run Neon Eval'
-                              : 'Run Neon Deep Eval'}
+                            : job.deepEval
+                              ? 'Re-run Deep Analysis'
+                              : 'Run Deep Analysis'}
                         </span>
                       </Button>
                     </div>
@@ -255,25 +255,25 @@ export function RoleDetailDrawer({
                       </p>
                     ) : null}
 
-                    {job.neonEval ? (
+                    {job.deepEval ? (
                       <div className="space-y-3">
                         <Card className="border-accent-brand/40 bg-accent-brand/5 p-3.5">
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="text-sm font-semibold">{job.neonEval.overallVerdict}</span>
+                            <span className="text-sm font-semibold">{job.deepEval.overallVerdict}</span>
                             <div className="flex flex-wrap items-center gap-1.5">
-                              {job.neonEval.confidence ? (
-                                <Badge variant="brand">Confidence: {job.neonEval.confidence}</Badge>
+                              {job.deepEval.confidence ? (
+                                <Badge variant="brand">Confidence: {job.deepEval.confidence}</Badge>
                               ) : null}
-                              {job.neonEval.provider ? (
+                              {job.deepEval.provider ? (
                                 <Badge variant="neutral">
-                                  {job.neonEval.provider}
-                                  {job.neonEval.model ? ` · ${job.neonEval.model}` : ''}
+                                  {job.deepEval.provider}
+                                  {job.deepEval.model ? ` · ${job.deepEval.model}` : ''}
                                 </Badge>
                               ) : null}
                             </div>
                           </div>
                         </Card>
-                        {job.neonEval.blocks.map((block) => (
+                        {job.deepEval.blocks.map((block) => (
                           <Card key={block.block} className="p-3.5">
                             <div className="flex items-center justify-between gap-2">
                               <div className="text-sm font-semibold">
@@ -298,7 +298,7 @@ export function RoleDetailDrawer({
                       </div>
                     ) : (
                       <Card className="p-6 text-center text-sm text-muted-foreground">
-                        No neon A–G evaluation yet. Click <strong>Run Neon Deep Eval</strong> to generate.
+                        No A–G deep analysis yet. Click <strong>Run Deep Analysis</strong> to generate.
                       </Card>
                     )}
                   </Tabs.Panel>

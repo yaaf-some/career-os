@@ -10,8 +10,9 @@ use utoipa::ToSchema;
 
 use crate::{
     ai::{
-        build_neon_evaluation_prompt, parse_neon_evaluation_response, AiRequest, AiTier,
-        AiUsageReport, HydrogenScoreItem, NeonEvaluationResult, NeonJobInput, AI_DISABLED_MESSAGE,
+        build_deep_evaluation_prompt, parse_deep_evaluation_response, select_eval_tier, AiRequest,
+        AiTier, AiUsageReport, DeepEvalJobInput, DeepEvaluationResult, TriageScoreItem,
+        AI_DISABLED_MESSAGE,
     },
     db::{new_id, now_iso},
     error::AppError,
@@ -29,7 +30,7 @@ pub struct ScorePendingResponse {
     pub scored: usize,
     pub provider: String,
     pub model: String,
-    pub items: Vec<HydrogenScoreItem>,
+    pub items: Vec<TriageScoreItem>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -61,7 +62,7 @@ pub struct EvaluateJobResponse {
     pub tier: AiTier,
     pub provider: String,
     pub model: String,
-    pub result: NeonEvaluationResult,
+    pub result: DeepEvaluationResult,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, FromRow, ToSchema)]
@@ -178,7 +179,7 @@ pub fn build_usage_response(
     path = "/api/ai/score-pending",
     request_body = ScorePendingRequest,
     responses(
-        (status = 200, description = "Run batched hydrogen tier-1 scoring", body = ScorePendingResponse)
+        (status = 200, description = "Run batched fast tier-1 triage scoring", body = ScorePendingResponse)
     ),
     tag = "ai"
 )]
@@ -200,7 +201,7 @@ pub async fn score_pending_jobs(
     path = "/api/ai/rescore",
     request_body = RescoreRequest,
     responses(
-        (status = 200, description = "Reset unapplied triage scores and optionally run a fresh hydrogen batch", body = RescoreResponse)
+        (status = 200, description = "Reset unapplied triage scores and optionally run a fresh fast scoring batch", body = RescoreResponse)
     ),
     tag = "ai"
 )]
@@ -296,17 +297,17 @@ pub async fn evaluate_job(
     .await?
     .ok_or_else(|| AppError::NotFound(format!("job {job_id} not found")))?;
 
-    let tier = req.tier.unwrap_or(AiTier::Neon);
+    let tier = select_eval_tier(req.tier, job.tier1_score);
     let profile = crate::profile::load_profile(&state.config.data_dir);
     let raw_docs = state.load_project_docs_raw().await;
-    let compiled_dossier = profile.build_neon_dossier(&raw_docs, 16_000);
+    let compiled_dossier = profile.build_deep_eval_dossier(&raw_docs, 16_000);
     let profile_summary = compiled_dossier
         .as_deref()
         .or(state.config.profile_summary.as_deref())
         .unwrap_or("Senior systems/backend engineer evaluating role fit.");
-    let (system_prompt, prompt) = build_neon_evaluation_prompt(
+    let (system_prompt, prompt) = build_deep_evaluation_prompt(
         profile_summary,
-        &NeonJobInput {
+        &DeepEvalJobInput {
             id: job.id.clone(),
             company: job.company.clone(),
             title: job.title.clone(),
@@ -326,8 +327,9 @@ pub async fn evaluate_job(
         temperature: Some(0.2),
         json_mode: true,
         timeout_secs: Some(120),
-        primary: Some(routing.primary_for(tier)),
-        allow_failover: routing.auto_failover,
+        routing_mode: Some(routing.mode),
+        primary: None,
+        allow_failover: true,
     };
 
     let resp = match state.ai.complete(ai_req).await {
@@ -351,7 +353,7 @@ pub async fn evaluate_job(
         .record_ai_usage(AiUsageRecord::success(tier, &resp, Some(&job_id)))
         .await;
 
-    let result = parse_neon_evaluation_response(&resp.content)?;
+    let result = parse_deep_evaluation_response(&resp.content)?;
     let evaluation_id = new_id();
     let blocks_json = serde_json::to_string(&result.blocks)
         .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
@@ -469,13 +471,13 @@ mod tests {
             Some(50),
             vec![
                 AiUsageTierStat {
-                    tier: "hydrogen".into(),
+                    tier: "fast".into(),
                     total_calls: 12,
                     successful_calls: 11,
                     avg_latency_ms: 8400.0,
                 },
                 AiUsageTierStat {
-                    tier: "neon".into(),
+                    tier: "balanced".into(),
                     total_calls: 3,
                     successful_calls: 3,
                     avg_latency_ms: 41000.0,

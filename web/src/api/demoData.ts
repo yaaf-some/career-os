@@ -68,16 +68,16 @@ const INITIAL_JOBS: JobDetail[] = [
     url: 'https://jobs.ashbyhq.com/northstar-systems/staff-agent-runtime',
     triageStatus: 'pending',
     stage: 'saved',
-    hydrogenScore: 93,
+    matchScore: 93,
     scoreBreakdown: {
       roleStack: 33,
       levelReachability: 23,
       vibeCulture: 24,
       logisticsComp: 13,
     },
-    hydrogenSummary:
+    matchSummary:
       'Strong overlap in Rust orchestration, deterministic tool-use sandboxing, and TypeScript control planes.',
-    hasNeonEval: true,
+    hasDeepEval: true,
     gmailStatus: 'none',
     nextFollowUpAt: null,
     discoveredAt: daysAgoIso(1),
@@ -89,7 +89,7 @@ const INITIAL_JOBS: JobDetail[] = [
       'Strong security posture around untrusted workloads and sandboxing',
       'Hands-on frontend collaboration with React / TypeScript control surfaces',
     ],
-    neonEval: {
+    deepEval: {
       overallVerdict: 'Strong Apply — Priority Archetype Match (93/100)',
       confidence: 'High',
       evaluatedAt: daysAgoIso(0.5),
@@ -184,15 +184,15 @@ const INITIAL_JOBS: JobDetail[] = [
     url: 'https://boards.greenhouse.io/example-cloud/jobs/40219',
     triageStatus: 'approved',
     stage: 'screen',
-    hydrogenScore: 89,
+    matchScore: 89,
     scoreBreakdown: {
       roleStack: 31,
       levelReachability: 22,
       vibeCulture: 22,
       logisticsComp: 14,
     },
-    hydrogenSummary: 'Clean platform infra scope with strong emphasis on CI/CD speed and edge deployments.',
-    hasNeonEval: true,
+    matchSummary: 'Clean platform infra scope with strong emphasis on CI/CD speed and edge deployments.',
+    hasDeepEval: true,
     gmailStatus: 'reply_received',
     nextFollowUpAt: hoursFromNowIso(6),
     discoveredAt: daysAgoIso(5),
@@ -203,7 +203,7 @@ const INITIAL_JOBS: JobDetail[] = [
       'TypeScript, Rust, or Go service development',
       'Experience with SQLite/Postgres and observability pipelines',
     ],
-    neonEval: {
+    deepEval: {
       overallVerdict: 'Strong Fit (89/100)',
       confidence: 'High',
       evaluatedAt: daysAgoIso(4),
@@ -267,15 +267,15 @@ const INITIAL_JOBS: JobDetail[] = [
     url: 'https://jobs.lever.co/gridline-ai/principal-ai-workflows',
     triageStatus: 'pending',
     stage: 'saved',
-    hydrogenScore: 84,
+    matchScore: 84,
     scoreBreakdown: {
       roleStack: 30,
       levelReachability: 21,
       vibeCulture: 22,
       logisticsComp: 11,
     },
-    hydrogenSummary: 'Strong AI workflow product match; verify remote flexibility vs hybrid expectation.',
-    hasNeonEval: false,
+    matchSummary: 'Strong AI workflow product match; verify remote flexibility vs hybrid expectation.',
+    hasDeepEval: false,
     gmailStatus: 'none',
     nextFollowUpAt: null,
     discoveredAt: daysAgoIso(2),
@@ -286,7 +286,7 @@ const INITIAL_JOBS: JobDetail[] = [
       'Backend API design in Rust or Node.js',
       'Human-in-the-loop workflow UX',
     ],
-    neonEval: null,
+    deepEval: null,
     tailor: {
       resumeDocUrl: null,
       coverLetterDocUrl: null,
@@ -316,21 +316,21 @@ const INITIAL_JOBS: JobDetail[] = [
     url: 'https://boards.greenhouse.io/vertex-data/jobs/8812',
     triageStatus: 'shortlisted',
     stage: 'applied',
-    hydrogenScore: 81,
+    matchScore: 81,
     scoreBreakdown: {
       roleStack: 29,
       levelReachability: 20,
       vibeCulture: 19,
       logisticsComp: 13,
     },
-    hydrogenSummary: 'Solid search/indexing backend role; awaiting initial recruiter response.',
-    hasNeonEval: false,
+    matchSummary: 'Solid search/indexing backend role; awaiting initial recruiter response.',
+    hasDeepEval: false,
     gmailStatus: 'awaiting_reply',
     nextFollowUpAt: daysAgoIso(1),
     discoveredAt: daysAgoIso(8),
     descriptionText: 'Build high-throughput ingestion pipelines and hybrid lexical/vector indexing services.',
     requirements: ['Rust or Go', 'Indexing & storage engines', 'Observability & benchmarking'],
-    neonEval: null,
+    deepEval: null,
     tailor: {
       resumeDocUrl: 'https://docs.google.com/document/d/demo-vertex-resume',
       coverLetterDocUrl: null,
@@ -413,9 +413,7 @@ const INITIAL_FILTERED_AUDIT: FilteredAuditEntry[] = [
 ];
 
 const INITIAL_SETTINGS: SettingsState = {
-  hydrogenPrimaryCli: 'claude',
-  neonPrimaryCli: 'claude',
-  autoFailover: true,
+  aiRoutingMode: 'auto',
   googleOAuthConnected: true,
   googleScopes: ['gmail.compose', 'gmail.readonly', 'calendar.events', 'documents'],
   linearTeamKey: 'JOB',
@@ -450,10 +448,10 @@ class DemoStore {
       url: job.url,
       triageStatus: job.triageStatus,
       stage: job.stage,
-      hydrogenScore: job.hydrogenScore,
+      matchScore: job.matchScore,
       scoreBreakdown: job.scoreBreakdown,
-      hydrogenSummary: job.hydrogenSummary,
-      hasNeonEval: job.neonEval !== null,
+      matchSummary: job.matchSummary,
+      hasDeepEval: job.deepEval !== null,
       gmailStatus: job.gmailStatus,
       nextFollowUpAt: job.nextFollowUpAt,
       discoveredAt: job.discoveredAt,
@@ -509,7 +507,7 @@ class DemoStore {
 
     const topMatches = this.jobs
       .filter((j) => j.triageStatus === 'pending' || j.triageStatus === 'shortlisted')
-      .sort((a, b) => (b.hydrogenScore ?? -1) - (a.hydrogenScore ?? -1))
+      .sort((a, b) => (b.matchScore ?? -1) - (a.matchScore ?? -1))
       .slice(0, 4)
       .map((j) => this.toSummary(j));
 
@@ -556,16 +554,16 @@ class DemoStore {
       url: req.url,
       triageStatus: 'pending',
       stage: 'saved',
-      hydrogenScore: 82,
+      matchScore: 82,
       scoreBreakdown: { roleStack: 29, levelReachability: 21, vibeCulture: 20, logisticsComp: 12 },
-      hydrogenSummary: 'Queued via Quick Add URL and scored by hydrogen triage.',
-      hasNeonEval: false,
+      matchSummary: 'Queued via Quick Add URL and scored via fast triage.',
+      hasDeepEval: false,
       gmailStatus: 'none',
       nextFollowUpAt: null,
       discoveredAt: new Date().toISOString(),
-      descriptionText: `Imported from ${req.url}. Run neon deep eval for full A–G analysis.`,
-      requirements: ['Imported posting — run neon deep eval to extract full rubric'],
-      neonEval: null,
+      descriptionText: `Imported from ${req.url}. Run deep analysis for full A–G rubric.`,
+      requirements: ['Imported posting — run deep analysis to extract full rubric'],
+      deepEval: null,
       tailor: {
         resumeDocUrl: null,
         coverLetterDocUrl: null,
@@ -601,9 +599,10 @@ class DemoStore {
     const job = this.jobs.find((j) => j.id === id);
     if (!job) throw new Error(`Job ${id} not found`);
 
-    job.hasNeonEval = true;
-    job.neonEval = {
-      overallVerdict: `Evaluated by neon (${this.settings.neonPrimaryCli}) — ${job.hydrogenScore}/100`,
+    const tierUsed = (job.matchScore ?? 0) >= 75 ? 'Deep' : 'Balanced';
+    job.hasDeepEval = true;
+    job.deepEval = {
+      overallVerdict: `Evaluated (${tierUsed} · ${this.settings.aiRoutingMode}) — ${job.matchScore}/100`,
       confidence: 'High',
       evaluatedAt: new Date().toISOString(),
       blocks: [
@@ -724,12 +723,12 @@ class DemoStore {
           company: j.company,
           title: j.title,
           stage: j.stage,
-          hydrogenScore: j.hydrogenScore,
+          matchScore: j.matchScore,
           gmailStatus: j.gmailStatus,
           threadSubject: j.gmailDraft?.subject ?? (j.gmailStatus !== 'none' ? `Application: ${j.title}` : null),
           lastActivityAt: j.discoveredAt,
           nextFollowUpAt: j.nextFollowUpAt,
-          notes: j.hydrogenSummary,
+          notes: j.matchSummary,
         })),
     };
   }
@@ -739,7 +738,7 @@ class DemoStore {
     if (job) {
       if (req.stage) job.stage = req.stage;
       if (req.nextFollowUpAt !== undefined) job.nextFollowUpAt = req.nextFollowUpAt;
-      if (req.notes !== undefined) job.hydrogenSummary = req.notes;
+      if (req.notes !== undefined) job.matchSummary = req.notes;
     }
     return this.getTracker();
   }
@@ -792,9 +791,7 @@ class DemoStore {
   }
 
   updateSettings(req: UpdateSettingsRequest): SettingsState {
-    if (req.hydrogenPrimaryCli) this.settings.hydrogenPrimaryCli = req.hydrogenPrimaryCli;
-    if (req.neonPrimaryCli) this.settings.neonPrimaryCli = req.neonPrimaryCli;
-    if (typeof req.autoFailover === 'boolean') this.settings.autoFailover = req.autoFailover;
+    if (req.aiRoutingMode) this.settings.aiRoutingMode = req.aiRoutingMode;
     if (req.homeLocationArea !== undefined && req.homeLocationArea.trim()) {
       this.settings.homeLocationArea = req.homeLocationArea.trim();
     }
@@ -919,14 +916,14 @@ class DemoStore {
           path: 'profile/targeting.yml',
           status: 'verified',
           updatedAt: '2026-11-28',
-          useIn: ['scanner', 'hydrogen', 'neon'],
+          useIn: ['scanner', 'fast', 'deep'],
         },
         {
           name: 'psych-and-vibe',
           path: 'profile/psych-and-vibe.md',
           status: 'verified',
           updatedAt: '2026-11-28',
-          useIn: ['hydrogen', 'neon', 'cover_letter'],
+          useIn: ['fast', 'deep', 'cover_letter'],
         },
       ],
       targeting: {
@@ -969,7 +966,7 @@ class DemoStore {
       resetCount: eligible,
       scored: Math.min(eligible, req.scoreLimit ?? 0),
       provider: 'mock',
-      model: 'mock-hydrogen',
+      model: 'mock-fast',
     };
   }
 }

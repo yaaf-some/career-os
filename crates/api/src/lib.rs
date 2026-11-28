@@ -226,7 +226,7 @@ mod tests {
             .unwrap();
         assert_eq!(ingest_res["ingested"], 1);
 
-        // 3. Score pending via MockAiProvider (hydrogen)
+        // 3. Score pending via MockAiProvider (fast)
         let score_res: serde_json::Value = client
             .post(format!("{base}/api/ai/score-pending"))
             .json(&serde_json::json!({ "limit": 10 }))
@@ -262,10 +262,10 @@ mod tests {
         assert_eq!(triage_res["triage_status"], "shortlisted");
         assert!(triage_res["application_id"].is_string());
 
-        // 6. Deep evaluate (neon)
+        // 6. Deep evaluate (auto-escalates >= 75 to deep)
         let eval_res: serde_json::Value = client
             .post(format!("{base}/api/ai/evaluate/{job_id}"))
-            .json(&serde_json::json!({ "tier": "neon" }))
+            .json(&serde_json::json!({}))
             .send()
             .await
             .unwrap()
@@ -374,10 +374,7 @@ mod tests {
                 "/api/ai/score-pending".to_string(),
                 serde_json::json!({"limit": 5}),
             ),
-            (
-                format!("/api/ai/evaluate/{job_id}"),
-                serde_json::json!({"tier": "neon"}),
-            ),
+            (format!("/api/ai/evaluate/{job_id}"), serde_json::json!({})),
         ] {
             let resp = client
                 .post(format!("{base}{path}"))
@@ -444,17 +441,17 @@ mod tests {
         let client = reqwest::Client::new();
         let job_id = ingest_one(&client, &base).await;
 
-        // Invalid routing is rejected; valid routing is used by both tiers.
+        // Invalid routing is rejected; valid routing and auto >= 75 escalation work cleanly.
         let bad = client
             .put(format!("{base}/api/settings/ai_routing"))
-            .json(&serde_json::json!({"value": {"hydrogenPrimary": "codex", "neonPrimary": "claude", "autoFailover": true}}))
+            .json(&serde_json::json!({"value": {"mode": "codex"}}))
             .send()
             .await
             .unwrap();
         assert_eq!(bad.status(), reqwest::StatusCode::BAD_REQUEST);
         let ok = client
             .put(format!("{base}/api/settings/ai_routing"))
-            .json(&serde_json::json!({"value": {"hydrogenPrimary": "agy", "neonPrimary": "claude", "autoFailover": false}}))
+            .json(&serde_json::json!({"value": {"mode": "prefer_agy"}}))
             .send()
             .await
             .unwrap();
@@ -470,41 +467,68 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(score["scored"], 1);
-        let eval = client
+
+        // Update tier1_score=80 so evaluate_job auto-escalates to deep; fake bridge scores >= 75 -> deep.
+        let eval: serde_json::Value = client
             .post(format!("{base}/api/ai/evaluate/{job_id}"))
-            .json(&serde_json::json!({"tier": "neon"}))
+            .json(&serde_json::json!({}))
             .send()
             .await
+            .unwrap()
+            .json()
+            .await
             .unwrap();
-        assert_eq!(eval.status(), reqwest::StatusCode::OK);
+        assert_eq!(eval["tier"], "deep");
+
+        // A job scored below 75 stays on balanced tier.
+        sqlx::query("INSERT INTO jobs (id, canonical_key, url, company, title, source_type, triage_status, tier1_score) VALUES ('job-mid', 'mid-key', 'https://example.com/mid', 'MidCo', 'Platform Eng', 'manual', 'pending_triage', 62.0)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let eval_mid: serde_json::Value = client
+            .post(format!("{base}/api/ai/evaluate/job-mid"))
+            .json(&serde_json::json!({}))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(eval_mid["tier"], "balanced");
 
         {
             let reqs = fake.requests.lock().unwrap();
-            assert_eq!(reqs.len(), 2);
+            assert_eq!(reqs.len(), 3);
             assert_eq!(
-                (reqs[0]["tier"].as_str(), reqs[0]["primary"].as_str()),
-                (Some("hydrogen"), Some("agy"))
+                (reqs[0]["tier"].as_str(), reqs[0]["routing_mode"].as_str()),
+                (Some("fast"), Some("prefer_agy"))
             );
             assert_eq!(
-                (reqs[1]["tier"].as_str(), reqs[1]["primary"].as_str()),
-                (Some("neon"), Some("claude"))
+                (reqs[1]["tier"].as_str(), reqs[1]["routing_mode"].as_str()),
+                (Some("deep"), Some("prefer_agy"))
             );
-            assert!(reqs.iter().all(|r| r["allow_failover"] == false));
+            assert_eq!(
+                (reqs[2]["tier"].as_str(), reqs[2]["routing_mode"].as_str()),
+                (Some("balanced"), Some("prefer_agy"))
+            );
+            assert!(reqs.iter().all(|r| r["allow_failover"] == true));
         }
 
         // AC10: tokens + cost + provider persisted.
         let (pt, ct, cost): (Option<i64>, Option<i64>, Option<f64>) = sqlx::query_as(
-            "SELECT prompt_tokens, completion_tokens, cost_usd FROM ai_usage_events WHERE tier = 'neon'",
+            "SELECT prompt_tokens, completion_tokens, cost_usd FROM ai_usage_events WHERE tier = 'deep'",
         )
         .fetch_one(&pool)
         .await
         .unwrap();
         assert_eq!((pt, ct, cost), (Some(120), Some(45), Some(0.0123)));
-        let eval_provider: Option<String> = sqlx::query_scalar("SELECT provider FROM evaluations")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!(eval_provider.as_deref(), Some("claude"));
+        let eval_provider: Option<String> =
+            sqlx::query_scalar("SELECT provider FROM evaluations WHERE job_id = ?1")
+                .bind(&job_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(eval_provider.as_deref(), Some("agy"));
         let detail: serde_json::Value = client
             .get(format!("{base}/api/jobs/{job_id}"))
             .send()
@@ -513,9 +537,9 @@ mod tests {
             .json()
             .await
             .unwrap();
-        assert_eq!(detail["evaluations"][0]["provider"], "claude");
+        assert_eq!(detail["evaluations"][0]["provider"], "agy");
 
-        // agy 24 h count comes from recorded rows.
+        // agy 24 h count comes from recorded rows (all 3 calls used agy under prefer_agy).
         let usage: serde_json::Value = client
             .get(format!("{base}/api/ai/usage"))
             .send()
@@ -526,7 +550,7 @@ mod tests {
             .unwrap();
         assert_eq!(usage["configured"], true);
         assert_eq!(usage["bridgeReachable"], true);
-        assert_eq!(usage["antigravity"]["callsUsed"], 1);
+        assert_eq!(usage["antigravity"]["callsUsed"], 3);
         assert_eq!(usage["claude5h"]["percentUsed"], 10.0);
 
         // AC7: bridge 429 / 504 surface as API 429 / 504.
@@ -541,7 +565,7 @@ mod tests {
             *fake.mode.lock().unwrap() = Mode::Fail(status, code);
             let resp = client
                 .post(format!("{base}/api/ai/evaluate/{job_id}"))
-                .json(&serde_json::json!({"tier": "neon"}))
+                .json(&serde_json::json!({}))
                 .send()
                 .await
                 .unwrap();
@@ -802,7 +826,7 @@ mod tests {
                 .unwrap();
         assert_eq!(short_score, Some(88.0));
 
-        // 4. Persisted tier1_json includes breakdown, and Hydrogen prompt used loaded profile.
+        // 4. Persisted tier1_json includes breakdown, and fast scoring prompt used loaded profile.
         let tier1_raw: String =
             sqlx::query_scalar("SELECT tier1_json FROM jobs WHERE id = 'j-triage'")
                 .fetch_one(&pool)
@@ -811,10 +835,10 @@ mod tests {
         let tier1_val: serde_json::Value = serde_json::from_str(&tier1_raw).unwrap();
         assert_eq!(tier1_val["breakdown"]["role_stack"], 30.0);
 
-        // 5. Neon evaluation also receives the compiled dossier.
+        // 5. Deep evaluation also receives the compiled dossier (and auto-escalates >= 75).
         let eval_resp = client
             .post(format!("{base}/api/ai/evaluate/j-triage"))
-            .json(&serde_json::json!({"tier": "neon"}))
+            .json(&serde_json::json!({}))
             .send()
             .await
             .unwrap();
@@ -1038,7 +1062,7 @@ mod tests {
             .unwrap();
         let _ = client
             .post(format!("{base}/api/ai/evaluate/jd-1"))
-            .json(&serde_json::json!({"tier": "neon"}))
+            .json(&serde_json::json!({}))
             .send()
             .await
             .unwrap();

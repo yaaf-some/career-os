@@ -1,6 +1,6 @@
 # JOB-9 — Automatic AI Capability Tiers & Equal Claude/Gemini Load Balancing
 
-**Status:** In Progress (PR 9A)
+**Status:** In Progress (PR 9A merged; PR 9B open)
 **Issue:** JOB-9 (Linear) · Target Branches: `feat/job-9a-bridge-auto-balance`, `feat/job-9b-api-auto-tiers`
 
 ## Problem / Context

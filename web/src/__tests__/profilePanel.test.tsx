@@ -49,7 +49,7 @@ describe('SettingsView Candidate Profile & Project Docs panel', () => {
                 path: 'profile/targeting.yml',
                 status: 'verified',
                 updatedAt: '2026-11-28',
-                useIn: ['scanner', 'hydrogen'],
+                useIn: ['scanner', 'fast'],
               },
             ],
             targeting: {

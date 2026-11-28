@@ -83,7 +83,7 @@ describe('Today / Tracker mapping (fixtures shared with crates/api)', () => {
         stage: 'interview',
       },
     ]);
-    expect(t.topMatches.map((j) => [j.id, j.hydrogenScore])).toEqual([
+    expect(t.topMatches.map((j) => [j.id, j.matchScore])).toEqual([
       ['job-3', 91],
       ['job-1', 87.5],
       ['job-2', 72],
@@ -142,7 +142,7 @@ describe('live Today / Tracker / quick-add / sync', () => {
       body: { jobId: 'job-1', stage: 'offer' },
     });
     const added = await careerApi.quickAddJob({ url: 'https://jobs.example.com/x' });
-    expect(added).toMatchObject({ id: 'new-job', triageStatus: 'pending', hydrogenScore: null });
+    expect(added).toMatchObject({ id: 'new-job', triageStatus: 'pending', matchScore: null });
     expect(await careerApi.syncGoogleNow()).toMatchObject({ status: 'succeeded', itemsFetched: 4 });
   });
 

@@ -4,9 +4,9 @@ use sqlx::SqlitePool;
 
 use crate::{
     ai::{
-        build_hydrogen_triage_batch_prompt, build_project_doc_digest_prompt,
-        parse_hydrogen_batch_response, parse_project_doc_digest_response, AiProvider, AiRequest,
-        AiResponse, AiRouting, AiTier, HydrogenJobInput, HydrogenScoreItem, ProjectDocDigest,
+        build_project_doc_digest_prompt, build_triage_batch_prompt,
+        parse_project_doc_digest_response, parse_triage_batch_response, AiProvider, AiRequest,
+        AiResponse, AiRouting, AiTier, ProjectDocDigest, TriageJobInput, TriageScoreItem,
         AI_DISABLED_MESSAGE, AI_ROUTING_KEY,
     },
     config::AppConfig,
@@ -113,7 +113,7 @@ pub struct ProjectDocsSyncOutcome {
 #[derive(Debug, Clone)]
 pub struct ScoreBatchOutcome {
     pub scored: usize,
-    pub items: Vec<HydrogenScoreItem>,
+    pub items: Vec<TriageScoreItem>,
     pub provider: String,
     pub model: String,
 }
@@ -218,9 +218,9 @@ impl AppState {
             });
         }
 
-        let inputs: Vec<HydrogenJobInput> = rows
+        let inputs: Vec<TriageJobInput> = rows
             .into_iter()
-            .map(|r| HydrogenJobInput {
+            .map(|r| TriageJobInput {
                 id: r.id,
                 company: r.company,
                 title: r.title,
@@ -233,26 +233,26 @@ impl AppState {
         let profile = crate::profile::load_profile(&self.config.data_dir);
         let weights = profile.scoring_weights();
         let doc_digests = self.load_project_doc_digests().await;
-        let compiled_digest = profile.build_hydrogen_digest(&doc_digests);
+        let compiled_digest = profile.build_triage_digest(&doc_digests);
         let profile_summary = compiled_digest
             .as_deref()
             .or(self.config.profile_summary.as_deref())
             .unwrap_or("Senior systems/backend engineer evaluating role fit.");
-        let (system_prompt, prompt) =
-            build_hydrogen_triage_batch_prompt(profile_summary, &weights, &inputs);
+        let (system_prompt, prompt) = build_triage_batch_prompt(profile_summary, &weights, &inputs);
 
         let routing = self.ai_routing().await;
         let started = Instant::now();
         let req = AiRequest {
-            tier: AiTier::Hydrogen,
+            tier: AiTier::Fast,
             system_prompt: Some(system_prompt),
             prompt,
             max_tokens: Some(2000),
             temperature: Some(0.1),
             json_mode: true,
             timeout_secs: Some(90),
-            primary: Some(routing.primary_for(AiTier::Hydrogen)),
-            allow_failover: routing.auto_failover,
+            routing_mode: Some(routing.mode),
+            primary: None,
+            allow_failover: true,
         };
 
         let resp = match self.ai.complete(req).await {
@@ -261,7 +261,7 @@ impl AppState {
                 let msg = err.to_string();
                 let _ = self
                     .record_ai_usage(AiUsageRecord::failure(
-                        AiTier::Hydrogen,
+                        AiTier::Fast,
                         self.ai.name(),
                         started.elapsed().as_millis() as i64,
                         &msg,
@@ -273,10 +273,10 @@ impl AppState {
         };
 
         let _ = self
-            .record_ai_usage(AiUsageRecord::success(AiTier::Hydrogen, &resp, None))
+            .record_ai_usage(AiUsageRecord::success(AiTier::Fast, &resp, None))
             .await;
 
-        let items = parse_hydrogen_batch_response(&resp.content)?;
+        let items = parse_triage_batch_response(&resp.content)?;
         let now = now_iso();
         let mut updated_count = 0usize;
 
@@ -364,7 +364,7 @@ impl AppState {
             };
         match raw {
             None => AiRouting::default(),
-            Some(raw) => serde_json::from_str(&raw).unwrap_or_else(|err| {
+            Some(raw) => AiRouting::from_stored_json(&raw).unwrap_or_else(|err| {
                 tracing::warn!(error = %err, "invalid ai_routing setting; using defaults");
                 AiRouting::default()
             }),
@@ -539,7 +539,7 @@ impl AppState {
     }
 
     /// Syncs Google Docs inside `GOOGLE_DRIVE_PROJECTS_FOLDER_ID` into SQLite `project_docs`
-    /// and runs a compact Hydrogen digest pass for any new or modified Doc.
+    /// and runs a compact fast digest pass for any new or modified Doc.
     pub async fn sync_project_docs(
         &self,
         access_token: &str,
@@ -634,20 +634,21 @@ impl AppState {
                 let (sys, usr) = build_project_doc_digest_prompt(&file.name, &raw_markdown);
                 let started = Instant::now();
                 let req = AiRequest {
-                    tier: AiTier::Hydrogen,
+                    tier: AiTier::Fast,
                     system_prompt: Some(sys),
                     prompt: usr,
                     max_tokens: Some(1000),
                     temperature: Some(0.1),
                     json_mode: true,
                     timeout_secs: Some(60),
-                    primary: Some(routing.primary_for(AiTier::Hydrogen)),
-                    allow_failover: routing.auto_failover,
+                    routing_mode: Some(routing.mode),
+                    primary: None,
+                    allow_failover: true,
                 };
                 match self.ai.complete(req).await {
                     Ok(resp) => {
                         let _ = self
-                            .record_ai_usage(AiUsageRecord::success(AiTier::Hydrogen, &resp, None))
+                            .record_ai_usage(AiUsageRecord::success(AiTier::Fast, &resp, None))
                             .await;
                         match parse_project_doc_digest_response(&resp.content) {
                             Ok(digest) => {
@@ -672,7 +673,7 @@ impl AppState {
                         let msg = err.to_string();
                         let _ = self
                             .record_ai_usage(AiUsageRecord::failure(
-                                AiTier::Hydrogen,
+                                AiTier::Fast,
                                 self.ai.name(),
                                 started.elapsed().as_millis() as i64,
                                 &msg,

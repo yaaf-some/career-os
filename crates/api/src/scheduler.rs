@@ -60,7 +60,7 @@ pub fn spawn_scheduler(state: AppState, shutdown_rx: watch::Receiver<bool>) {
         });
     }
 
-    // Hourly: batched hydrogen scoring
+    // Hourly: fast batched triage scoring
     {
         let st = state.clone();
         let mut rx = shutdown_rx.clone();
@@ -198,7 +198,7 @@ pub async fn run_google_sync(state: &AppState) -> Result<SyncRunRecord, AppError
     Ok(run)
 }
 
-/// Hourly hydrogen scoring of pending jobs (skipped when AI is disabled).
+/// Hourly fast triage scoring of pending jobs (skipped when AI is disabled).
 pub async fn run_hourly_scoring(state: &AppState) -> Result<(), AppError> {
     if !state.ai.is_enabled() {
         tracing::warn!("AI bridge not configured; skipping hourly tier-1 scoring");

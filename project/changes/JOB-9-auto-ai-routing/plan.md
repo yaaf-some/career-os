@@ -20,17 +20,17 @@ Branch per PR off `main`. Merge `origin/main` to catch up; never rebase pushed h
 
 ## PR 9B — API Automatic Tier Assignment, Migration, Clean Settings & Web Sync (`feat/job-9b-api-auto-tiers`)
 
-- [ ] **2.1 Migration `0006` & AI Client Types** — `crates/api/migrations/0006_normalize_ai_tiers.sql`, `crates/api/src/ai/mod.rs`, `crates/api/src/openapi.rs`:
+- [x] **2.1 Migration `0006` & AI Client Types** — `crates/api/migrations/0006_normalize_ai_tiers.sql`, `crates/api/src/ai/mod.rs`, `crates/api/src/openapi.rs`:
   - Normalize existing `ai_usage.tier` rows (`hydrogen -> fast`, `neon -> balanced`, `carbon -> deep`).
   - Update `AiTier` to `Fast | Balanced | Deep`, replace `AiRouting` with `{ mode: "auto" | "prefer_claude" | "prefer_agy" }` plus legacy deserialization helper.
   - Verify: `cargo test -p career-os-api ai`
-- [ ] **2.2 Automatic Task Routing & Escalation** — `crates/api/src/routes/ai.rs`, `crates/api/src/routes/comms.rs`, `crates/api/src/routes/settings.rs`, `crates/api/src/state.rs`:
+- [x] **2.2 Automatic Task Routing & Escalation** — `crates/api/src/routes/ai.rs`, `crates/api/src/routes/comms.rs`, `crates/api/src/routes/settings.rs`, `crates/api/src/state.rs`:
   - Route `score_pending_batch`, project-doc digest generation, and email classification to `AiTier::Fast`.
   - Route `evaluate_job` to `AiTier::Balanced` by default and auto-escalate to `AiTier::Deep` when `job.tier1_score >= 75.0`; route draft generation to `Balanced`.
   - Validate `PUT /api/settings/ai_routing` on new `RoutingMode` schema and send `routing_mode` to `ai-bridge`.
   - Add integration tests for `>= 75.0` escalation, legacy `ai_routing` tolerance, and validation.
   - Verify: `cargo test -p career-os-api`
-- [ ] **2.3 Minimal Web Copy & Settings Routing Update** — `web/src/api/*`, `web/src/components/{AppShell.tsx,RoleDetailDrawer.tsx}`, `web/src/routes/{TodayView.tsx,TriageView.tsx,TrackerView.tsx,SettingsView.tsx}`, `web/src/__tests__/*`:
+- [x] **2.3 Minimal Web Copy & Settings Routing Update** — `web/src/api/*`, `web/src/components/{AppShell.tsx,RoleDetailDrawer.tsx}`, `web/src/routes/{TodayView.tsx,TriageView.tsx,TrackerView.tsx,SettingsView.tsx}`, `web/src/__tests__/*`:
   - Replace `hydrogen`/`neon` UI strings and types with `Match Score` / `Deep Analysis` and `fast`/`balanced`/`deep`.
   - Simplify the Settings AI routing section to a clean `Auto | Prefer Claude | Prefer Gemini` selector plus read-only provider health/usage status (leaving full visual redesign to `JOB-10`).
   - Sync `docs/architecture.md`, `docs/glossary.md`, `README.md`.

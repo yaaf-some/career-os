@@ -180,7 +180,7 @@ function parseJson(raw: string | null): unknown {
   }
 }
 
-function hydrogenTier1Fields(job: ApiJobRecord): {
+function triageTier1Fields(job: ApiJobRecord): {
   rationale: string;
   breakdown: ScoreBreakdown | null;
   dealbreakerReason: string | null;
@@ -226,10 +226,10 @@ function hydrogenTier1Fields(job: ApiJobRecord): {
 
 export function jobSummaryFromApi(
   job: ApiJobRecord,
-  extra?: { application?: ApiApplicationRecord | null; hasNeonEval?: boolean },
+  extra?: { application?: ApiApplicationRecord | null; hasDeepEval?: boolean },
 ): JobSummary {
   const app = extra?.application ?? null;
-  const tier1 = hydrogenTier1Fields(job);
+  const tier1 = triageTier1Fields(job);
   return {
     id: job.id,
     title: job.title,
@@ -241,11 +241,11 @@ export function jobSummaryFromApi(
     url: job.url,
     triageStatus: TRIAGE_STATUS[job.triage_status] ?? 'pending',
     stage: app ? stageFromApi(app.stage) : 'saved',
-    hydrogenScore: job.tier1_score,
+    matchScore: job.tier1_score,
     scoreBreakdown: tier1.breakdown,
     dealbreakerReason: tier1.dealbreakerReason,
-    hydrogenSummary: tier1.rationale,
-    hasNeonEval: extra?.hasNeonEval ?? false,
+    matchSummary: tier1.rationale,
+    hasDeepEval: extra?.hasDeepEval ?? false,
     gmailStatus: app?.gmail_thread_id ? 'awaiting_reply' : 'none',
     nextFollowUpAt: app?.next_followup_at ?? null,
     discoveredAt: job.created_at,
@@ -318,10 +318,16 @@ export function evalBlocksFromJson(raw: string | null): EvalBlock[] {
   return blocks;
 }
 
-function newestNeon(evals: ApiEvaluationRecord[]): ApiEvaluationRecord | null {
+function newestDeepEval(evals: ApiEvaluationRecord[]): ApiEvaluationRecord | null {
   return (
     evals
-      .filter((e) => e.tier === 'neon')
+      .filter(
+        (e) =>
+          e.tier === 'deep' ||
+          e.tier === 'balanced' ||
+          e.tier === 'neon' ||
+          e.tier === 'carbon',
+      )
       .sort((a, b) => b.created_at.localeCompare(a.created_at))[0] ?? null
   );
 }
@@ -344,7 +350,7 @@ function artifactUrl(
 }
 
 export function jobDetailFromApi(res: ApiJobDetailResponse): JobDetail {
-  const neon = newestNeon(res.evaluations);
+  const deep = newestDeepEval(res.evaluations);
   const arts = res.drive_artifacts;
   const resumeDocUrl = artifactUrl(arts, 'resume_doc');
   const coverLetterDocUrl = artifactUrl(arts, 'cover_doc');
@@ -356,18 +362,18 @@ export function jobDetailFromApi(res: ApiJobDetailResponse): JobDetail {
   return {
     ...jobSummaryFromApi(res.job, {
       application: res.application,
-      hasNeonEval: neon !== null,
+      hasDeepEval: deep !== null,
     }),
     descriptionText: res.job.jd_text ?? '',
     requirements: [],
-    neonEval: neon
+    deepEval: deep
       ? {
-          overallVerdict: verdict(neon),
+          overallVerdict: verdict(deep),
           confidence: null,
-          evaluatedAt: neon.created_at,
-          provider: neon.provider,
-          model: neon.model,
-          blocks: evalBlocksFromJson(neon.blocks_json),
+          evaluatedAt: deep.created_at,
+          provider: deep.provider,
+          model: deep.model,
+          blocks: evalBlocksFromJson(deep.blocks_json),
         }
       : null,
     tailor: {
@@ -492,7 +498,7 @@ export interface ApiTrackerEntry {
   company: string;
   title: string;
   stage: string;
-  hydrogenScore: number | null;
+  matchScore: number | null;
   threadSubject: string | null;
   threadCount: number;
   threadsNeedReply: boolean;
@@ -509,7 +515,7 @@ export function trackerFromApi(res: { entries: ApiTrackerEntry[] }): TrackerResp
         company: e.company,
         title: e.title,
         stage: stageFromApi(e.stage),
-        hydrogenScore: e.hydrogenScore,
+        matchScore: e.matchScore,
         gmailStatus: e.threadsNeedReply
           ? 'reply_received'
           : e.threadCount > 0
@@ -533,8 +539,8 @@ export function trackerPatchToApi(req: UpdateTrackerRequest): Record<string, unk
   return body;
 }
 
-/** Badge text for a hydrogen score; 'unscored' until the hydrogen tier runs. */
-export function formatHydrogenScore(score: number | null): string {
+/** Badge text for a triage score; 'unscored' until fast scoring runs. */
+export function formatMatchScore(score: number | null): string {
   return score == null ? 'unscored' : `${Math.round(score)}/100`;
 }
 

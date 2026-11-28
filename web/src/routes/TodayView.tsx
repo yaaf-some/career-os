@@ -8,7 +8,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
-import { formatHydrogenScore } from '@/api/jobs';
+import { formatMatchScore } from '@/api/jobs';
 import { useQuickAddJobMutation, useTodayQuery } from '@/api/queries';
 import { Badge, Button, Card, SectionHeader } from '@/components/ui';
 
@@ -40,7 +40,7 @@ export function TodayView({
           setQuickUrl('');
           setQuickTitle('');
           setQuickCompany('');
-          setQuickFeedback(`Added "${created.title}" to Triage (hydrogen ${formatHydrogenScore(created.hydrogenScore)}).`);
+          setQuickFeedback(`Added "${created.title}" to Triage (Match ${formatMatchScore(created.matchScore)}).`);
         },
       },
     );
@@ -54,7 +54,7 @@ export function TodayView({
         title="Today"
         subtitle={
           data
-            ? `Action queue for ${data.dateLabel} — replies, agenda, follow-ups, and top hydrogen matches.`
+            ? `Action queue for ${data.dateLabel} — replies, agenda, follow-ups, and top scored matches.`
             : 'Loading daily action queue…'
         }
       />
@@ -234,7 +234,7 @@ export function TodayView({
             )}
           </Card>
 
-          {/* Top Hydrogen Matches */}
+          {/* Top Scored Matches */}
           <Card className="p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-semibold">
@@ -259,7 +259,7 @@ export function TodayView({
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                      <Badge variant="brand">{formatHydrogenScore(job.hydrogenScore)}</Badge>
+                      <Badge variant="brand">{formatMatchScore(job.matchScore)}</Badge>
                       <Button size="sm" variant="ghost" onClick={() => onSelectRole(job.id)}>
                         <ArrowRight className="h-4 w-4" />
                       </Button>

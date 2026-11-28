@@ -87,13 +87,13 @@ Bridge settings (plist `EnvironmentVariables`):
 |---|---|---|
 | `AI_BRIDGE_TOKEN` | — (required) | Shared bearer token, ≥ 32 chars |
 | `AI_BRIDGE_BIND` | `127.0.0.1:8787` | Listen address (keep it on loopback) |
-| `AI_BRIDGE_PRIMARY` | `claude` | Default CLI (`claude` or `agy`); requests can override |
+| `AI_BRIDGE_ROUTING_MODE` | `auto` | Routing preference (`auto`, `prefer_claude`, or `prefer_agy`) |
 | `AI_BRIDGE_MAX_CONCURRENCY` | `2` | Max CLI runs at once; extra requests wait, then get 503 `BRIDGE_BUSY` |
 | `AI_BRIDGE_TIMEOUT_SECS` | `90` | Default per-run timeout (requests may set 5–300) |
 | `AI_BRIDGE_COOLDOWN_SECS` | `300` | How long a rate-limited CLI is skipped |
 | `AI_BRIDGE_WORKDIR` | `~/Library/Application Support/career-os-ai-bridge/work` | Private run folder |
 | `AI_BRIDGE_CLAUDE_BIN` / `AI_BRIDGE_AGY_BIN` | `claude` / `agy` | CLI names or absolute paths |
-| `AI_BRIDGE_{CLAUDE,AGY}_{HYDROGEN,NEON,CARBON}_MODEL` | see `crates/ai-bridge/src/config.rs` | Model per tier |
+| `AI_BRIDGE_{CLAUDE,AGY}_{FAST,BALANCED,DEEP}_MODEL` | see `crates/ai-bridge/src/config.rs` | Model per capability tier (legacy `HYDROGEN`/`NEON`/`CARBON` vars still accepted) |
 | `CLAUDE_STATUSLINE_PATH` | unset | Claude usage file (below) |
 | `AI_BRIDGE_STATUSLINE_MAX_AGE_SECS` | `900` | Usage older than this is marked stale |
 

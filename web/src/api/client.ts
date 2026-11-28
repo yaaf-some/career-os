@@ -17,9 +17,9 @@ import type {
   ApiTrackerEntry,
 } from './jobs';
 import type {
+  AiRoutingMode,
   AiUsageResponse,
   CalendarReminder,
-  CliTierModel,
   CommuteInfo,
   CommutePreviewRequest,
   CreateSourceRequest,
@@ -292,12 +292,12 @@ export const careerApi = {
     return careerApi.getJob(id);
   },
 
-  /** Deep (neon) evaluation via `POST /api/ai/evaluate/{id}`, then re-reads the job. */
+  /** Deep A–G evaluation via `POST /api/ai/evaluate/{id}` (auto-escalates >= 75), then re-reads the job. */
   async evaluateJob(id: string): Promise<JobDetail> {
     let fellBack = false;
     const res = await requestWithFallback<unknown>(
       `/api/ai/evaluate/${encodeURIComponent(id)}`,
-      { method: 'POST', body: JSON.stringify({ tier: 'neon' }) },
+      { method: 'POST', body: JSON.stringify({}) },
       () => {
         fellBack = true;
         return demoStore.evaluateJob(id);
@@ -478,21 +478,14 @@ export const careerApi = {
     return settingsFromApi(res as ApiSettingsList);
   },
 
-  /** Tier routing is saved with `PUT /api/settings/ai_routing` (full object). */
+  /** Unified routing preference is saved with `PUT /api/settings/ai_routing`. */
   async updateSettings(payload: UpdateSettingsRequest): Promise<SettingsState> {
-    const touchesRouting =
-      payload.hydrogenPrimaryCli !== undefined ||
-      payload.neonPrimaryCli !== undefined ||
-      payload.autoFailover !== undefined;
-    if (!touchesRouting) {
+    if (payload.aiRoutingMode === undefined) {
       // Commute preferences have no API yet (demo store only).
       return demoStore.updateSettings(payload);
     }
-    const current = await careerApi.getSettings();
     const value: AiRoutingSetting = {
-      hydrogenPrimary: payload.hydrogenPrimaryCli ?? current.hydrogenPrimaryCli,
-      neonPrimary: payload.neonPrimaryCli ?? current.neonPrimaryCli,
-      autoFailover: payload.autoFailover ?? current.autoFailover,
+      mode: payload.aiRoutingMode,
     };
     let fellBack = false;
     const res = await requestWithFallback<unknown>(
@@ -635,9 +628,7 @@ export function toTriageRequest(payload: TriageActionRequest): { action: ApiTria
 
 /** Value of the `ai_routing` setting (validated by the API). */
 export interface AiRoutingSetting {
-  hydrogenPrimary: CliTierModel;
-  neonPrimary: CliTierModel;
-  autoFailover: boolean;
+  mode: AiRoutingMode;
 }
 
 interface ApiSettingsList {
@@ -645,13 +636,11 @@ interface ApiSettingsList {
 }
 
 const DEFAULT_ROUTING: AiRoutingSetting = {
-  hydrogenPrimary: 'claude',
-  neonPrimary: 'claude',
-  autoFailover: true,
+  mode: 'auto',
 };
 
-function isCli(v: unknown): v is CliTierModel {
-  return v === 'claude' || v === 'agy';
+function isRoutingMode(v: unknown): v is AiRoutingMode {
+  return v === 'auto' || v === 'prefer_claude' || v === 'prefer_agy';
 }
 
 export function settingsFromApi(list: ApiSettingsList): SettingsState {
@@ -661,19 +650,14 @@ export function settingsFromApi(list: ApiSettingsList): SettingsState {
     try {
       const v = JSON.parse(row.value_json) as Partial<AiRoutingSetting>;
       routing = {
-        hydrogenPrimary: isCli(v.hydrogenPrimary) ? v.hydrogenPrimary : DEFAULT_ROUTING.hydrogenPrimary,
-        neonPrimary: isCli(v.neonPrimary) ? v.neonPrimary : DEFAULT_ROUTING.neonPrimary,
-        autoFailover:
-          typeof v.autoFailover === 'boolean' ? v.autoFailover : DEFAULT_ROUTING.autoFailover,
+        mode: isRoutingMode(v.mode) ? v.mode : DEFAULT_ROUTING.mode,
       };
     } catch {
       // keep defaults
     }
   }
   return {
-    hydrogenPrimaryCli: routing.hydrogenPrimary,
-    neonPrimaryCli: routing.neonPrimary,
-    autoFailover: routing.autoFailover,
+    aiRoutingMode: routing.mode,
     // Not stored by the API yet; neutral values instead of demo data.
     googleOAuthConnected: false,
     googleScopes: [],

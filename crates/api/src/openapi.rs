@@ -4,8 +4,8 @@ use utoipa::OpenApi;
 
 use crate::{
     ai::{
-        AiRouting, AiTier, CliKind, DealbreakerFlag, HydrogenScoreBreakdown, HydrogenScoreItem,
-        NeonEvaluationResult, ProjectDocDigest,
+        AiRouting, AiTier, CliKind, DealbreakerFlag, DeepEvaluationResult, ProjectDocDigest,
+        RoutingMode, TriageScoreBreakdown, TriageScoreItem,
     },
     error::ErrorResponse,
     profile::{ProfileFileStatus, ProfileTargetingSummary, ScoringWeights},
@@ -144,13 +144,14 @@ use crate::{
             TriggerScanResponse,
             AiTier,
             CliKind,
+            RoutingMode,
             AiRouting,
             ScoringWeights,
-            HydrogenScoreBreakdown,
+            TriageScoreBreakdown,
             DealbreakerFlag,
-            HydrogenScoreItem,
+            TriageScoreItem,
             ProjectDocDigest,
-            NeonEvaluationResult,
+            DeepEvaluationResult,
             ScorePendingRequest,
             ScorePendingResponse,
             RescoreRequest,

@@ -23,7 +23,7 @@ describe('API usage fixture (shared with crates/api)', () => {
     expect(typeof usage.claude7d?.resetAt).toBe('string');
     expect(usage.antigravity.status).toBe('cooldown');
     expect(usage.dbStatsByTier[0]).toEqual({
-      tier: 'hydrogen',
+      tier: 'fast',
       totalCalls: 12,
       successfulCalls: 11,
       avgLatencyMs: 8400,
@@ -119,7 +119,7 @@ describe('client hits the real API routes (AC9)', () => {
     vi.stubEnv('VITE_DEMO_MODE', 'false');
   });
 
-  it('evaluate posts neon to /api/ai/evaluate/{id} then reads the job', async () => {
+  it('evaluate posts to /api/ai/evaluate/{id} then reads the job', async () => {
     const calls = mockFetch((url) =>
       url.startsWith('/api/ai/') ? json({ evaluation_id: 'e1' }) : json(jobFixture.detail),
     );
@@ -127,7 +127,7 @@ describe('client hits the real API routes (AC9)', () => {
     expect(calls[0]).toEqual({
       url: '/api/ai/evaluate/job%201',
       method: 'POST',
-      body: { tier: 'neon' },
+      body: {},
     });
     expect(calls[1]).toMatchObject({ url: '/api/jobs/job%201', method: 'GET' });
   });
@@ -155,8 +155,8 @@ describe('client hits the real API routes (AC9)', () => {
     expect(toTriageRequest({ action: 'skip' })).toEqual({ action: 'skip' });
   });
 
-  it('tier routing PUTs the full ai_routing object', async () => {
-    let stored = JSON.stringify({ hydrogenPrimary: 'claude', neonPrimary: 'claude', autoFailover: true });
+  it('ai routing PUTs the unified mode object', async () => {
+    let stored = JSON.stringify({ mode: 'auto' });
     const calls = mockFetch((url, init) => {
       if (url === '/api/settings/ai_routing') {
         stored = JSON.stringify((JSON.parse(String(init.body)) as { value: unknown }).value);
@@ -164,23 +164,32 @@ describe('client hits the real API routes (AC9)', () => {
       }
       return json({ settings: [{ key: 'ai_routing', value_json: stored, updated_at: 'x' }] });
     });
-    const next = await careerApi.updateSettings({ neonPrimaryCli: 'agy' });
+    const next = await careerApi.updateSettings({ aiRoutingMode: 'prefer_agy' });
     const put = calls.find((c) => c.method === 'PUT');
     expect(put).toEqual({
       url: '/api/settings/ai_routing',
       method: 'PUT',
-      body: { value: { hydrogenPrimary: 'claude', neonPrimary: 'agy', autoFailover: true } },
+      body: { value: { mode: 'prefer_agy' } },
     });
-    expect(next.neonPrimaryCli).toBe('agy');
-    expect(next.hydrogenPrimaryCli).toBe('claude');
+    expect(next.aiRoutingMode).toBe('prefer_agy');
   });
 
-  it('settings fall back to routing defaults on missing or bad values', () => {
-    expect(settingsFromApi({ settings: [] }).autoFailover).toBe(true);
+  it('settings fall back to auto routing default on missing, bad, or legacy values', () => {
+    expect(settingsFromApi({ settings: [] }).aiRoutingMode).toBe('auto');
     const bad = settingsFromApi({
-      settings: [{ key: 'ai_routing', value_json: '{"neonPrimary":"codex"}', updated_at: 'x' }],
+      settings: [{ key: 'ai_routing', value_json: '{"mode":"codex"}', updated_at: 'x' }],
     });
-    expect(bad.neonPrimaryCli).toBe('claude');
+    expect(bad.aiRoutingMode).toBe('auto');
+    const legacy = settingsFromApi({
+      settings: [
+        {
+          key: 'ai_routing',
+          value_json: '{"hydrogenPrimary":"agy","neonPrimary":"claude","autoFailover":true}',
+          updated_at: 'x',
+        },
+      ],
+    });
+    expect(legacy.aiRoutingMode).toBe('auto');
   });
 });
 

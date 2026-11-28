@@ -10,8 +10,8 @@ export type PipelineStage =
 
 export type GmailThreadStatus = 'none' | 'awaiting_reply' | 'reply_received' | 'draft_ready';
 
-/** Host CLI the ai-bridge runs (`claude` = Claude Code, `agy` = Antigravity). */
-export type CliTierModel = 'claude' | 'agy';
+/** Unified routing preference sent to ai-bridge (`auto` balances Claude & Gemini equally). */
+export type AiRoutingMode = 'auto' | 'prefer_claude' | 'prefer_agy';
 
 export interface HealthResponse {
   ok: boolean;
@@ -76,14 +76,14 @@ export interface JobSummary {
   url: string;
   triageStatus: TriageStatus;
   stage: PipelineStage;
-  /** 0–100; null until the hydrogen tier has scored the job. */
-  hydrogenScore: number | null;
+  /** 0–100; null until fast triage scoring has run. */
+  matchScore: number | null;
   /** Null for legacy scored rows without a 4-dimension breakdown. */
   scoreBreakdown: ScoreBreakdown | null;
-  /** Set when a hard dealbreaker triggered during Hydrogen scoring. */
+  /** Set when a hard dealbreaker triggered during triage scoring. */
   dealbreakerReason?: string | null;
-  hydrogenSummary: string;
-  hasNeonEval: boolean;
+  matchSummary: string;
+  hasDeepEval: boolean;
   gmailStatus: GmailThreadStatus;
   nextFollowUpAt: string | null;
   discoveredAt: string;
@@ -143,7 +143,7 @@ export interface GmailThreadSummary {
 export interface JobDetail extends JobSummary {
   descriptionText: string;
   requirements: string[];
-  neonEval: {
+  deepEval: {
     overallVerdict: string;
     confidence: string | null;
     evaluatedAt: string;
@@ -219,7 +219,7 @@ export interface TrackerEntry {
   company: string;
   title: string;
   stage: PipelineStage;
-  hydrogenScore: number | null;
+  matchScore: number | null;
   gmailStatus: GmailThreadStatus;
   threadSubject: string | null;
   lastActivityAt: string;
@@ -297,9 +297,7 @@ export interface LinearJobIssue {
 }
 
 export interface SettingsState {
-  hydrogenPrimaryCli: CliTierModel;
-  neonPrimaryCli: CliTierModel;
-  autoFailover: boolean;
+  aiRoutingMode: AiRoutingMode;
   googleOAuthConnected: boolean;
   googleScopes: string[];
   linearTeamKey: string;
@@ -311,9 +309,7 @@ export interface SettingsState {
 }
 
 export interface UpdateSettingsRequest {
-  hydrogenPrimaryCli?: CliTierModel;
-  neonPrimaryCli?: CliTierModel;
-  autoFailover?: boolean;
+  aiRoutingMode?: AiRoutingMode;
   homeLocationArea?: string;
   defaultTravelMode?: 'drive' | 'transit';
 }

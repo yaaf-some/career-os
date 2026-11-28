@@ -1,6 +1,6 @@
 import { Check, Eye, FastForward, Star, XCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { formatHydrogenScore } from '@/api/jobs';
+import { formatMatchScore } from '@/api/jobs';
 import { useJobsQuery, useTriageMutation } from '@/api/queries';
 import type { TriageStatus } from '@/api/types';
 import { Badge, Button, Card, SectionHeader } from '@/components/ui';
@@ -29,7 +29,7 @@ export function TriageView({
   const jobs = jobsQuery.data?.jobs ?? [];
 
   const visibleJobs = useMemo(() => {
-    const sorted = [...jobs].sort((a, b) => (b.hydrogenScore ?? -1) - (a.hydrogenScore ?? -1));
+    const sorted = [...jobs].sort((a, b) => (b.matchScore ?? -1) - (a.matchScore ?? -1));
     if (filter === 'inbox') {
       return sorted.filter(
         (j) => j.triageStatus === 'pending' || j.triageStatus === 'shortlisted',
@@ -45,7 +45,7 @@ export function TriageView({
     <div className="space-y-5" data-testid="triage-view">
       <SectionHeader
         title="Triage"
-        subtitle="Inbox of hydrogen-scored roles. Approve, shortlist, skip, or reject before running neon deep eval."
+        subtitle="Inbox of scored roles. Approve, shortlist, skip, or reject before running deep analysis."
         action={
           <div className="inline-flex rounded-lg border border-border bg-card p-0.5 text-xs">
             {(
@@ -74,7 +74,7 @@ export function TriageView({
       />
 
       {jobsQuery.isLoading ? (
-        <Card className="p-6 text-sm text-muted-foreground">Loading hydrogen triage inbox…</Card>
+        <Card className="p-6 text-sm text-muted-foreground">Loading triage inbox…</Card>
       ) : visibleJobs.length === 0 ? (
         <Card className="p-8 text-center text-sm text-muted-foreground">
           No jobs in this triage view. Trigger a scan in Sources or quick-add a URL in Today.
@@ -86,7 +86,7 @@ export function TriageView({
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0 flex-1 space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="brand">hydrogen {formatHydrogenScore(job.hydrogenScore)}</Badge>
+                    <Badge variant="brand">Match {formatMatchScore(job.matchScore)}</Badge>
                     <Badge variant={STATUS_BADGE[job.triageStatus]}>{job.triageStatus}</Badge>
                     {job.dealbreakerReason ? (
                       <Badge variant="danger">Dealbreaker: {job.dealbreakerReason}</Badge>
@@ -111,7 +111,7 @@ export function TriageView({
                     </div>
                   </div>
 
-                  <p className="text-sm text-foreground/90">{job.hydrogenSummary}</p>
+                  <p className="text-sm text-foreground/90">{job.matchSummary}</p>
 
                   {/* Score Breakdown */}
                   {job.scoreBreakdown ? (
