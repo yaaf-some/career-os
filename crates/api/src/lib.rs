@@ -100,6 +100,10 @@ pub fn build_router(state: AppState) -> Router {
             get(routes::profile::get_profile_status),
         )
         .route(
+            "/api/profile/sync-docs",
+            post(routes::profile::sync_project_docs_now),
+        )
+        .route(
             "/api/auth/google/status",
             get(routes::auth::google_auth_status),
         )
@@ -826,6 +830,229 @@ mod tests {
             let n_prompt = reqs[1]["prompt"].as_str().unwrap();
             assert!(n_prompt.contains("Self-serve platform proof."));
         }
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn drive_project_docs_sync_digests_once_and_feeds_prompts() {
+        use std::{collections::HashMap, sync::Mutex};
+
+        use axum::{extract::Query, http::StatusCode, response::IntoResponse};
+
+        use crate::{
+            ai::fake_bridge::{self, Mode},
+            crypto::TokenCipher,
+            integrations::google_auth::{store_google_tokens, GoogleTokenResponse},
+        };
+
+        let mod_time = Arc::new(Mutex::new("2026-11-28T10:00:00Z".to_string()));
+        let doc_text = Arc::new(Mutex::new(
+            "# Migration Report\n\nReduced latency by 40%.".to_string(),
+        ));
+        let export_calls = Arc::new(Mutex::new(0usize));
+
+        let mt = mod_time.clone();
+        let dt = doc_text.clone();
+        let ec = export_calls.clone();
+
+        let drive_app = Router::new()
+            .route(
+                "/files",
+                get(move |Query(q): Query<HashMap<String, String>>| {
+                    let mt = mt.clone();
+                    async move {
+                        assert!(q.get("q").unwrap().contains("'proj-folder-1' in parents"));
+                        axum::Json(serde_json::json!({
+                            "files": [{
+                                "id": "gdoc-1",
+                                "name": "Migration Report",
+                                "webViewLink": "https://docs.google.com/document/d/gdoc-1/edit",
+                                "mimeType": "application/vnd.google-apps.document",
+                                "modifiedTime": *mt.lock().unwrap()
+                            }, {
+                                "id": "pdf-ignore",
+                                "name": "Ignore.pdf",
+                                "mimeType": "application/pdf"
+                            }]
+                        }))
+                    }
+                }),
+            )
+            .route(
+                "/files/gdoc-1/export",
+                get(move |Query(q): Query<HashMap<String, String>>| {
+                    let dt = dt.clone();
+                    let ec = ec.clone();
+                    async move {
+                        if q.get("mimeType").map(String::as_str) == Some("text/markdown") {
+                            *ec.lock().unwrap() += 1;
+                            dt.lock().unwrap().clone().into_response()
+                        } else {
+                            StatusCode::BAD_REQUEST.into_response()
+                        }
+                    }
+                }),
+            );
+
+        let drive_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let drive_addr = drive_listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(drive_listener, drive_app).await.unwrap() });
+        let drive_base = format!("http://{drive_addr}");
+
+        let dir = std::env::temp_dir().join(format!("api-docs-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(dir.join("profile")).unwrap();
+        std::fs::write(
+            dir.join("profile/targeting.yml"),
+            "schema_version: 1\nstatus: verified\nroles:\n  primary: [\"Platform Engineer\"]\n",
+        )
+        .unwrap();
+
+        let (bridge_url, fake) = fake_bridge::start(Mode::Ok).await;
+        let pool = init_pool("sqlite::memory:").await.unwrap();
+        let cipher =
+            TokenCipher::from_encoded_key(&TokenCipher::generate_random_key_b64()).unwrap();
+        store_google_tokens(
+            &pool,
+            &cipher,
+            Some("you@example.com"),
+            &GoogleTokenResponse {
+                access_token: "test-access".into(),
+                refresh_token: None,
+                expires_in: Some(3600),
+                token_type: Some("Bearer".into()),
+                scope: Some("https://www.googleapis.com/auth/drive.readonly".into()),
+            },
+        )
+        .await
+        .unwrap();
+
+        let state = AppState {
+            pool: pool.clone(),
+            config: Arc::new(AppConfig {
+                scheduler_enabled: false,
+                data_dir: dir.clone(),
+                google_drive_projects_folder_id: Some("proj-folder-1".into()),
+                ..AppConfig::default()
+            }),
+            ai: Arc::new(crate::ai::HostBridgeProvider::new(
+                bridge_url,
+                fake_bridge::TOKEN.into(),
+            )),
+            cipher: Some(cipher),
+            scanner: ScannerClient::new(),
+            gmail: GmailClient::new(),
+            drive: DriveClient::new().with_bases(drive_base.clone(), drive_base),
+            calendar: CalendarClient::new(),
+            maps: MapsClient::new(None),
+            sync_lock: Default::default(),
+            linear: None,
+        };
+
+        let app = build_router(state);
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            .unwrap();
+        });
+        let base = format!("http://{addr}");
+        let client = reqwest::Client::new();
+
+        // First sync exports and runs Hydrogen digest once.
+        let s1: serde_json::Value = client
+            .post(format!("{base}/api/profile/sync-docs"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(s1["docsSynced"], 1);
+        assert_eq!(s1["docsDigested"], 1);
+        assert_eq!(s1["skippedUnchanged"], 0);
+        assert_eq!(*export_calls.lock().unwrap(), 1);
+        assert_eq!(fake.requests.lock().unwrap().len(), 1);
+
+        // Second sync with unchanged modifiedTime skips export and AI digest.
+        let s2: serde_json::Value = client
+            .post(format!("{base}/api/profile/sync-docs"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(s2["docsSynced"], 0);
+        assert_eq!(s2["docsDigested"], 0);
+        assert_eq!(s2["skippedUnchanged"], 1);
+        assert_eq!(*export_calls.lock().unwrap(), 1);
+        assert_eq!(fake.requests.lock().unwrap().len(), 1);
+
+        // Updated modifiedTime re-exports and refreshes digest.
+        *mod_time.lock().unwrap() = "2026-11-28T11:00:00Z".into();
+        *doc_text.lock().unwrap() = "# Migration Report\n\nReduced latency by 55%.".into();
+        let s3: serde_json::Value = client
+            .post(format!("{base}/api/profile/sync-docs"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(s3["docsSynced"], 1);
+        assert_eq!(s3["docsDigested"], 1);
+        assert_eq!(*export_calls.lock().unwrap(), 2);
+
+        // Profile status shows synced & digested doc.
+        let status: serde_json::Value = client
+            .get(format!("{base}/api/profile/status"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(status["driveProjectsFolderConfigured"], true);
+        assert_eq!(status["projectDocs"][0]["title"], "Migration Report");
+        assert_eq!(status["projectDocs"][0]["digested"], true);
+
+        // Score & evaluate inject the doc digest and full raw markdown.
+        sqlx::query(
+            "INSERT INTO jobs (id, canonical_key, url, company, title, source_type, triage_status, jd_text) VALUES \
+             ('jd-1','kd1','https://example.com/jd1','Example Co','Platform Engineer','manual','pending_scoring','Build Kubernetes platforms.')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let _ = client
+            .post(format!("{base}/api/ai/score-pending"))
+            .json(&serde_json::json!({"limit": 5}))
+            .send()
+            .await
+            .unwrap();
+        let _ = client
+            .post(format!("{base}/api/ai/evaluate/jd-1"))
+            .json(&serde_json::json!({"tier": "neon"}))
+            .send()
+            .await
+            .unwrap();
+
+        let reqs = fake.requests.lock().unwrap();
+        assert_eq!(reqs.len(), 4);
+        assert!(reqs[2]["prompt"]
+            .as_str()
+            .unwrap()
+            .contains("Digest for Migration Report"));
+        assert!(reqs[3]["prompt"]
+            .as_str()
+            .unwrap()
+            .contains("Reduced latency by 55%."));
 
         let _ = std::fs::remove_dir_all(dir);
     }

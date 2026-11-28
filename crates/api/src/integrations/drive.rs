@@ -20,6 +20,8 @@ pub struct DriveFileRecord {
     pub web_view_link: Option<String>,
     #[serde(rename = "mimeType")]
     pub mime_type: Option<String>,
+    #[serde(rename = "modifiedTime", default)]
+    pub modified_time: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -62,7 +64,7 @@ impl DriveClient {
             .bearer_auth(access_token)
             .query(&[
                 ("q", q.as_str()),
-                ("fields", "files(id,name,webViewLink,mimeType)"),
+                ("fields", "files(id,name,webViewLink,mimeType,modifiedTime)"),
             ])
             .send()
             .await
@@ -146,6 +148,44 @@ impl DriveClient {
             .await
             .map_err(|e| AppError::Upstream(format!("invalid drive upload JSON: {e}")))
     }
+
+    /// Exports a Google Doc as Markdown (`text/markdown`), falling back to `text/plain`
+    /// if the Drive export endpoint rejects `text/markdown`.
+    pub async fn export_doc_markdown(
+        &self,
+        access_token: &str,
+        file_id: &str,
+    ) -> Result<String, AppError> {
+        let url = format!("{}/files/{file_id}/export", self.api_base);
+        for mime in ["text/markdown", "text/plain"] {
+            let resp = self
+                .http
+                .get(url.as_str())
+                .bearer_auth(access_token)
+                .query(&[("mimeType", mime)])
+                .send()
+                .await
+                .map_err(|e| AppError::Upstream(format!("drive export failed: {e}")))?;
+
+            if resp.status().is_success() {
+                return resp
+                    .text()
+                    .await
+                    .map_err(|e| AppError::Upstream(format!("drive export read failed: {e}")));
+            }
+            let status = resp.status();
+            let err_body = resp.text().await.unwrap_or_default();
+            if mime == "text/markdown" && status.as_u16() == 400 {
+                continue;
+            }
+            return Err(AppError::Upstream(format!(
+                "drive export returned {status}: {err_body}"
+            )));
+        }
+        Err(AppError::Upstream(
+            "drive export failed for all text formats".to_string(),
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -190,5 +230,73 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(record.id, "drv-123");
+    }
+
+    #[tokio::test]
+    async fn lists_folder_with_modified_time_and_exports_markdown_with_fallback() {
+        use axum::{extract::Query, http::StatusCode, response::IntoResponse, routing::get};
+        use std::collections::HashMap;
+
+        let app = Router::new()
+            .route(
+                "/files",
+                get(|Query(q): Query<HashMap<String, String>>| async move {
+                    assert!(q.get("q").unwrap().contains("'folder-xyz' in parents"));
+                    assert!(q.get("fields").unwrap().contains("modifiedTime"));
+                    Json(serde_json::json!({
+                        "files": [{
+                            "id": "doc-1",
+                            "name": "Project Report A",
+                            "webViewLink": "https://docs.google.com/document/d/doc-1/edit",
+                            "mimeType": "application/vnd.google-apps.document",
+                            "modifiedTime": "2026-11-28T12:00:00Z"
+                        }]
+                    }))
+                }),
+            )
+            .route(
+                "/files/doc-1/export",
+                get(|Query(q): Query<HashMap<String, String>>| async move {
+                    assert_eq!(q.get("mimeType").map(String::as_str), Some("text/markdown"));
+                    "# Report A\n\n- Metric 1".into_response()
+                }),
+            )
+            .route(
+                "/files/doc-2/export",
+                get(|Query(q): Query<HashMap<String, String>>| async move {
+                    match q.get("mimeType").map(String::as_str) {
+                        Some("text/markdown") => {
+                            (StatusCode::BAD_REQUEST, "unsupported export").into_response()
+                        }
+                        Some("text/plain") => "Plain text fallback".into_response(),
+                        _ => StatusCode::NOT_FOUND.into_response(),
+                    }
+                }),
+            );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let client =
+            DriveClient::new().with_bases(format!("http://{addr}"), format!("http://{addr}"));
+        let files = client
+            .list_files_in_folder("tok", "folder-xyz")
+            .await
+            .unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(
+            files[0].modified_time.as_deref(),
+            Some("2026-11-28T12:00:00Z")
+        );
+
+        assert_eq!(
+            client.export_doc_markdown("tok", "doc-1").await.unwrap(),
+            "# Report A\n\n- Metric 1"
+        );
+        assert_eq!(
+            client.export_doc_markdown("tok", "doc-2").await.unwrap(),
+            "Plain text fallback"
+        );
     }
 }
