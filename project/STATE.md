@@ -1,18 +1,21 @@
 # Project State (Elephant Handoff — career-os)
 
-**Last updated:** 2026-11-27 · **Linear:** team `JOB` (`Yaaf-Career`), project Mac Mini Rebuild (v1)
+**Last updated:** 2026-11-28 · **Linear:** team `JOB` (`Yaaf-Career`), project Mac Mini Rebuild (v1)
 **Host:** now on the **M2 Mac mini** (arm64). Installed: claude, agy, Rust 1.100 (Homebrew rustup, PATH in `~/.zshrc`), Docker Desktop. **ai-bridge live under launchd** (`~/.local/bin/career-os-ai-bridge`, `~/Library/LaunchAgents/com.career-os.ai-bridge.plist`, token also in gitignored `.env`).
 
 ## Current Focus
 
 - **`JOB-5` Verified + archived 2026-11-27** (`project/changes/archive/JOB-5-ai-bridge/`). #12/#13/#14 merged. AC12 passed on the M2 under Docker Desktop. statusLine hook installed (Usage Bar live).
 - **`JOB-6` Verified + archived 2026-11-28** (`project/changes/archive/JOB-6-live-google-sync/`). Google is live on the Mac mini (drafts only, never sent).
-- **`JOB-7` in progress** (`project/changes/JOB-7-mac-mini-cutover/`): live compose project `career-os` on this Mac, at `https://<host>:8080` on the tailnet. Old career-ops sources (56, disabled) and the pipeline (36 jobs) imported. Backups via `scripts/backup-db.sh`.
-- **Exact Next Concrete Step:** merge `fix/calendar-prune-and-job6-archive`, then pull and run Sync now to prune the stale test event from Today. Open in JOB-7: archive the old career-ops repo (Q2, needs Yaaf's OK) and Linear keys (Q3, optional); then verify-archive JOB-7.
+- **`JOB-7` Verified + archived 2026-11-28** (`project/changes/archive/JOB-7-mac-mini-cutover/`). Always-on on the Mac mini: compose project `career-os`, tailnet `:8080`, nightly backups (03:30), filtered ATS scans every 3 days, Google sync every 12 h. Old career-ops repo archived.
+- **Exact Next Concrete Step:** daily use. Next build candidate: tailoring (resume/cover-letter Docs grounded in `DATA_DIR`, needs a spec), or the follow-ups below.
 
 ## Done This Session
 
-- JOB-5 shipped in 3 stacked PRs (#12 → #13 → #14): Rust bridge with tool-less claude/agy (ADR-002), per-request routing/failover, concurrency cap, typed usage; API disabled mode (no silent mock), bridge contract, `ai_routing`, `/api/ai/usage`; web on real routes + typed Usage Bar.
+- JOB-5 (#12–#14): tool-less host ai-bridge, per-tier routing, live Usage Bar.
+- Web job mapping (#15), compose empty encryption-key default (#16).
+- JOB-6 (#17–#19, #22): Google sync and linking, Today/Tracker, Gmail drafts (never sent, ADR-003), Calendar reminders, Linear hook, calendar prune/UTC fix.
+- JOB-7 (#20, #21): live cutover, importer, nightly backups and restore drill, filtered ATS scans through the sidecar, live Sources page; ~190 scored jobs in the live DB.
 
 ## Container Baseline
 
@@ -22,9 +25,9 @@
 
 ## Upcoming
 
-1. Follow-ups to file: `/api/jobs/{id}/tailor` backend; web demo-fallback still hides 404/5xx on sources/settings/commute routes; hydrogen gives no score breakdown; `needs_reply` flags every synced inbox thread; scanner title filter lets aerospace "Systems Engineer" roles through; one tracked company's Ashby board has no public API.
+1. Follow-ups to file: web demo-fallback still hides 404/5xx on settings/commute routes; Linear section in Settings shows placeholders; OAuth callback shows raw JSON; hydrogen gives no score breakdown; `needs_reply` flags every synced inbox thread; scanner title filter lets aerospace "Systems Engineer" roles through; one tracked company's Ashby board has no public API.
 2. Kiri: AC12 ran on Docker Desktop; re-check `host.docker.internal:8787` if switching runtime.
-3. `JOB-7` Mac mini cutover (compose + `tailscale serve` + launchd).
+3. Tailoring (`/api/jobs/{id}/tailor`) is the main missing feature; it needs a new Linear issue and spec.
 
 ## Recent Decisions
 

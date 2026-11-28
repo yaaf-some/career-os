@@ -25,8 +25,8 @@ One branch, `feat/job-7-cutover`, carries the repo changes (scripts, plist examp
 - [x] **3.1 Import** — run the importer against the live API (AC3).
 - [x] **3.2 Scan + score** — trigger a scan from Sources; confirm jobs arrive and hydrogen scoring runs (AC4).
 - [x] **3.3 Google (JOB-6 AC11)** — once Yaaf has added the client and signed in: Sync now, linking, draft, reminder (AC5). Ask before deleting the test draft and event.
-- [ ] **3.4 Retire** — archive the old career-ops repo (Q2) (AC7).
-- [ ] **3.5 Close** — PR, CI, merge with OK; JOB-6 and JOB-7 verify-archive.
+- [x] **3.4 Retire** — archive the old career-ops repo (Q2) (AC7).
+- [x] **3.5 Close** — PR, CI, merge with OK; JOB-6 and JOB-7 verify-archive.
 
 ## Execution Notes
 
@@ -46,3 +46,5 @@ One branch, `feat/job-7-cutover`, carries the repo changes (scripts, plist examp
 - **4.3 live scan:** #21 image pulled; the importer added the Paylocity company (57 sources); all enabled. Scan: 10,642 fetched, 10,477 filtered, **153 ingested** (65 s), 5 errors. All 179 pending jobs were scored right away at Yaaf's request (18 claude batches): 97 to triage, 92 skipped; 9 scored ≥80.
 - **Stale boards fixed:** three companies moved to Ashby (one under a different slug), one merged into another company's Greenhouse board, and one is on Ashby without public API access (disabled, with a note). The fixed four rescanned cleanly (+4 jobs, scored). The private data repo's `portals.yml` was updated and pushed, so a re-import stays a no-op.
 - **3.3 / JOB-6 AC11:** Google client added by Yaaf; app restarted; connected; Sync now OK; test draft (Drafts only, not sent) and test reminder created, then deleted. See the JOB-6 archive for details and the calendar bugs found and fixed.
+- **3.4** The old career-ops repo was archived with `gh repo archive` at Yaaf's OK (`archived=true`, still private).
+- **3.5** #20, #21 and #22 are merged and deployed; the calendar prune fix is live (the deleted test event was gone after a sync). JOB-6 and JOB-7 are archived.
