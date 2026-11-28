@@ -1,6 +1,6 @@
 # JOB-11 — Hardening Follow-ups
 
-**Status:** In Progress · **Surfaces:** `crates/api`, `web/` · **Linear:** `JOB-11` (to create)
+**Status:** Verified · **Surfaces:** `crates/api`, `web/` · **Linear:** `JOB-11` (to create)
 
 ## Problem / Context
 

@@ -78,3 +78,9 @@ Then `project-verify-archive` (deploy to M2, curl live endpoints).
   that reaches it, so the planned README note would be wrong. No note was
   added. Ashby stays an open follow-up in `project/STATE.md`: expose an embed
   opt-in on sources.
+- Verified live on M2 (`d952d56`, PR `#36`, `Release Container Images` run
+  `46170896112`): `career-os-app` healthy; `/healthz` 200 (`db_ok: true`),
+  `/api/integrations/linear` 200 (no secret fields), invalid `travel_mode` and
+  empty `home_location_area` 400, OAuth callback invalid state 303 to
+  `/settings?google=error&reason=invalid_state`, `/api/openapi.json` 200
+  (includes Linear + 303), `/api/settings` & `/` 200.
