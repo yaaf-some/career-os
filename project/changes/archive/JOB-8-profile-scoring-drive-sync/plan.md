@@ -76,5 +76,5 @@ Branch per PR off `main`. Merge `origin/main` into a branch to catch up; never r
 
 ## Verify & Archive
 
-- [ ] **4.1 Live M2 verification** — Deploy updated images on the Mac mini, reconnect Google OAuth with `drive.readonly`, set `GOOGLE_DRIVE_PROJECTS_FOLDER_ID`, sync a Project Reports folder, confirm `GET /api/profile/status`, rescore existing jobs, and test filtered scan against an aerospace/hardware "Systems Engineer" posting.
-- [ ] **4.2 `project-verify-archive`** — Verify all ACs, sync docs, archive `JOB-8-profile-scoring-drive-sync`, and update `project/STATE.md`.
+- [x] **4.1 Live M2 verification** — Deploy updated images on the Mac mini, reconnect Google OAuth with `drive.readonly`, set `GOOGLE_DRIVE_PROJECTS_FOLDER_ID`, sync a Project Reports folder, confirm `GET /api/profile/status`, rescore existing jobs, and test filtered scan against an aerospace/hardware "Systems Engineer" posting.
+- [x] **4.2 `project-verify-archive`** — Verify all ACs, sync docs, archive `JOB-8-profile-scoring-drive-sync`, and update `project/STATE.md`.
