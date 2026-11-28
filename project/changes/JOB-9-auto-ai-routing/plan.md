@@ -4,17 +4,17 @@ Branch per PR off `main`. Merge `origin/main` to catch up; never rebase pushed h
 
 ## PR 9A — AI Bridge Capability Tiers & Quota-Aware Equal Balancing (`feat/job-9a-bridge-auto-balance`)
 
-- [ ] **1.1 Tier & Env Config Rename** — `crates/ai-bridge/src/{config.rs,runner.rs,lib.rs}`:
+- [x] **1.1 Tier & Env Config Rename** — `crates/ai-bridge/src/{config.rs,runner.rs,lib.rs}`:
   - Replace `AiTier::{Hydrogen, Neon, Carbon}` with `AiTier::{Fast, Balanced, Deep}` plus Serde aliases (`"hydrogen"`, `"neon"`, `"carbon"`).
   - Add `claude_fast_model`, `claude_balanced_model`, `claude_deep_model`, `agy_fast_model`, `agy_balanced_model`, `agy_deep_model` in `BridgeConfig`, reading `AI_BRIDGE_*_FAST/BALANCED/DEEP_MODEL` with fallback to `AI_BRIDGE_*_HYDROGEN/NEON/CARBON_MODEL`.
   - Verify: `cargo test -p career-os-ai-bridge`
-- [ ] **1.2 Equal Quota-Aware Router** — `crates/ai-bridge/src/{runner.rs,lib.rs,usage.rs}`:
+- [x] **1.2 Equal Quota-Aware Router** — `crates/ai-bridge/src/{runner.rs,lib.rs,usage.rs}`:
   - Add `RoutingMode` (`Auto | PreferClaude | PreferAgy`) on `CompleteRequest` (keeping `primary`/`allow_failover` backward compatibility).
   - Implement round-robin / least-recently-used balancing in `Auto` mode across healthy providers, cooldown/availability checks, and automatic shift away from Claude when fresh statusline 5h or 7d usage `>= 85%`.
   - Expose provider availability & balancing metrics cleanly on `GET /v1/usage`.
   - Add deterministic unit tests with `MockRunner` covering equal alternation, cooldown bypass, high-Claude-quota shift, and failover.
   - Verify: `cargo test -p career-os-ai-bridge`
-- [ ] **1.3 Launchd Template** — `deploy/launchd/com.career-os.ai-bridge.plist.example`:
+- [x] **1.3 Launchd Template** — `deploy/launchd/com.career-os.ai-bridge.plist.example`:
   - Update env var keys to `AI_BRIDGE_*_FAST/BALANCED/DEEP_MODEL` while documenting backward compatibility.
   - Verify: `plutil -lint` (on macOS) and `cargo fmt --check && cargo clippy -p career-os-ai-bridge --all-targets -- -D warnings`.
 

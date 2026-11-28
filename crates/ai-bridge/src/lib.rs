@@ -17,7 +17,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::{
     auth::{bearer_auth_middleware, BearerAuthPolicy},
-    config::CliProviderKind,
+    config::RoutingMode,
     runner::{BridgeRouter, CompleteRequest},
     usage::{cli_available, read_claude_usage},
 };
@@ -48,13 +48,15 @@ async fn healthz(State(state): State<BridgeState>) -> Json<serde_json::Value> {
     let path = std::env::var("PATH").ok();
     let claude = cli_available(&cfg.claude_bin, path.as_deref());
     let agy = cli_available(&cfg.agy_bin, path.as_deref());
-    let primary_ok = match cfg.primary_provider {
-        CliProviderKind::Claude => claude,
-        CliProviderKind::Agy => agy,
+    let primary_ok = match cfg.default_routing_mode {
+        RoutingMode::Auto => claude || agy,
+        RoutingMode::PreferClaude => claude,
+        RoutingMode::PreferAgy => agy,
     };
     Json(serde_json::json!({
         "status": if primary_ok { "ok" } else { "degraded" },
         "service": "career-os-ai-bridge",
+        "routing_mode": cfg.default_routing_mode.as_str(),
         "primary_provider": cfg.primary_provider.as_str(),
         "providers": {
             "claude": { "available": claude },
@@ -99,6 +101,7 @@ async fn v1_usage(State(state): State<BridgeState>) -> Json<serde_json::Value> {
     };
     let stats = state.router.metrics.lock().await.snapshot(Instant::now());
     Json(serde_json::json!({
+        "routing_mode": cfg.default_routing_mode.as_str(),
         "primary_provider": cfg.primary_provider.as_str(),
         "claude": claude,
         "metrics": stats
@@ -160,18 +163,29 @@ mod tests {
         let unauth = client.get(format!("{base}/v1/usage")).send().await.unwrap();
         assert_eq!(unauth.status(), reqwest::StatusCode::UNAUTHORIZED);
 
-        // /v1/complete with valid token -> 200
+        // /v1/complete with valid token -> 200 (accepts both new and legacy tier names)
         let ok = client
             .post(format!("{base}/v1/complete"))
             .bearer_auth("test-bridge-secret")
             .json(&serde_json::json!({
-                "tier": "hydrogen",
+                "tier": "fast",
                 "prompt": "hello"
             }))
             .send()
             .await
             .unwrap();
         assert_eq!(ok.status(), reqwest::StatusCode::OK);
+        let ok_legacy = client
+            .post(format!("{base}/v1/complete"))
+            .bearer_auth("test-bridge-secret")
+            .json(&serde_json::json!({
+                "tier": "hydrogen",
+                "prompt": "hello legacy"
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(ok_legacy.status(), reqwest::StatusCode::OK);
     }
 
     struct RateLimitedRunner;
@@ -205,9 +219,9 @@ mod tests {
         let base = serve(Arc::new(OkRunner)).await;
         let client = reqwest::Client::new();
         for body in [
-            r#"{"tier":"neon"}"#,
+            r#"{"tier":"balanced"}"#,
             "not json",
-            r#"{"tier":"neon","prompt":"p","primary":"codex"}"#,
+            r#"{"tier":"balanced","prompt":"p","primary":"codex"}"#,
         ] {
             let resp = client
                 .post(format!("{base}/v1/complete"))
@@ -230,7 +244,7 @@ mod tests {
         let resp = reqwest::Client::new()
             .post(format!("{base}/v1/complete"))
             .bearer_auth("test-bridge-secret")
-            .json(&serde_json::json!({ "tier": "neon", "prompt": "p" }))
+            .json(&serde_json::json!({ "tier": "balanced", "prompt": "p" }))
             .send()
             .await
             .unwrap();
@@ -245,7 +259,7 @@ mod tests {
         let resp = reqwest::Client::new()
             .post(format!("{base}/v1/complete"))
             .bearer_auth("wrong")
-            .json(&serde_json::json!({ "tier": "neon", "prompt": "p" }))
+            .json(&serde_json::json!({ "tier": "balanced", "prompt": "p" }))
             .send()
             .await
             .unwrap();
@@ -297,6 +311,7 @@ mod tests {
         assert_eq!(json["claude"]["five_hour"]["used_percentage"], 23.5);
         assert_eq!(json["claude"]["seven_day"]["resets_at"], 1_790_400_000);
         assert_eq!(json["claude"]["stale"], false);
+        assert_eq!(json["routing_mode"], "auto");
         assert!(json["metrics"]["providers"]["agy"].is_object());
         assert!(!json.to_string().contains("your-user"));
         let _ = std::fs::remove_dir_all(&dir);
