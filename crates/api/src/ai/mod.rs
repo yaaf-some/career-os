@@ -576,6 +576,10 @@ pub struct DeepEvaluationResult {
     pub report_md: String,
 }
 
+/// How much of each description batch scoring reads. Postings often open with a
+/// long company introduction, so a short excerpt can miss every requirement.
+const TRIAGE_JD_CHARS: usize = 6_000;
+
 pub fn build_triage_batch_prompt(
     profile_summary: &str,
     weights: &crate::profile::ScoringWeights,
@@ -608,7 +612,7 @@ pub fn build_triage_batch_prompt(
         if let Some(wp) = &job.workplace_type {
             user.push_str(&format!("WORKPLACE: {wp}\n"));
         }
-        let snippet: String = job.jd_snippet.chars().take(1800).collect();
+        let snippet: String = job.jd_snippet.chars().take(TRIAGE_JD_CHARS).collect();
         user.push_str(&format!("JD_EXCERPT:\n{snippet}\n"));
     }
     (system, user)
@@ -1007,6 +1011,29 @@ mod tests {
             parse_triage_batch_response(with_breakdown).expect("should parse breakdown json");
         assert_eq!(parsed2[0].breakdown.as_ref().unwrap().role_stack, 10.0);
         assert!(parsed2[0].dealbreaker.as_ref().unwrap().triggered);
+    }
+
+    #[test]
+    fn triage_prompt_reads_past_a_long_company_introduction() {
+        let jd = format!(
+            "{}Requirements: Kubernetes.{}never-sent",
+            "About us. ".repeat(300),
+            "x".repeat(TRIAGE_JD_CHARS)
+        );
+        let (_, usr) = build_triage_batch_prompt(
+            "profile",
+            &crate::profile::ScoringWeights::default(),
+            &[TriageJobInput {
+                id: "job-1".into(),
+                company: "Example Co".into(),
+                title: "Platform Engineer".into(),
+                location: None,
+                workplace_type: None,
+                jd_snippet: jd,
+            }],
+        );
+        assert!(usr.contains("Requirements: Kubernetes."));
+        assert!(!usr.contains("never-sent"));
     }
 
     #[tokio::test]

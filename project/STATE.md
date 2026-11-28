@@ -6,12 +6,12 @@
 ## Current Focus
 
 - **Rethink approved (2026-11-28):** job-workspace redesign in 3 stages: `JOB-13` fix basics -> `JOB-14` groundwork (owner approves the look) -> 10 parallel units. Decisions: job workspace home, swipe rebuilt as optional mode, prose files in Google Docs, targeting/skills as app forms, warm + colorful.
-- **`JOB-13` (`fix/job-13-basics`):** PR open, awaiting owner merge. After merge: back up, deploy, `POST /api/jobs/backfill-descriptions`, score pending, report AI-skipped count and ask before rescoring them, owner phone check.
+- **`JOB-13` shipped & deployed:** PR `#39` (`e68520c`). Live backfill filled 177/179 (2 closed); 191/194 jobs have descriptions; waiting jobs rescored; profile status unchanged. Pending: owner phone check, archive.
 - **`JOB-12` live, not archived:** owner has not yet confirmed a real tailor run.
 
 ## Active Branches / In-Flight Work
 
-- `main` (`8bb464c`): `JOB-9`–`JOB-12` live on M2 (`tailscale serve` port `8080`; Google OAuth connected, Testing token expires weekly).
+- `main` (`e68520c`): `JOB-9`–`JOB-13` live on M2 (`tailscale serve` port `8080`; Google OAuth connected, Testing token expires weekly).
 
 ## Container Baseline
 
@@ -19,7 +19,7 @@
 
 ## Upcoming Priorities
 
-1. Ship `JOB-13`, then `JOB-14` (all new migrations land there so parallel units add none).
+1. `fix/job-13-triage-excerpt` (scorer reads 6,000 chars): after merge + deploy, `POST /api/jobs/backfill-descriptions` with `{"rescore_ai_skipped":true}`, then score pending (owner approved the rescore 2026-11-28). Then `JOB-14` (all new migrations land there).
 2. Wave of 10 units (table in `project/changes/JOB-14-job-workspace/` once written); owner invoked `/batch`, so subagents are allowed for this job.
 3. Optional: Linear backfill `JOB-8`–`JOB-14`; Ashby `embed: true` is in unit 8.
 
