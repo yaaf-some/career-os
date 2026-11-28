@@ -93,16 +93,49 @@ impl DriveClient {
         folder_id: Option<&str>,
         bytes: &[u8],
     ) -> Result<DriveFileRecord, AppError> {
+        self.upload_multipart_with_types(access_token, name, mime_type, mime_type, folder_id, bytes)
+            .await
+    }
+
+    /// Creates a native editable Google Doc in Drive by uploading HTML converted to
+    /// `application/vnd.google-apps.document` using the existing `drive.file` scope.
+    pub async fn create_google_doc_from_html(
+        &self,
+        access_token: &str,
+        name: &str,
+        folder_id: Option<&str>,
+        html: &str,
+    ) -> Result<DriveFileRecord, AppError> {
+        self.upload_multipart_with_types(
+            access_token,
+            name,
+            "application/vnd.google-apps.document",
+            "text/html; charset=UTF-8",
+            folder_id,
+            html.as_bytes(),
+        )
+        .await
+    }
+
+    async fn upload_multipart_with_types(
+        &self,
+        access_token: &str,
+        name: &str,
+        target_mime_type: &str,
+        content_mime_type: &str,
+        folder_id: Option<&str>,
+        bytes: &[u8],
+    ) -> Result<DriveFileRecord, AppError> {
         let boundary = "career_os_drive_boundary_7f9a";
         let metadata = match folder_id {
             Some(fid) => serde_json::json!({
                 "name": name,
-                "mimeType": mime_type,
+                "mimeType": target_mime_type,
                 "parents": [fid]
             }),
             None => serde_json::json!({
                 "name": name,
-                "mimeType": mime_type
+                "mimeType": target_mime_type
             }),
         };
         let meta_str =
@@ -111,7 +144,7 @@ impl DriveClient {
         let mut body = Vec::with_capacity(meta_str.len() + bytes.len() + 256);
         body.extend_from_slice(
             format!(
-                "--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{meta_str}\r\n--{boundary}\r\nContent-Type: {mime_type}\r\n\r\n"
+                "--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{meta_str}\r\n--{boundary}\r\nContent-Type: {content_mime_type}\r\n\r\n"
             )
             .as_bytes(),
         );
@@ -186,6 +219,144 @@ impl DriveClient {
             "drive export failed for all text formats".to_string(),
         ))
     }
+}
+
+pub fn google_doc_edit_url(record: &DriveFileRecord) -> String {
+    record
+        .web_view_link
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("https://docs.google.com/document/d/{}/edit", record.id))
+}
+
+fn escape_html(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    for ch in raw.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+fn apply_delimited_tag(input: &str, marker: &str, open_tag: &str, close_tag: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut rest = input;
+    while let Some(start) = rest.find(marker) {
+        out.push_str(&rest[..start]);
+        let after_start = &rest[start + marker.len()..];
+        if let Some(end) = after_start.find(marker) {
+            if end > 0 {
+                out.push_str(open_tag);
+                out.push_str(&after_start[..end]);
+                out.push_str(close_tag);
+                rest = &after_start[end + marker.len()..];
+                continue;
+            }
+        }
+        out.push_str(marker);
+        rest = after_start;
+    }
+    out.push_str(rest);
+    out
+}
+
+fn render_inline_markdown(raw: &str) -> String {
+    let escaped = escape_html(raw);
+    let bolded = apply_delimited_tag(&escaped, "**", "<strong>", "</strong>");
+    apply_delimited_tag(&bolded, "*", "<em>", "</em>")
+}
+
+/// Converts simple ATS-friendly Markdown to self-contained, HTML-escaped markup
+/// suitable for Drive's HTML -> Google Doc import.
+pub fn markdown_to_doc_html(title: &str, markdown: &str) -> String {
+    let mut body = String::new();
+    let mut in_list = false;
+    let mut para_lines: Vec<String> = Vec::new();
+
+    let flush_para = |buf: &mut Vec<String>, out: &mut String| {
+        if !buf.is_empty() {
+            out.push_str("<p>");
+            out.push_str(&buf.join(" "));
+            out.push_str("</p>\n");
+            buf.clear();
+        }
+    };
+    let close_list = |in_list: &mut bool, out: &mut String| {
+        if *in_list {
+            out.push_str("</ul>\n");
+            *in_list = false;
+        }
+    };
+
+    for raw_line in markdown.lines() {
+        let trimmed = raw_line.trim();
+        if trimmed.is_empty() {
+            flush_para(&mut para_lines, &mut body);
+            close_list(&mut in_list, &mut body);
+            continue;
+        }
+
+        if trimmed == "---" || trimmed == "***" {
+            flush_para(&mut para_lines, &mut body);
+            close_list(&mut in_list, &mut body);
+            body.push_str("<hr>\n");
+            continue;
+        }
+
+        let heading = [("h4", "#### "), ("h3", "### "), ("h2", "## "), ("h1", "# ")]
+            .into_iter()
+            .find_map(|(tag, prefix)| trimmed.strip_prefix(prefix).map(|text| (tag, text)));
+
+        if let Some((tag, text)) = heading {
+            flush_para(&mut para_lines, &mut body);
+            close_list(&mut in_list, &mut body);
+            body.push_str(&format!(
+                "<{tag}>{}</{tag}>\n",
+                render_inline_markdown(text.trim())
+            ));
+            continue;
+        }
+
+        if let Some(item) = trimmed
+            .strip_prefix("- ")
+            .or_else(|| trimmed.strip_prefix("* "))
+        {
+            flush_para(&mut para_lines, &mut body);
+            if !in_list {
+                body.push_str("<ul>\n");
+                in_list = true;
+            }
+            body.push_str(&format!(
+                "<li>{}</li>\n",
+                render_inline_markdown(item.trim())
+            ));
+            continue;
+        }
+
+        close_list(&mut in_list, &mut body);
+        para_lines.push(render_inline_markdown(trimmed));
+    }
+
+    flush_para(&mut para_lines, &mut body);
+    close_list(&mut in_list, &mut body);
+
+    format!(
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>{}</title>\
+         <style>body{{font-family:Arial,sans-serif;line-height:1.45;color:#111;max-width:760px;margin:0 auto;}}\
+         h1{{font-size:18pt;margin:0 0 8pt;}}h2{{font-size:12pt;margin:14pt 0 4pt;border-bottom:1px solid #ddd;padding-bottom:2pt;}}\
+         h3,h4{{font-size:10.5pt;margin:10pt 0 3pt;}}ul{{margin:4pt 0 8pt 18pt;padding:0;}}li{{margin:2pt 0;}}\
+         p{{margin:4pt 0 6pt;}}hr{{border:none;border-top:1px solid #ddd;margin:10pt 0;}}</style></head>\
+         <body>\n{body}</body></html>",
+        escape_html(title)
+    )
 }
 
 #[cfg(test)]
@@ -297,6 +468,59 @@ mod tests {
         assert_eq!(
             client.export_doc_markdown("tok", "doc-2").await.unwrap(),
             "Plain text fallback"
+        );
+    }
+
+    #[test]
+    fn markdown_to_doc_html_escapes_html_and_renders_blocks() {
+        let html = markdown_to_doc_html(
+            "Resume <Acme>",
+            "# Candidate\n\n## Experience\n- Built **Rust** APIs & *SQLite* <script>alert(1)</script>\n\n---\n\nClosing line.\n",
+        );
+        assert!(html.contains("<title>Resume &lt;Acme&gt;</title>"));
+        assert!(html.contains("<h1>Candidate</h1>"));
+        assert!(html.contains("<h2>Experience</h2>"));
+        assert!(html.contains("<li>Built <strong>Rust</strong> APIs &amp; <em>SQLite</em> &lt;script&gt;alert(1)&lt;/script&gt;</li>"));
+        assert!(html.contains("<hr>"));
+        assert!(html.contains("<p>Closing line.</p>"));
+        assert!(!html.contains("<script>"));
+    }
+
+    #[tokio::test]
+    async fn creates_google_doc_from_html_via_multipart() {
+        let app = Router::new().route(
+            "/files",
+            post(|body: String| async move {
+                assert!(body.contains("application/vnd.google-apps.document"));
+                assert!(body.contains("Content-Type: text/html; charset=UTF-8"));
+                assert!(body.contains("<h1>Resume</h1>"));
+                assert!(body.contains("\"parents\":[\"out-folder\"]"));
+                Json(serde_json::json!({
+                    "id": "gdoc-42",
+                    "name": "Resume - Acme",
+                    "webViewLink": "https://docs.google.com/document/d/gdoc-42/edit",
+                    "mimeType": "application/vnd.google-apps.document"
+                }))
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let client =
+            DriveClient::new().with_bases(format!("http://{addr}"), format!("http://{addr}"));
+        let rec = client
+            .create_google_doc_from_html(
+                "tok",
+                "Resume - Acme",
+                Some("out-folder"),
+                "<html><body><h1>Resume</h1></body></html>",
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            google_doc_edit_url(&rec),
+            "https://docs.google.com/document/d/gdoc-42/edit"
         );
     }
 }

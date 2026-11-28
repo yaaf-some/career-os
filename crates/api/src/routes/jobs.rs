@@ -7,6 +7,7 @@ use sqlx::FromRow;
 use utoipa::{IntoParams, ToSchema};
 
 use crate::{
+    ai::TailorEvidenceBullet,
     error::AppError,
     integrations::scanner::{canonicalize_url_key, ScannedJob},
     state::AppState,
@@ -97,12 +98,24 @@ pub struct ListJobsResponse {
     pub total: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct TailorRunSummary {
+    pub id: String,
+    pub tier: String,
+    pub provider: String,
+    pub model: String,
+    pub grounded_bullets: Vec<TailorEvidenceBullet>,
+    pub created_at: String,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct JobDetailResponse {
     pub job: JobRecord,
     pub evaluations: Vec<EvaluationRecord>,
     pub application: Option<ApplicationRecord>,
     pub drive_artifacts: Vec<DriveArtifactRecord>,
+    /// Latest tailor run metadata + grounded bullets (JOB-12), if tailored.
+    pub latest_tailor: Option<TailorRunSummary>,
     /// Gmail threads linked to the application (newest first).
     pub gmail_threads: Vec<GmailThreadRecord>,
     /// Calendar events linked to the application (soonest first).
@@ -307,6 +320,37 @@ pub async fn get_job(
     .fetch_all(&state.pool)
     .await?;
 
+    #[derive(FromRow)]
+    struct TailorRunRow {
+        id: String,
+        tier: String,
+        provider: String,
+        model: String,
+        grounded_bullets_json: String,
+        created_at: String,
+    }
+
+    let latest_tailor = sqlx::query_as::<_, TailorRunRow>(
+        r#"
+        SELECT id, tier, provider, model, grounded_bullets_json, created_at
+        FROM tailor_runs
+        WHERE job_id = ?1
+        ORDER BY created_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(&id)
+    .fetch_optional(&state.pool)
+    .await?
+    .map(|row| TailorRunSummary {
+        id: row.id,
+        tier: row.tier,
+        provider: row.provider,
+        model: row.model,
+        grounded_bullets: serde_json::from_str(&row.grounded_bullets_json).unwrap_or_default(),
+        created_at: row.created_at,
+    });
+
     let (gmail_threads, calendar_events, email_draft) = match &application {
         Some(app) => (
             sqlx::query_as::<_, GmailThreadRecord>(
@@ -351,6 +395,7 @@ pub async fn get_job(
         evaluations,
         application,
         drive_artifacts,
+        latest_tailor,
         gmail_threads,
         calendar_events,
         email_draft,
@@ -615,6 +660,20 @@ mod tests {
                 title: "Resume — Example Co".into(),
                 created_at: "2026-11-22T12:00:00Z".into(),
             }],
+            latest_tailor: Some(TailorRunSummary {
+                id: "tailor-1".into(),
+                tier: "deep".into(),
+                provider: "claude".into(),
+                model: "opus".into(),
+                grounded_bullets: vec![TailorEvidenceBullet {
+                    id: "b1".into(),
+                    source_file: "profile/experience.md".into(),
+                    section: "Platform".into(),
+                    text: "Owned multi-cluster Kubernetes reliability and CI/CD pipelines.".into(),
+                    relevance_note: "Matches platform reliability requirements.".into(),
+                }],
+                created_at: "2026-11-22T12:00:00Z".into(),
+            }),
             gmail_threads: vec![GmailThreadRecord {
                 id: "thr-1".into(),
                 thread_id: "gmail-thread-1".into(),

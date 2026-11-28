@@ -837,6 +837,130 @@ impl LoadedProfile {
 
         Some(truncate_chars(&parts.join("\n\n"), max_chars))
     }
+
+    /// Builds a strictly factual candidate dossier for resume & cover-letter tailoring.
+    /// Excludes `psych-and-vibe.md` (`never_paste_verbatim_into_cv`), `not_my_lane`,
+    /// `active_learning_wip` as production claims, and all `tbd` sections.
+    pub fn build_tailoring_dossier(
+        &self,
+        cached_docs: &[(String, String)],
+        max_chars: usize,
+    ) -> Option<String> {
+        if !self.loaded {
+            return None;
+        }
+
+        let mut parts = Vec::new();
+        parts.push(
+            "TAILORING GROUNDING RULES (STRICT):\n\
+             - Cite ONLY verified/draft facts explicitly present in the candidate sources below.\n\
+             - NEVER fabricate employers, dates, job titles, metrics, technologies, or degrees.\n\
+             - NEVER infer `not_my_lane` or undecided `tbd` topics.\n\
+             - Keep `[WIP]` flags accurate if referencing work-in-progress projects.\n\
+             - Every item in `grounded_bullets` MUST cite the exact `source_file` header shown below."
+                .to_string(),
+        );
+
+        if let Some(t) = &self.targeting {
+            let mut lines =
+                vec!["## Candidate Meta (source_file: profile/targeting.yml)".to_string()];
+            if let Some(yoe) = t.candidate.years_of_experience {
+                lines.push(format!("- Years of experience: {yoe}"));
+            }
+            if !t.candidate.authorized_in.is_empty() {
+                lines.push(format!(
+                    "- Work authorization: {}",
+                    t.candidate.authorized_in.join(", ")
+                ));
+            }
+            if let Some(home) = &t.candidate.home_location {
+                lines.push(format!("- Home area: {home}"));
+            }
+            if !t.roles.primary.is_empty() {
+                lines.push(format!("- Target roles: {}", t.roles.primary.join(", ")));
+            }
+            if lines.len() > 1 {
+                parts.push(lines.join("\n"));
+            }
+        }
+
+        if let Some(identity) = &self.identity {
+            if identity.frontmatter.status.as_deref() != Some("tbd") {
+                let clean = strip_tbd_sections(&identity.body);
+                if !clean.is_empty() {
+                    parts.push(format!(
+                        "## Identity & Positioning (source_file: {})\n{}",
+                        identity.path, clean
+                    ));
+                }
+            }
+        }
+
+        if let Some(exp) = &self.experience {
+            if exp.frontmatter.status.as_deref() != Some("tbd") {
+                let clean = strip_tbd_sections(&exp.body);
+                if !clean.is_empty() {
+                    parts.push(format!(
+                        "## Experience (source_file: {})\n{}",
+                        exp.path, clean
+                    ));
+                }
+            }
+        }
+
+        if let Some(skills) = &self.skills {
+            let mut lines =
+                vec!["## Verified Skills (source_file: profile/skills.yml)".to_string()];
+            let prod = flatten_skill_value(&skills.strong_production);
+            if !prod.is_empty() {
+                lines.push("- Strong production:".into());
+                for item in prod {
+                    lines.push(format!("  * {item}"));
+                }
+            }
+            let hands = flatten_skill_value(&skills.working_hands_on);
+            if !hands.is_empty() {
+                lines.push("- Working hands-on:".into());
+                for item in hands {
+                    lines.push(format!("  * {item}"));
+                }
+            }
+            if lines.len() > 1 {
+                parts.push(lines.join("\n"));
+            }
+        }
+
+        for proj in &self.projects {
+            if proj.frontmatter.status.as_deref() == Some("tbd") {
+                continue;
+            }
+            let clean = strip_tbd_sections(&proj.body);
+            if clean.is_empty() {
+                continue;
+            }
+            let wip_tag = if proj.frontmatter.wip == Some(true) {
+                " [WIP]"
+            } else {
+                ""
+            };
+            parts.push(format!(
+                "## Project: {}{} (source_file: {})\n{}",
+                proj.name, wip_tag, proj.path, clean
+            ));
+        }
+
+        for (title, raw_md) in cached_docs {
+            let clean = strip_tbd_sections(raw_md.trim());
+            if !clean.is_empty() {
+                parts.push(format!(
+                    "## Synced Project Report: {title} (source_file: project_doc:{title})\n{}",
+                    truncate_chars(&clean, 3_000)
+                ));
+            }
+        }
+
+        Some(truncate_chars(&parts.join("\n\n"), max_chars))
+    }
 }
 
 #[cfg(test)]
@@ -977,6 +1101,35 @@ not_my_lane:
         assert!(deep_dossier.contains("Full report body"));
         assert!(!deep_dossier.contains("secret undecided timeline"));
         assert!(!deep_dossier.contains("Secret hobby placeholder"));
+
+        let empty_profile = LoadedProfile::default();
+        assert!(empty_profile.build_tailoring_dossier(&[], 10_000).is_none());
+
+        let tailor_dossier = loaded
+            .build_tailoring_dossier(
+                &[(
+                    "Migration Report".into(),
+                    "Reduced p99 latency by 40%.".into(),
+                )],
+                20_000,
+            )
+            .unwrap();
+        assert!(tailor_dossier.contains("source_file: profile/experience.md"));
+        assert!(tailor_dossier.contains("Example Co"));
+        assert!(tailor_dossier.contains("source_file: profile/identity.md"));
+        assert!(tailor_dossier.contains("source_file: profile/skills.yml"));
+        assert!(tailor_dossier.contains("Kubernetes, ArgoCD"));
+        assert!(
+            tailor_dossier.contains("Project Alpha [WIP] (source_file: profile/projects/alpha.md)")
+        );
+        assert!(tailor_dossier.contains("source_file: project_doc:Migration Report"));
+        assert!(tailor_dossier.contains("Reduced p99 latency by 40%."));
+        // Strictly excluded from CV factual claims:
+        assert!(!tailor_dossier.contains("psych-and-vibe"));
+        assert!(!tailor_dossier.contains("Click-ops"));
+        assert!(!tailor_dossier.contains("Aerospace MBSE"));
+        assert!(!tailor_dossier.contains("Secret TBD Project"));
+        assert!(!tailor_dossier.contains("secret undecided timeline"));
 
         let _ = fs::remove_dir_all(root);
     }

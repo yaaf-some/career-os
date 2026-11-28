@@ -5,7 +5,7 @@ use utoipa::OpenApi;
 use crate::{
     ai::{
         AiRouting, AiTier, CliKind, DealbreakerFlag, DeepEvaluationResult, ProjectDocDigest,
-        RoutingMode, TriageScoreBreakdown, TriageScoreItem,
+        RoutingMode, TailorEvidenceBullet, TriageScoreBreakdown, TriageScoreItem,
     },
     error::ErrorResponse,
     profile::{ProfileFileStatus, ProfileTargetingSummary, ScoringWeights},
@@ -24,6 +24,7 @@ use crate::{
             ApplicationRecord, CalendarEventRecord, DriveArtifactRecord, EmailDraftRecord,
             EvaluationRecord, GmailThreadRecord, IngestJobInput, IngestJobsRequest,
             IngestJobsResponse, JobDetailResponse, JobRecord, ListJobsResponse, QuickAddJobRequest,
+            TailorRunSummary,
         },
         profile::{ProfileStatusResponse, ProjectDocSummary, SyncProjectDocsResponse},
         settings::{
@@ -34,6 +35,7 @@ use crate::{
             CreateSourceRequest, DeleteSourceResponse, FilteredAuditRecord, ListSourcesResponse,
             SourceRecord, TriggerScanRequest, TriggerScanResponse, UpdateSourceRequest,
         },
+        tailor::{TailorJobRequest, TailorJobResponse},
         tracker::{
             ApplicationWithJob, ListApplicationsResponse, StageCount, TrackerEntry,
             TrackerResponse, TrackerStatsResponse, UpdateApplicationRequest, UpdateTrackerRequest,
@@ -71,6 +73,7 @@ use crate::{
         crate::routes::workspace::get_today,
         crate::routes::comms::save_email_draft,
         crate::routes::comms::create_calendar_reminder,
+        crate::routes::tailor::tailor_job,
         crate::routes::workspace::sync_google_now,
         crate::routes::workspace::link_thread,
         crate::routes::sources::list_sources,
@@ -109,6 +112,10 @@ use crate::{
             QuickAddJobRequest,
             ListJobsResponse,
             JobDetailResponse,
+            TailorRunSummary,
+            TailorEvidenceBullet,
+            TailorJobRequest,
+            TailorJobResponse,
             IngestJobInput,
             IngestJobsRequest,
             IngestJobsResponse,
@@ -220,6 +227,7 @@ mod tests {
         assert!(json.contains("/api/triage/{id}"));
         assert!(json.contains("/api/ai/evaluate/{job_id}"));
         assert!(json.contains("/api/jobs/{id}/commute"));
+        assert!(json.contains("/api/jobs/{id}/tailor"));
         assert!(json.contains("/api/commute/preview"));
         assert!(json.contains("/api/integrations/linear"));
         assert!(json.contains("AiUsageResponse") && json.contains("AiRouting"));
