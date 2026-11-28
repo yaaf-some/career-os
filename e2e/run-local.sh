@@ -27,6 +27,8 @@ cp -R "$ROOT/e2e/fixtures/data" "$TMP/data"
 clean_env=(env -i PATH="$PATH" HOME="$HOME")
 [[ -n "${CARGO_HOME:-}" ]] && clean_env+=(CARGO_HOME="$CARGO_HOME")
 [[ -n "${RUSTUP_HOME:-}" ]] && clean_env+=(RUSTUP_HOME="$RUSTUP_HOME")
+# Worktrees can share one build directory to save disk.
+[[ -n "${CARGO_TARGET_DIR:-}" ]] && clean_env+=(CARGO_TARGET_DIR="$CARGO_TARGET_DIR")
 
 (cd "$ROOT" && "${clean_env[@]}" cargo build -q -p career-os-api)
 

@@ -11,3 +11,4 @@
 
 - The owner asked to finish without further approvals, so the "approve the look" gate was replaced by sending screenshots.
 - `profile/mod.rs` belongs to unit 6 and `routes/profile.rs` to unit 7.
+- Units run two at a time, not ten: the account's Pro 5-hour limit and the Mac's free disk cannot take ten parallel builds.
