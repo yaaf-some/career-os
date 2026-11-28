@@ -42,9 +42,10 @@ something untrue or unhelpful:
 
 - `/api/jobs/{id}/tailor` (next change, JOB-12). `tailorJob` keeps its demo
   fallback until then since the route doesn't exist yet.
-- Ashby non-API fallback: already implemented as opt-in `ashby: { embed: true }`
-  plus automatic fallback on oversize bodies; no auto-fallback on 404 (22% of
-  boards are permanently 404 — would double traffic). Docs note only.
+- Ashby non-API fallback: the scanner already has an opt-in `ashby: { embed: true }`
+  plus an automatic fallback for oversized bodies. It won't fall back on 404
+  either, since 22% of boards always return 404 and that would double traffic.
+  career-os sources can't set the opt-in yet: that's a separate follow-up.
 - Live Linear GraphQL reads (state/priority) — show stored identifiers only.
 - Re-classifying already-synced threads beyond the next sync.
 
@@ -102,6 +103,4 @@ automated = From local-part matches `no-?reply|do-?not-?reply|notifications?|mai
 
 - `docs/architecture.md`: new `/api/integrations/linear`; callback redirect;
   demo-mode rule ("demo data only in `VITE_DEMO_MODE` or on network failure").
-- `README.md`: Ashby `ashby: { embed: true }` note for boards with the posting
-  API off.
 - `project/STATE.md` at archive.

@@ -51,8 +51,8 @@ Single PR (`feat/job-11-hardening`), ~5 small commits. Verify after each task.
 - Verify: `cd web && npm run typecheck && npm test && npm run build`
 
 ### 7. Docs
-- [ ] `docs/architecture.md` (endpoint, redirect, demo-mode rule), `README.md`
-      (Ashby embed note).
+- [x] `docs/architecture.md` (endpoint, redirect, demo-mode rule, needs_reply,
+      commute prefs). README Ashby note dropped (see deviations).
 - [ ] PII scan incl. untracked files; open PR; keep `CI Gate` green.
 
 Then `project-verify-archive` (deploy to M2, curl live endpoints).
@@ -73,3 +73,8 @@ Then `project-verify-archive` (deploy to M2, curl live endpoints).
   now shows an error notice instead of an endless skeleton when `/api/settings`
   fails, plus inline errors for commute preview/save. New tests live in
   `web/src/__tests__/hardening.test.tsx`.
+- Ashby: the scanner supports `ashby: { embed: true }`, but career-os sources
+  (`CreateSourceRequest`: company/provider/careers_url/board_id) have no field
+  that reaches it, so the planned README note would be wrong. No note was
+  added. Ashby stays an open follow-up in `project/STATE.md`: expose an embed
+  opt-in on sources.
