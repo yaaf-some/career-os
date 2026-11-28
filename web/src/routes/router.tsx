@@ -6,7 +6,7 @@ import {
 } from '@tanstack/react-router';
 import { createContext, useContext, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
-import { RoleDetailDrawer } from '@/components/RoleDetailDrawer';
+import { RoleDetailSheet } from '@/components/RoleDetailSheet';
 import { SettingsView } from '@/routes/SettingsView';
 import { SourcesView } from '@/routes/SourcesView';
 import { TodayView } from '@/routes/TodayView';
@@ -33,7 +33,7 @@ function RootLayout() {
       <AppShell>
         <Outlet />
       </AppShell>
-      <RoleDetailDrawer jobId={activeRoleId} onClose={() => setActiveRoleId(null)} />
+      <RoleDetailSheet jobId={activeRoleId} onClose={() => setActiveRoleId(null)} />
     </RoleDrawerContext.Provider>
   );
 }

@@ -11,7 +11,7 @@ import {
   type ApiJobDetailResponse,
   type ApiListJobsResponse,
 } from '@/api/jobs';
-import { RoleDetailDrawer } from '@/components/RoleDetailDrawer';
+import { RoleDetailSheet } from '@/components/RoleDetailSheet';
 import { TriageView } from '@/routes/TriageView';
 // Written by the API's `jobs_fixture_matches_web` test.
 import fixture from './fixtures/jobs.json';
@@ -197,11 +197,18 @@ describe('live API job routes', () => {
   it('TriageView renders live jobs, unscored last, without fake breakdowns', async () => {
     renderWithQuery(<TriageView onSelectRole={() => {}} />);
     await waitFor(() => expect(screen.getByText('Staff Platform Engineer')).toBeTruthy());
-    expect(screen.getByText('Backend Engineer')).toBeTruthy();
-    expect(screen.getByText('Match 88/100')).toBeTruthy();
-    expect(screen.getByText('Match unscored')).toBeTruthy();
-    expect(screen.queryByText('Role & Stack')).toBeNull();
-    const titles = screen.getAllByRole('button', { name: /Engineer$/ }).map((b) => b.textContent);
+    expect(screen.getByText('88')).toBeTruthy();
+    expect(screen.queryByText(/Role \d+\/35/)).toBeNull();
+
+    // Switch to List mode to verify scored-before-unscored ordering across all rows
+    fireEvent.click(screen.getByRole('radio', { name: 'List' }));
+    await waitFor(() => expect(screen.getByText('Backend Engineer')).toBeTruthy());
+    expect(screen.getByText('88/100')).toBeTruthy();
+    expect(screen.getByText('unscored')).toBeTruthy();
+    const titles = screen
+      .getAllByRole('button', { name: /Engineer/ })
+      .map((b) => b.querySelector('.truncate')?.textContent)
+      .filter(Boolean);
     expect(titles).toEqual(['Staff Platform Engineer', 'Backend Engineer']);
   });
 
@@ -239,26 +246,26 @@ describe('live API job routes', () => {
     expect(mapped.dealbreakerReason).toBe('Aerospace hardware role');
   });
 
-  it('drawer shows the live job detail and deep evaluation', async () => {
-    renderWithQuery(<RoleDetailDrawer jobId="job-1" onClose={() => {}} />);
-    await waitFor(() => expect(screen.getByText('Match 88/100')).toBeTruthy());
+  it('sheet shows the live job detail and deep evaluation', async () => {
+    renderWithQuery(<RoleDetailSheet jobId="job-1" onClose={() => {}} />);
+    await waitFor(() => expect(screen.getByText('88')).toBeTruthy());
     expect(screen.getByText('stage: interview')).toBeTruthy();
     expect(screen.getByText('Strong platform match.')).toBeTruthy();
     expect(screen.getByText(/Build the platform\./)).toBeTruthy();
-    expect(screen.queryByText('Key Requirements')).toBeNull();
+    expect(screen.queryByText('Key requirements')).toBeNull();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Deep Analysis (A–G)' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Deep analysis' }));
     await waitFor(() => expect(screen.getByText('4.1 / 5 · Staff Platform Engineer')).toBeTruthy());
     expect(screen.getByText('claude · sonnet')).toBeTruthy();
     expect(screen.getByText('No Kubernetes operator experience.')).toBeTruthy();
     expect(screen.queryByText(/Confidence:/)).toBeNull();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Gmail & Calendar' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Comms & reminders' }));
     await waitFor(() => expect(screen.getByText('Example Co: next steps')).toBeTruthy());
     expect(screen.getByText('Needs reply')).toBeTruthy();
     expect(screen.getByText('Example Co interview')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Tailor Docs' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Tailor docs' }));
     const tailor = await screen.findByRole('button', { name: /Tailoring: not available yet/ });
     expect((tailor as HTMLButtonElement).disabled).toBe(true);
   });
