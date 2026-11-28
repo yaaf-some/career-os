@@ -73,14 +73,14 @@ Everything so far ran in throwaway compose projects on this M2 Mac mini (`your-m
 
 ## Acceptance Criteria
 
-- [ ] **AC1** The `career-os` compose project is healthy from GHCR images. After `docker compose restart` and a Docker Desktop restart, both containers come back healthy without manual steps.
-- [ ] **AC2** From a tailnet browser, `https://your-mac-mini.your-tailnet.ts.net:8080` loads in live mode (not demo). `curl` with a wrong `Tailscale-User-Login` header gets 403. The other `/` service still works.
-- [ ] **AC3** The importer creates sources for all `portals.yml` tracked companies and ingests the pending pipeline URLs. A second run creates no duplicates. Counts are reported.
-- [ ] **AC4** A manual ATS scan runs. Jobs arrive and hydrogen scoring scores at least one batch through the bridge.
-- [ ] **AC5** JOB-6 AC11: Google connected with `gmail.compose`, Sync now succeeded, at least one thread linked (or a manual link works), a draft appears in Gmail Drafts unsent, and a reminder appears in Calendar. Test items are deleted afterwards after asking Yaaf.
-- [ ] **AC6** The nightly backup job is loaded. One manual run produces a `.backup` file that passes `PRAGMA integrity_check`. A restore into a throwaway volume boots the app with the same job count.
+- [x] **AC1** The `career-os` compose project is healthy from GHCR images. After `docker compose restart` and a Docker Desktop restart, both containers come back healthy without manual steps.
+- [x] **AC2** From a tailnet browser, `https://your-mac-mini.your-tailnet.ts.net:8080` loads in live mode (not demo). `curl` with a wrong `Tailscale-User-Login` header gets 403. The other `/` service still works.
+- [x] **AC3** The importer creates sources for all `portals.yml` tracked companies and ingests the pending pipeline URLs. A second run creates no duplicates. Counts are reported.
+- [x] **AC4** A manual ATS scan runs. Jobs arrive and hydrogen scoring scores at least one batch through the bridge.
+- [x] **AC5** JOB-6 AC11: Google connected with `gmail.compose`, Sync now succeeded, at least one thread linked (or a manual link works), a draft appears in Gmail Drafts unsent, and a reminder appears in Calendar. Test items are deleted afterwards after asking Yaaf.
+- [x] **AC6** The nightly backup job is loaded. One manual run produces a `.backup` file that passes `PRAGMA integrity_check`. A restore into a throwaway volume boots the app with the same job count.
 - [ ] **AC7** the old career-ops repo is archived (if Q2 = yes).
-- [ ] **AC9** Filtered scan: integration test against a fake sidecar (accepted, rejected and error paths; refuses without `SCANNER_URL`). A live run on a copy of the database ingests only filter-accepted postings.
+- [x] **AC9** Filtered scan: integration test against a fake sidecar (accepted, rejected and error paths; refuses without `SCANNER_URL`). A live run on a copy of the database ingests only filter-accepted postings.
 - [ ] **AC8** README runbook. Checks for the surfaces touched pass: scanner/script tests, `bash -n`, `plutil -lint`, PII grep.
 
 ## Docs Impact

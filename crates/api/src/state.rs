@@ -432,23 +432,28 @@ impl AppState {
         let time_min = now_iso();
         let events = self
             .calendar
-            .list_upcoming_events(&access_token, &time_min, 20)
+            .list_upcoming_events(&access_token, &time_min, CALENDAR_PAGE as u32)
             .await?;
 
+        const CALENDAR_PAGE: usize = 20;
         let mut cal_count = 0_i64;
+        let mut last_start: Option<String> = None;
         for evt in &events {
-            let starts_at = evt
-                .start
-                .date_time
-                .clone()
-                .or_else(|| evt.start.date.clone())
-                .unwrap_or_else(|| now.clone());
-            let ends_at = evt
-                .end
-                .date_time
-                .clone()
-                .or_else(|| evt.end.date.clone())
-                .unwrap_or_else(|| starts_at.clone());
+            let starts_at = crate::sync::calendar::normalize_event_time(
+                &evt.start
+                    .date_time
+                    .clone()
+                    .or_else(|| evt.start.date.clone())
+                    .unwrap_or_else(|| now.clone()),
+            );
+            let ends_at = crate::sync::calendar::normalize_event_time(
+                &evt.end
+                    .date_time
+                    .clone()
+                    .or_else(|| evt.end.date.clone())
+                    .unwrap_or_else(|| starts_at.clone()),
+            );
+            last_start = Some(starts_at.clone());
             let title = evt
                 .summary
                 .clone()
@@ -468,7 +473,6 @@ impl AppState {
                 )
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                 ON CONFLICT(gcal_event_id) DO UPDATE SET
-                    kind = excluded.kind,
                     title = excluded.title,
                     starts_at = excluded.starts_at,
                     ends_at = excluded.ends_at,
@@ -487,6 +491,21 @@ impl AppState {
             .await?;
             cal_count += 1;
         }
+
+        // Events deleted/cancelled in Google drop out of the list; remove them
+        // from the window Google actually returned (all upcoming if the page
+        // wasn't full, otherwise up to the last returned start).
+        let kept: Vec<String> = events.iter().map(|e| e.id.clone()).collect();
+        let window_end = (events.len() >= CALENDAR_PAGE)
+            .then_some(last_start)
+            .flatten();
+        crate::sync::calendar::prune_missing_events(
+            &self.pool,
+            &kept,
+            &time_min,
+            window_end.as_deref(),
+        )
+        .await?;
 
         crate::sync::link::relink_all(&self.pool).await?;
 

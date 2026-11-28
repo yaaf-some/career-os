@@ -6,9 +6,9 @@
 ## Current Focus
 
 - **`JOB-5` Verified + archived 2026-11-27** (`project/changes/archive/JOB-5-ai-bridge/`). #12/#13/#14 merged. AC12 passed on the M2 under Docker Desktop. statusLine hook installed (Usage Bar live).
-- **`JOB-6` in progress** (`project/changes/JOB-6-live-google-sync/`, approved 2026-11-27: Q1 `gmail.compose` yes, Q2 Linear yes, Google sync every 12 h). PR A `feat/job-6a-read`: linking, Today, Tracker, quick-add, job comms, Sync now, web read side.
+- **`JOB-6` Verified + archived 2026-11-28** (`project/changes/archive/JOB-6-live-google-sync/`). Google is live on the Mac mini (drafts only, never sent).
 - **`JOB-7` in progress** (`project/changes/JOB-7-mac-mini-cutover/`): live compose project `career-os` on this Mac, at `https://<host>:8080` on the tailnet. Old career-ops sources (56, disabled) and the pipeline (36 jobs) imported. Backups via `scripts/backup-db.sh`.
-- **Exact Next Concrete Step:** merge `feat/job-7-filtered-scans`, then pull, enable sources and scan live (expect ~150 jobs per full scan). Yaaf adds the Google client ID and secret (JOB-7 Q1), then JOB-6 AC11 live. Nightly backups are running (03:30).
+- **Exact Next Concrete Step:** merge `fix/calendar-prune-and-job6-archive`, then pull and run Sync now to prune the stale test event from Today. Open in JOB-7: archive the old career-ops repo (Q2, needs Yaaf's OK) and Linear keys (Q3, optional); then verify-archive JOB-7.
 
 ## Done This Session
 
@@ -22,7 +22,7 @@
 
 ## Upcoming
 
-1. Follow-ups to file: `/api/jobs/{id}/tailor` backend; web demo-fallback still hides 404/5xx on sources/settings/commute routes; hydrogen gives no score breakdown.
+1. Follow-ups to file: `/api/jobs/{id}/tailor` backend; web demo-fallback still hides 404/5xx on sources/settings/commute routes; hydrogen gives no score breakdown; `needs_reply` flags every synced inbox thread; scanner title filter lets aerospace "Systems Engineer" roles through; one tracked company's Ashby board has no public API.
 2. Kiri: AC12 ran on Docker Desktop; re-check `host.docker.internal:8787` if switching runtime.
 3. `JOB-7` Mac mini cutover (compose + `tailscale serve` + launchd).
 
