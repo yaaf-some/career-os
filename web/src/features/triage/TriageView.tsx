@@ -1,47 +1,50 @@
-import {
-  Bookmark,
-  ChevronLeft,
-  ChevronRight,
-  ChevronUp,
-  List,
-  MapPin,
-  Plus,
-  X,
-} from 'lucide-react';
+import { History, List, Plus, SlidersHorizontal, Undo2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { formatMatchScore } from '@/api/jobs';
-import { useJobsQuery, useTriageMutation } from '@/api/queries';
+import { useJobsQuery } from '@/api/queries';
 import type { JobSummary } from '@/api/types';
 import { useAppActions } from '@/components/AppShell';
-import { CommuteBadge } from '@/components/CommuteBadge';
-import { FitHorizon } from '@/components/FitHorizon';
 import {
-  Badge,
   Button,
   Empty,
-  InsetGroup,
-  Kbd,
-  PaperSheet,
+  Input,
+  Notice,
+  PageHeader,
+  ScoreRing,
   SegmentedControl,
   Sheet,
   SheetClose,
   SheetTitle,
   Skeleton,
-  useToast,
+  Switch,
 } from '@/components/ui';
-import { cn } from '@/lib/cn';
+import { ActionDock } from './ActionDock';
+import type { VerdictAction } from './api';
+import { canAnimate, CardStack, type CardExit } from './CardStack';
+import {
+  readPrefs,
+  sortAndFilter,
+  writePrefs,
+  type QueuePrefs,
+  type SortKey,
+  type TriageMode,
+} from './queue';
+import { QueueComplete } from './QueueComplete';
+import { TriageList } from './TriageList';
+import { UndoHistory } from './UndoHistory';
+import { describeEntry, useVerdicts, type BulkFailure } from './verdictStore';
 
-type ViewMode = 'queue' | 'list';
-type Verdict = 'shortlist' | 'skip';
+const headerButton = 'tap-control paper-sheet relative flex h-11 w-11 items-center justify-center rounded-[12px] text-[var(--wp-ink)]';
 
-interface PendingVerdict {
-  jobId: string;
-  company: string;
-  action: Verdict;
-  timerId: number;
+/** True while a keystroke belongs to a field, a dialog or the browser. */
+function shortcutBlocked(e: KeyboardEvent): boolean {
+  // A held key must not run through the queue.
+  if (e.repeat || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return true;
+  const el = document.activeElement;
+  if (el instanceof HTMLInputElement && el.type !== 'checkbox') return true;
+  if (el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return true;
+  if (el instanceof HTMLElement && el.isContentEditable) return true;
+  return Boolean(document.querySelector('[role="dialog"], [role="alertdialog"]'));
 }
-
-const DRAG_COMMIT_PX = 96;
 
 export function TriageView({
   onSelectRole,
@@ -51,250 +54,294 @@ export function TriageView({
   undoDelayMs?: number;
 }) {
   const jobsQuery = useJobsQuery();
-  const triageMutation = useTriageMutation();
   const { openQuickAdd } = useAppActions();
-  const { showToast, dismissToast } = useToast();
+  const { hidden, history, saved, skipped, commit, commitBulk, undo } = useVerdicts();
 
-  const [viewMode, setViewMode] = useState<ViewMode>('queue');
-  const [focusIndex, setFocusIndex] = useState(0);
+  const [prefs, setPrefs] = useState<QueuePrefs>(readPrefs);
+  const [query, setQuery] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [browserOpen, setBrowserOpen] = useState(false);
-  const [hiddenVerdicts, setHiddenVerdicts] = useState<Record<string, Verdict>>({});
-  const [dragDx, setDragDx] = useState(0);
-  const [dragging, setDragging] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [failures, setFailures] = useState<BulkFailure[]>([]);
+  const [exits, setExits] = useState<CardExit[]>([]);
+  const dockRef = useRef<HTMLDivElement>(null);
+  const exitKey = useRef(0);
+  const lastIndex = useRef(0);
 
-  const pendingRef = useRef<PendingVerdict | null>(null);
-  const mutateRef = useRef(triageMutation.mutateAsync);
-  mutateRef.current = triageMutation.mutateAsync;
-  const dragRef = useRef<{ pointerId: number; startX: number } | null>(null);
+  const changePrefs = (patch: Partial<QueuePrefs>) => {
+    const next = { ...prefs, ...patch };
+    setPrefs(next);
+    writePrefs(next);
+  };
+  /** A new order or filter starts again at the top. */
+  const toTop = () => {
+    lastIndex.current = 0;
+    setFocusId(null);
+  };
 
-  const unhide = useCallback((jobId: string) => {
-    setHiddenVerdicts((prev) => {
-      const copy = { ...prev };
-      delete copy[jobId];
-      return copy;
-    });
-  }, []);
-
-  const flushPending = useCallback(() => {
-    const p = pendingRef.current;
-    if (!p) return;
-    window.clearTimeout(p.timerId);
-    pendingRef.current = null;
-    // `mutateAsync` so a failure is still reported after leaving this view.
-    mutateRef.current({ id: p.jobId, payload: { action: p.action } }).catch(() => {
-      unhide(p.jobId);
-      showToast({ message: `Could not save your choice for ${p.company}. It is back in the queue.` });
-    });
-  }, [showToast, unhide]);
-
-  // Send the held verdict before the page is hidden, closed or suspended.
-  useEffect(() => {
-    const onHidden = () => {
-      if (document.visibilityState === 'hidden') flushPending();
-    };
-    document.addEventListener('visibilitychange', onHidden);
-    window.addEventListener('pagehide', flushPending);
-    return () => {
-      document.removeEventListener('visibilitychange', onHidden);
-      window.removeEventListener('pagehide', flushPending);
-      flushPending();
-    };
-  }, [flushPending]);
-
-  const jobs = jobsQuery.data?.jobs ?? [];
-
-  const visibleJobs = useMemo(
+  const queue = useMemo(
     () =>
-      jobs
-        .filter((j) => j.triageStatus === 'pending' && !hiddenVerdicts[j.id])
-        .sort((a, b) => (b.matchScore ?? -1) - (a.matchScore ?? -1)),
-    [jobs, hiddenVerdicts],
+      (jobsQuery.data?.jobs ?? []).filter(
+        (j) => j.triageStatus === 'pending' && !j.archivedAt && !hidden.has(j.id),
+      ),
+    [jobsQuery.data, hidden],
+  );
+  const jobs = useMemo(
+    () =>
+      sortAndFilter(queue, {
+        sort: prefs.sort,
+        query,
+        hideDealbreakers: prefs.hideDealbreakers,
+      }),
+    [queue, prefs.sort, prefs.hideDealbreakers, query],
   );
 
-  const clampedIndex = visibleJobs.length === 0 ? 0 : Math.min(focusIndex, visibleJobs.length - 1);
-  const currentJob: JobSummary | undefined = visibleJobs[clampedIndex];
-  const progressPct =
-    visibleJobs.length > 0 ? Math.round(((clampedIndex + 1) / visibleJobs.length) * 100) : 0;
+  const focused = jobs.findIndex((j) => j.id === focusId);
+  const index = focused >= 0 ? focused : Math.max(0, Math.min(lastIndex.current, jobs.length - 1));
+  const current: JobSummary | undefined = jobs[index];
+  // The waiting card wraps around, so whatever is behind is what comes next.
+  const next = jobs.length > 1 ? jobs[(index + 1) % jobs.length] : null;
+  const currentId = current?.id ?? null;
+  const nextId = next?.id ?? null;
 
-  const commitVerdict = useCallback(
-    (action: Verdict, targetJob?: JobSummary) => {
-      const job = targetJob ?? currentJob;
-      if (!job) return;
+  // Pin the card being read: a refresh that re-sorts must not swap it under a thumb.
+  useEffect(() => {
+    if (currentId === null) return;
+    lastIndex.current = index;
+    if (currentId !== focusId) setFocusId(currentId);
+  }, [currentId, focusId, index]);
 
-      flushPending();
-      const capturedIdx = clampedIndex;
-      setHiddenVerdicts((prev) => ({ ...prev, [job.id]: action }));
-      setFocusIndex(Math.max(0, Math.min(capturedIdx, visibleJobs.length - 2)));
+  const mode: TriageMode = prefs.mode;
+  const decidedCount = saved + skipped;
+  const progress =
+    decidedCount + queue.length > 0 ? (decidedCount / (decidedCount + queue.length)) * 100 : 0;
+  const latest = history.find((e) => e.status !== 'undoing');
+  const filtering = query.trim() !== '' || prefs.hideDealbreakers;
+  // The last card still gets to fly off before anything replaces the stack.
+  const flying = mode === 'deck' && exits.length > 0;
 
-      const timerId = window.setTimeout(() => {
-        if (pendingRef.current?.jobId === job.id) flushPending();
-      }, undoDelayMs);
-      pendingRef.current = { jobId: job.id, company: job.company, action, timerId };
-
-      showToast({
-        tone: action === 'shortlist' ? 'success' : 'neutral',
-        message: `${action === 'shortlist' ? 'Saved' : 'Skipped'} ${job.company}`,
-        durationMs: undoDelayMs,
-        actionLabel: 'Undo',
-        onAction: () => {
-          const p = pendingRef.current;
-          if (p?.jobId !== job.id) return;
-          window.clearTimeout(p.timerId);
-          pendingRef.current = null;
-          unhide(job.id);
-          setFocusIndex(capturedIdx);
-        },
-      });
+  const decide = useCallback(
+    (action: VerdictAction, jobId: string, offset = 0) => {
+      const job = jobs.find((j) => j.id === jobId);
+      if (!job || !commit(job, action, undoDelayMs)) return;
+      setFailures([]);
+      if (jobId !== currentId) return;
+      setFocusId(nextId);
+      if (mode === 'deck' && canAnimate()) {
+        const exit = { key: ++exitKey.current, job, action, offset };
+        setExits((prev) => [...prev.slice(-2), exit]);
+      }
     },
-    [clampedIndex, currentJob, flushPending, showToast, undoDelayMs, unhide, visibleJobs.length],
+    [commit, currentId, jobs, mode, nextId, undoDelayMs],
+  );
+  const removeExit = useCallback(
+    (key: number) => setExits((prev) => prev.filter((e) => e.key !== key)),
+    [],
   );
 
-  // Keyboard shortcuts for Focus Queue
+  const takeBack = useCallback(
+    async (key: number) => {
+      setExits([]);
+      const [first] = await undo(key);
+      if (first) setFocusId(first);
+    },
+    [undo],
+  );
+  const latestKey = latest?.key;
+  const undoLatest = useCallback(() => {
+    if (latestKey !== undefined) void takeBack(latestKey);
+  }, [latestKey, takeBack]);
+
+  const decideMany = async (action: VerdictAction, chosen: JobSummary[]) => {
+    setSelected(new Set());
+    setFailures([]);
+    setFailures(await commitBulk(chosen, action));
+  };
+
+  const browse = useCallback(
+    (step: 1 | -1) => {
+      const target = jobs[Math.max(0, Math.min(jobs.length - 1, index + step))];
+      if (target) setFocusId(target.id);
+    },
+    [index, jobs],
+  );
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (viewMode !== 'queue' || browserOpen || !currentJob) return;
-      // A held key must not run through the queue.
-      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
-      const activeEl = document.activeElement;
-      const tag = activeEl?.tagName ?? '';
-      if (
-        ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) ||
-        (activeEl instanceof HTMLElement && activeEl.isContentEditable) ||
-        document.querySelector('[role="dialog"]')
-      ) {
+      if (shortcutBlocked(e)) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z') {
+        e.preventDefault();
+        undoLatest();
         return;
       }
-
-      const key = e.key.toLowerCase();
-      if (key === 's') {
+      if (mode !== 'deck' || !currentId) return;
+      if (key === 's' || key === 'x') {
         e.preventDefault();
-        commitVerdict('shortlist');
-      } else if (key === 'x') {
+        decide(key === 's' ? 'shortlist' : 'skip', currentId);
+      } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
         e.preventDefault();
-        commitVerdict('skip');
-      } else if (e.key === 'ArrowRight') {
+        browse(e.key === 'ArrowRight' ? 1 : -1);
+      } else if (e.key === 'Enter') {
+        // On a focused button or link, Enter already means that control.
+        const control = 'button, a, summary, [role="button"], [role="switch"]';
+        if (document.activeElement?.closest(control)) return;
         e.preventDefault();
-        setFocusIndex((i) => Math.min(i + 1, Math.max(0, visibleJobs.length - 1)));
-      } else if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        setFocusIndex((i) => Math.max(0, i - 1));
+        onSelectRole(currentId);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [browserOpen, commitVerdict, currentJob, viewMode, visibleJobs.length]);
+  }, [browse, currentId, decide, mode, onSelectRole, undoLatest]);
 
-  // Clear stale hidden entries once query refreshes with updated status
-  useEffect(() => {
-    if (Object.keys(hiddenVerdicts).length === 0) return;
-    setHiddenVerdicts((prev) => {
-      let changed = false;
-      const next = { ...prev };
-      for (const job of jobs) {
-        if (next[job.id] && job.triageStatus !== 'pending') {
-          delete next[job.id];
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [jobs, hiddenVerdicts]);
-
-  const endDrag = () => {
-    dragRef.current = null;
-    setDragging(false);
-    setDragDx(0);
-  };
-
-  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (dragRef.current || e.button > 0) return;
-    if ((e.target as HTMLElement).closest('button, a')) return;
-    dragRef.current = { pointerId: e.pointerId, startX: e.clientX };
-    setDragging(true);
-    setDragDx(0);
-    if (typeof e.currentTarget.setPointerCapture === 'function') {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    }
-  };
-
-  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== e.pointerId) return;
-    setDragDx(e.clientX - drag.startX);
-  };
-
-  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== e.pointerId) return;
-    const dx = e.clientX - drag.startX;
-    endDrag();
-    if (dx > DRAG_COMMIT_PX) {
-      commitVerdict('shortlist');
-    } else if (dx < -DRAG_COMMIT_PX) {
-      commitVerdict('skip');
-    }
-  };
-
-  const dragRotate = Math.max(-2.5, Math.min(2.5, dragDx * 0.02));
-  const dragRatio = Math.min(1, Math.abs(dragDx) / DRAG_COMMIT_PX);
+  const left =
+    jobs.length === queue.length ? `${queue.length} left` : `${jobs.length} of ${queue.length} shown`;
+  const lastVerdict = latest ? (
+    <p role="status" className="min-w-0 truncate text-sm text-[var(--wp-secondary)]">
+      {describeEntry(latest)}
+    </p>
+  ) : null;
 
   return (
-    <div className="mx-auto flex h-full max-w-[680px] flex-col gap-5" data-testid="triage-view">
-      {/* Calm Header + Progress */}
-      <div className="space-y-2.5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-baseline gap-3">
-            <h1 className="text-base font-medium text-[var(--wp-ink)]">Triage</h1>
-            <span className="font-mono-meta text-xs text-[var(--wp-muted)]">
-              {visibleJobs.length > 0 ? `${clampedIndex + 1} / ${visibleJobs.length}` : '0 / 0'}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div className="hidden sm:block">
-              <SegmentedControl
-                ariaLabel="Triage view mode"
-                value={viewMode}
-                onValueChange={(m) => {
-                  dismissToast();
-                  setViewMode(m);
-                }}
-                options={[
-                  { value: 'queue', label: 'Queue' },
-                  { value: 'list', label: 'List' },
-                ]}
-              />
-            </div>
-            <button
-              type="button"
-              onClick={openQuickAdd}
-              aria-label="Add job URL"
-              className="tap-control flex h-9 w-9 items-center justify-center rounded-[10px] bg-[var(--wp-raised)] text-[var(--wp-ink)]"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setBrowserOpen(true)}
-              aria-label="Browse queue"
-              className="tap-control flex h-9 w-9 items-center justify-center rounded-[10px] bg-[var(--wp-raised)] text-[var(--wp-ink)]"
-            >
-              <List className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-
-        <div className="h-0.5 w-full overflow-hidden rounded-full bg-[var(--wp-hairline)]">
-          <div
-            className="h-full bg-[var(--wp-accent)] transition-all"
-            style={{ width: `${progressPct}%` }}
+    <div className="mx-auto flex max-w-[680px] flex-col gap-3" data-testid="triage-view">
+      <PageHeader
+        title="Triage"
+        actions={
+          <SegmentedControl<TriageMode>
+            ariaLabel="Triage view mode"
+            value={mode}
+            onValueChange={(m) => {
+              setExits([]);
+              changePrefs({ mode: m });
+            }}
+            options={[
+              { value: 'deck', label: 'Deck' },
+              { value: 'list', label: 'List' },
+            ]}
+            className="[&>button]:min-h-9 [&>button]:min-w-16"
           />
+        }
+      />
+
+      <div className="flex items-center justify-between gap-2">
+        <p className="min-w-0 text-xs text-[var(--wp-secondary)]" data-testid="triage-counts">
+          {jobsQuery.data ? (
+            <>
+              <span className="block font-medium text-[var(--wp-ink)]">{left}</span>
+              <span className="block">{decidedCount} decided this session</span>
+            </>
+          ) : null}
+        </p>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button type="button" onClick={openQuickAdd} aria-label="Add job URL" className={headerButton}>
+            <Plus className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setBrowserOpen(true)}
+            aria-label="Browse queue"
+            className={headerButton}
+          >
+            <List className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setHistoryOpen(true)}
+            aria-label="Undo history"
+            className={headerButton}
+          >
+            <History className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((v) => !v)}
+            aria-label="Sort and filter"
+            aria-expanded={filtersOpen}
+            className={headerButton}
+          >
+            <SlidersHorizontal className="h-5 w-5" />
+            {filtering || prefs.sort !== 'score' ? (
+              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-[var(--wp-accent)]" />
+            ) : null}
+          </button>
         </div>
       </div>
 
+      {filtersOpen ? (
+        <div className="paper-sheet space-y-3 rounded-[14px] p-3" data-testid="triage-filters">
+          <Input
+            type="search"
+            aria-label="Search the queue"
+            placeholder="Title, company, place or keyword"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              toTop();
+            }}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <SegmentedControl<SortKey>
+              ariaLabel="Sort queue"
+              value={prefs.sort}
+              onValueChange={(sort) => {
+                changePrefs({ sort });
+                toTop();
+              }}
+              options={[
+                { value: 'score', label: 'Best fit' },
+                { value: 'newest', label: 'Newest' },
+              ]}
+            />
+            <label className="flex min-h-11 items-center gap-2 text-sm">
+              Hide dealbreakers
+              <Switch
+                ariaLabel="Hide dealbreakers"
+                checked={prefs.hideDealbreakers}
+                onCheckedChange={(hideDealbreakers) => {
+                  changePrefs({ hideDealbreakers });
+                  toTop();
+                }}
+              />
+            </label>
+          </div>
+        </div>
+      ) : null}
+
+      <div
+        className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--wp-raised)]"
+        role="progressbar"
+        aria-label="Share of the queue decided"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(progress)}
+      >
+        <div
+          className="h-full rounded-full bg-[var(--wp-good)] [transition:width_300ms_var(--ease-calm)]"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+
+      {failures.length > 0 ? (
+        <Notice tone="danger">
+          <p className="font-medium">Not updated, still in the queue:</p>
+          <ul className="mt-1 list-disc pl-4">
+            {failures.map((f) => (
+              <li key={f.job.id}>
+                {f.job.title} at {f.job.company}: {f.error}
+              </li>
+            ))}
+          </ul>
+          <button type="button" onClick={() => setFailures([])} className="mt-1 min-h-8 font-medium underline">
+            Dismiss
+          </button>
+        </Notice>
+      ) : null}
+
       {jobsQuery.isLoading ? (
-        <Skeleton className="h-80 w-full rounded-[20px]" />
-      ) : jobsQuery.isError ? (
+        <Skeleton className="h-96 w-full rounded-[22px]" />
+      ) : jobsQuery.isError && !jobsQuery.data ? (
         <Empty
           title="Could not load your jobs"
           description={jobsQuery.error.message}
@@ -304,262 +351,135 @@ export function TriageView({
             </Button>
           }
         />
-      ) : visibleJobs.length === 0 ? (
+      ) : queue.length === 0 && !flying ? (
+        <>
+          <QueueComplete saved={saved} skipped={skipped} onAddJob={openQuickAdd} />
+          {latest ? (
+            <div className="flex items-center justify-center gap-3">
+              {lastVerdict}
+              <Button className="min-h-11" onClick={undoLatest} aria-label="Undo">
+                <Undo2 className="h-4 w-4" />
+                Undo
+              </Button>
+            </div>
+          ) : null}
+        </>
+      ) : jobs.length === 0 && !flying ? (
         <Empty
-          title="Queue complete"
-          description="No jobs are waiting for review. Saved jobs are in the Tracker."
+          title="No matches"
+          description={`${queue.length} waiting, but none match your search and filters.`}
           action={
-            <Button variant="primary" onClick={openQuickAdd}>
-              Add posting
+            <Button
+              variant="primary"
+              onClick={() => {
+                setQuery('');
+                changePrefs({ hideDealbreakers: false });
+                toTop();
+              }}
+            >
+              Clear filters
             </Button>
           }
         />
-      ) : viewMode === 'list' ? (
-        <InsetGroup label="Waiting for review" trailing={visibleJobs.length}>
-          {visibleJobs.map((job, idx) => (
+      ) : mode === 'list' ? (
+        <>
+          <TriageList
+            jobs={jobs}
+            selected={selected}
+            onSelectedChange={setSelected}
+            onVerdict={decide}
+            onBulk={(action, chosen) => void decideMany(action, chosen)}
+            onOpen={onSelectRole}
+          />
+          {latest ? (
+            <div className="paper-floating sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-20 flex items-center justify-between gap-3 rounded-[14px] py-1.5 pl-4 pr-2 md:bottom-3">
+              {lastVerdict}
+              <Button className="min-h-11 shrink-0" onClick={undoLatest} aria-label="Undo">
+                <Undo2 className="h-4 w-4" />
+                Undo
+              </Button>
+            </div>
+          ) : null}
+        </>
+      ) : current || flying ? (
+        <>
+          {/* Cards slide to the screen edge without making the page scroll sideways. */}
+          <div className="-mx-5 -mb-3 overflow-x-clip px-5 pb-4 md:-mx-8 md:px-8">
+            <CardStack
+              dockRef={dockRef}
+              current={current ?? null}
+              next={next}
+              exits={exits}
+              onExitDone={removeExit}
+              onSwipe={decide}
+              onOpen={onSelectRole}
+            />
+          </div>
+          {current ? (
             <div
-              key={job.id}
-              className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between"
+              ref={dockRef}
+              className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 -mx-2 bg-[var(--wp-canvas)] px-2 pb-1 md:bottom-0"
             >
-              <button
-                type="button"
-                onClick={() => onSelectRole(job.id)}
-                className="min-w-0 flex-1 text-left"
-              >
-                <div className="truncate text-sm font-medium text-[var(--wp-ink)]">{job.title}</div>
-                <div className="mt-0.5 truncate text-xs text-[var(--wp-muted)]">
-                  {job.company} · {job.location}
-                </div>
-              </button>
-              <div className="flex shrink-0 items-center gap-2">
-                <span
-                  className={cn(
-                    'font-mono-meta text-sm font-medium',
-                    (job.matchScore ?? 0) >= 75
-                      ? 'text-[var(--wp-accent)]'
-                      : 'text-[var(--wp-muted)]',
-                  )}
-                >
-                  {formatMatchScore(job.matchScore)}
-                </span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setFocusIndex(idx);
-                    setViewMode('queue');
-                  }}
-                >
-                  Focus
-                </Button>
-                <Button size="sm" variant="secondary" onClick={() => onSelectRole(job.id)}>
-                  Inspect
-                </Button>
-              </div>
+              <ActionDock
+                status={lastVerdict}
+                position={index + 1}
+                total={jobs.length}
+                canUndo={Boolean(latest)}
+                onPrevious={() => browse(-1)}
+                onNext={() => browse(1)}
+                onSkip={() => decide('skip', current.id)}
+                onSave={() => decide('shortlist', current.id)}
+                onUndo={undoLatest}
+              />
             </div>
-          ))}
-        </InsetGroup>
-      ) : currentJob ? (
-        <div className="flex flex-1 flex-col justify-between gap-5">
-          {/* Focus Paper Sheet */}
-          <div className="relative flex flex-1 items-center justify-center">
-            <div key={currentJob.id} className="calm-rise w-full max-w-[540px]">
-            <PaperSheet
-              data-testid="focus-card"
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={endDrag}
-              style={{
-                transform: dragging
-                  ? `translate3d(${dragDx}px, 0, 0) rotate(${dragRotate}deg)`
-                  : 'translate3d(0, 0, 0) rotate(0deg)',
-                transition: dragging
-                  ? 'none'
-                  : 'transform 260ms var(--ease-calm), opacity 220ms var(--ease-calm)',
-              }}
-              className="relative w-full touch-pan-y select-none rounded-[20px] p-6"
-            >
-              {/* Drag Intent Labels */}
-              {dragDx > 12 ? (
-                <div
-                  className="pointer-events-none absolute left-6 top-4 text-xs font-medium text-[var(--wp-good)]"
-                  style={{ opacity: dragRatio }}
-                >
-                  Save
-                </div>
-              ) : null}
-              {dragDx < -12 ? (
-                <div
-                  className="pointer-events-none absolute right-6 top-4 text-xs font-medium text-[var(--wp-bad)]"
-                  style={{ opacity: dragRatio }}
-                >
-                  Skip
-                </div>
-              ) : null}
-
-              <div className="space-y-5">
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--wp-muted)]">
-                  <span className="inline-flex items-center gap-1.5">
-                    <MapPin className="h-3.5 w-3.5 shrink-0" />
-                    <span>
-                      {currentJob.company} · {currentJob.location}
-                    </span>
-                  </span>
-                  <CommuteBadge
-                    jobId={currentJob.id}
-                    remotePolicy={currentJob.remotePolicy}
-                    compact
-                  />
-                </div>
-
-                <h2 className="font-serif-title text-2xl leading-tight text-[var(--wp-ink)]">
-                  {currentJob.title}
-                </h2>
-
-                {currentJob.dealbreakerReason ? (
-                  <div className="rounded-[10px] bg-[var(--wp-bad-soft)] px-3 py-2 text-xs text-[var(--wp-bad)]">
-                    Dealbreaker: {currentJob.dealbreakerReason}
-                  </div>
-                ) : null}
-
-                <p className="text-sm leading-relaxed text-[var(--wp-secondary)]">
-                  {currentJob.matchSummary || 'Role queued for evaluation.'}
-                </p>
-
-                {!currentJob.hasDescription ? (
-                  <Badge variant="neutral">
-                    {currentJob.matchScore === null
-                      ? 'No description yet'
-                      : 'No description yet: the score may rest on the title alone'}
-                  </Badge>
-                ) : null}
-
-                <div className="border-t border-[var(--wp-hairline)] pt-3.5">
-                  <FitHorizon
-                    score={currentJob.matchScore}
-                    breakdown={currentJob.scoreBreakdown}
-                    source={currentJob.source}
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => onSelectRole(currentJob.id)}
-                  className="tap-control flex w-full items-center justify-between border-t border-[var(--wp-hairline)] pt-3.5 text-xs font-medium text-[var(--wp-secondary)] hover:text-[var(--wp-ink)]"
-                >
-                  <span>Read posting &amp; deep analysis</span>
-                  <ChevronUp className="h-4 w-4" />
-                </button>
-              </div>
-            </PaperSheet>
-            </div>
-          </div>
-
-          {/* Thumb-Zone Action Dock */}
-          <div className="mx-auto w-full max-w-[540px] space-y-2 pb-1">
-            <div className="grid grid-cols-[1fr_1.3fr] items-center gap-3">
-              <button
-                type="button"
-                onClick={() => commitVerdict('skip')}
-                className="tap-control paper-sheet flex h-12 items-center justify-center gap-2 rounded-[12px] text-sm font-medium text-[var(--wp-secondary)] hover:text-[var(--wp-ink)]"
-              >
-                <X className="h-4 w-4" />
-                <span>Skip</span>
-                <Kbd className="hidden md:inline-flex">X</Kbd>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => commitVerdict('shortlist')}
-                className="tap-control flex h-12 items-center justify-center gap-2 rounded-[12px] bg-[var(--wp-btn-bg)] text-sm font-medium text-[var(--wp-btn-ink)]"
-              >
-                <Bookmark className="h-4 w-4" />
-                <span>Save</span>
-                <Kbd className="hidden border-transparent bg-white/15 text-inherit md:inline-flex">
-                  S
-                </Kbd>
-              </button>
-            </div>
-
-            {visibleJobs.length > 1 ? (
-              <div className="flex items-center justify-between px-1 text-xs text-[var(--wp-muted)]">
-                <button
-                  type="button"
-                  disabled={clampedIndex === 0}
-                  onClick={() => setFocusIndex((i) => Math.max(0, i - 1))}
-                  className="inline-flex items-center gap-1 hover:text-[var(--wp-ink)] disabled:opacity-35"
-                >
-                  <ChevronLeft className="h-3.5 w-3.5" />
-                  <span>Previous</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={clampedIndex >= visibleJobs.length - 1}
-                  onClick={() =>
-                    setFocusIndex((i) => Math.min(i + 1, Math.max(0, visibleJobs.length - 1)))
-                  }
-                  className="inline-flex items-center gap-1 hover:text-[var(--wp-ink)] disabled:opacity-35"
-                >
-                  <span>Next</span>
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ) : null}
-          </div>
-        </div>
+          ) : null}
+        </>
       ) : null}
 
-      {/* Queue Browser Sheet */}
+      <UndoHistory
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        history={history}
+        onUndo={(key) => void takeBack(key)}
+      />
+
       <Sheet
         open={browserOpen}
         onOpenChange={setBrowserOpen}
         ariaLabel="Queue browser"
         maxWidthClass="md:max-w-md"
       >
-        <div className="flex min-h-0 flex-1 flex-col gap-4 p-6">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 p-5">
           <div className="flex items-center justify-between">
             <SheetTitle className="text-base font-medium">Queue browser</SheetTitle>
-            <SheetClose className="tap-control rounded-[10px] bg-[var(--wp-raised)] px-3 py-1 text-xs font-medium">
+            <SheetClose className="tap-control min-h-11 rounded-[10px] bg-[var(--wp-raised)] px-4 text-xs font-medium">
               Done
             </SheetClose>
           </div>
-
-          <div className="paper-sheet flex-1 divide-y divide-[var(--wp-hairline)] overflow-y-auto rounded-[14px]">
-            {visibleJobs.length === 0 ? (
+          <div className="paper-sheet min-h-0 flex-1 divide-y divide-[var(--wp-hairline)] overflow-y-auto rounded-[14px]">
+            {jobs.length === 0 ? (
               <div className="p-6 text-center text-xs text-[var(--wp-muted)]">
                 No jobs waiting for review
               </div>
             ) : (
-              visibleJobs.map((j, idx) => (
+              jobs.map((j) => (
                 <button
                   key={j.id}
                   type="button"
                   onClick={() => {
-                    setFocusIndex(idx);
-                    setViewMode('queue');
+                    setFocusId(j.id);
+                    changePrefs({ mode: 'deck' });
                     setBrowserOpen(false);
                   }}
                   className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-[var(--wp-raised)]/45"
                 >
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium text-[var(--wp-ink)]">
-                      {j.title}
-                    </div>
-                    <div className="truncate text-xs text-[var(--wp-muted)]">
-                      {j.company} · {j.location}
-                    </div>
-                  </div>
-                  <span
-                    className={cn(
-                      'font-mono-meta shrink-0 text-sm font-medium',
-                      (j.matchScore ?? 0) >= 75
-                        ? 'text-[var(--wp-accent)]'
-                        : 'text-[var(--wp-muted)]',
-                    )}
-                  >
-                    {j.matchScore !== null ? Math.round(j.matchScore) : '—'}
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium">{j.title}</span>
+                    <span className="block truncate text-xs text-[var(--wp-muted)]">
+                      {[j.company, j.location].filter(Boolean).join(' · ')}
+                    </span>
                   </span>
+                  <ScoreRing score={j.matchScore} size={36} />
                 </button>
               ))
             )}

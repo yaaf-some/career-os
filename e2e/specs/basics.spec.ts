@@ -24,7 +24,8 @@ test('the card follows a drag, and releasing it far right saves', async ({ page 
   const y = start.y + 30;
   await page.mouse.move(x, y);
   await page.mouse.down();
-  await page.mouse.move(x + 140, y, { steps: 8 });
+  // Past the commit line, which is about a third of the card.
+  await page.mouse.move(x + 240, y, { steps: 8 });
   const dragged = (await card.boundingBox())!;
   expect(dragged.x - start.x).toBeGreaterThan(100);
 
