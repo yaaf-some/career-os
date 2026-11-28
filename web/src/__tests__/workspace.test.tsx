@@ -240,4 +240,12 @@ describe('live Today / Tracker / quick-add / sync', () => {
       .catch((e: unknown) => e);
     expect(describeGoogleError(err2)).toBe('Connect Google in Settings first.');
   });
+
+  it('health check hits the API /healthz route', async () => {
+    const calls = mockFetch(() =>
+      json({ status: 'ok', service: 'career-os-api', version: '0.1.0', db_ok: true }),
+    );
+    expect(await careerApi.healthz()).toEqual({ ok: true, service: 'career-os-api', version: '0.1.0' });
+    expect(calls[0].url).toBe('/healthz');
+  });
 });

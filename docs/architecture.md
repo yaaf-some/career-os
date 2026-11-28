@@ -45,4 +45,11 @@ flowchart TB
   - **Linear (optional):** with `LINEAR_API_KEY` and `LINEAR_TEAM_ID` set, `PATCH /api/tracker` moving a job to `applied` creates exactly one Linear issue. `applications.linear_issue_id` is claimed atomically; on failure the claim is released and the stage change still saves.
   - The API uses the DB's stage names (`shortlisted/recruiter/interviewing/closed`); `web/src/api/jobs.ts` converts them to and from the UI's names (`saved/screen/interview/archived`).
 
+## Deployment (JOB-7)
+
+- **Host:** the M2 Mac mini runs compose project `career-os` from the GHCR `latest` images (`restart: unless-stopped`; Docker Desktop starts at login). The ai-bridge runs under launchd.
+- **Access:** `tailscale serve` maps `https://<host>.<tailnet>.ts.net:8080` to `127.0.0.1:8080`. Requests need the tailnet's `Tailscale-User-Login` to equal `ALLOWED_TAILSCALE_USER`: no header gets 401, another user gets 403.
+- **Backups:** `scripts/backup-db.sh`, run nightly by launchd (`com.career-os.backup`), streams a `VACUUM INTO` snapshot out of the distroless container (`career-os-api --backup-stdout`), checks `PRAGMA integrity_check`, and keeps 14 days in `~/Backups/career-os/` (mode 700).
+- **Private data:** the private career-data repo is cloned outside the repo and mounted read-only at `/data` (`DATA_DIR`).
+
 - **Persistence:** Application state resides in the named Docker volume `career_os_db` (`/var/lib/career-os`) using SQLite WAL mode. Candidate source files are mounted read-only at `/data`.

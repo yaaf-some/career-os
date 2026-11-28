@@ -24,6 +24,12 @@ async fn main() -> anyhow::Result<()> {
         std::process::exit(if healthcheck() { 0 } else { 1 });
     }
 
+    // Nightly backup (scripts/backup-db.sh): snapshot the DB and stream it to
+    // stdout, since the distroless image has no shell and /tmp is tmpfs.
+    if std::env::args().skip(1).any(|a| a == "--backup-stdout") {
+        return backup_to_stdout().await;
+    }
+
     if let Some(export_path) = parse_export_openapi_arg() {
         export_openapi_to_file(&export_path)?;
         return Ok(());
@@ -78,6 +84,20 @@ async fn main() -> anyhow::Result<()> {
     .with_graceful_shutdown(shutdown_signal(shutdown_tx))
     .await?;
 
+    Ok(())
+}
+
+async fn backup_to_stdout() -> anyhow::Result<()> {
+    use std::io::Write;
+    let config = AppConfig::from_env();
+    let tmp = std::env::temp_dir().join(format!("career-os-backup-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&tmp);
+    career_os_api::db::backup_into(&config.database_url, &tmp).await?;
+    let bytes = std::fs::read(&tmp);
+    let _ = std::fs::remove_file(&tmp);
+    let mut out = std::io::stdout().lock();
+    out.write_all(&bytes?)?;
+    out.flush()?;
     Ok(())
 }
 
