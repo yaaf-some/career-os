@@ -14,6 +14,7 @@
 - **Public repo rule:** Zero PII (real emails, phone numbers, physical addresses, personal domains) and zero credentials may be committed to git.
 - **Automated scanning:** `.gitleaks.toml` and the `security` CI job scan commits for leaked tokens and secrets while allowlisting explicit documented placeholders (`.env.example`, `deploy/launchd/*.plist.example`).
 - **Encrypted OAuth storage:** Google OAuth tokens are encrypted at rest in SQLite using `TOKEN_ENCRYPTION_KEY` (32-byte base64 key) rather than stored in plaintext.
+- **Backups:** nightly SQLite snapshots in `~/Backups/career-os/` (directory 0700, files 0600) contain the job pipeline and the encrypted Google tokens. The tokens can't be read without `TOKEN_ENCRYPTION_KEY`, which stays only in `.env`, not in backups.
 - **Google scopes:** `gmail.readonly`, `gmail.compose`, `drive.file`, `calendar.events` and `userinfo.email`. Gmail is **drafts only**: the API creates and updates drafts and never sends; you send from Gmail ([ADR-003](adr/ADR-003-gmail-drafts-never-send.md)). Calendar reminders are created only when you click **Add Calendar Reminder**.
 - **Linear:** when configured, only the role title, company and posting URL are sent to Linear (one issue per application marked applied). No email text or candidate data is sent.
 

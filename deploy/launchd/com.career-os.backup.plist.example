@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Nightly career-os database backup (03:30) as a per-user LaunchAgent.
+  Replace `your-user`, copy to ~/Library/LaunchAgents/, then:
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.career-os.backup.plist
+  Run once now:   launchctl kickstart gui/$(id -u)/com.career-os.backup
+  Log:            ~/Library/Logs/career-os-backup.log
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.career-os.backup</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/your-user/Code/career-os/scripts/backup-db.sh</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- docker: Docker Desktop puts it in ~/.docker/bin (or /usr/local/bin if
+         "system" CLI tools are enabled); sqlite3 ships at /usr/bin. -->
+    <key>PATH</key>
+    <string>/Users/your-user/.docker/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    <key>CAREER_OS_BACKUP_DIR</key>
+    <string>/Users/your-user/Backups/career-os</string>
+    <key>CAREER_OS_BACKUP_KEEP_DAYS</key>
+    <string>14</string>
+  </dict>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>3</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/your-user/Library/Logs/career-os-backup.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/your-user/Library/Logs/career-os-backup.log</string>
+</dict>
+</plist>

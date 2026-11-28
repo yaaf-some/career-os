@@ -7,7 +7,8 @@
 
 - **`JOB-5` Verified + archived 2026-11-27** (`project/changes/archive/JOB-5-ai-bridge/`). #12/#13/#14 merged. AC12 passed on the M2 under Docker Desktop. statusLine hook installed (Usage Bar live).
 - **`JOB-6` in progress** (`project/changes/JOB-6-live-google-sync/`, approved 2026-11-27: Q1 `gmail.compose` yes, Q2 Linear yes, Google sync every 12 h). PR A `feat/job-6a-read`: linking, Today, Tracker, quick-add, job comms, Sync now, web read side.
-- **Exact Next Concrete Step:** merge PR B (#18) then PR C `feat/job-6c-linear` (stacked on B); then AC11 live with Yaaf: reconnect Google (adds `gmail.compose`), Sync now, link check, real draft + reminder, then verify-archive JOB-6.
+- **`JOB-7` in progress** (`project/changes/JOB-7-mac-mini-cutover/`): live compose project `career-os` on this Mac, at `https://<host>:8080` on the tailnet. Old career-ops sources (56, disabled) and the pipeline (36 jobs) imported. Backups via `scripts/backup-db.sh`.
+- **Exact Next Concrete Step:** Yaaf adds the Google client ID and secret to `.env` and the redirect URI in GCP (JOB-7 Q1), then JOB-6 AC11 live. Install the backup LaunchAgent and run the restore drill once the `--backup-stdout` image is released. Then route ATS scans through the filtered scanner sidecar before enabling sources.
 
 ## Done This Session
 
@@ -32,6 +33,7 @@
 - GCP `Career-Ops` stays in Testing mode. Cloudflare: don't touch.
 
 ## Standing Gotchas
+- **Live instance:** compose project `career-os` (`docker compose -p career-os …`); the API rejects localhost calls without the `Tailscale-User-Login` header, so script against the tailnet URL. The in-app browser can't load tailnet assets; verify with `curl`.
 - **Stacked PRs + squash merges:** merging `origin/main` into the next branch conflicts on lines it re-edited; keep the branch side when it is a superset, confirm `git diff HEAD^1 HEAD` is empty, push. Never rebase.
 - Auto mode blocks: editing `~/.claude/settings.json`, adding the `automerge` label. Ask Yaaf for those.
 - **Never force-push (incl. `--force-with-lease`), never rebase pushed branches** — merge `origin/main` in instead; others' PRs: `gh api -X PUT repos/<owner>/<repo>/pulls/<n>/update-branch`. Never merge without Yaaf's explicit OK.

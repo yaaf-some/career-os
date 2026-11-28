@@ -34,7 +34,7 @@ cp .env.example .env
 ```
 
 Edit `.env` and set at minimum:
-- `ALLOWED_TAILSCALE_USER` — your Tailscale login email (e.g. `you@example.com`)
+- `ALLOWED_TAILSCALE_USER` — your Tailscale login (`tailscale status --json` → your `LoginName`, e.g. `you@example.com`). Other users on your tailnet get 403.
 - `AI_BRIDGE_TOKEN` — the shared secret from step 3 (`openssl rand -hex 32`); leave empty until the bridge is set up
 - `TOKEN_ENCRYPTION_KEY` — base64-encoded 32-byte key (`openssl rand -base64 32`); needed for Google OAuth. Leave empty to run without it (an invalid value stops the app at startup)
 - `DATA_DIR` (optional) — host path to your private candidate data directory (mounted read-only at `/data`)
@@ -42,7 +42,7 @@ Edit `.env` and set at minimum:
 ### 2. Start containers
 
 ```bash
-docker compose up -d
+docker compose -p career-os pull && docker compose -p career-os up -d
 ```
 
 Published GHCR images are `linux/arm64` only (Apple Silicon / ARM Linux). On an x86_64 host, build locally instead: `docker compose up -d --build`.
@@ -50,10 +50,10 @@ Published GHCR images are `linux/arm64` only (Apple Silicon / ARM Linux). On an 
 Expose the local port privately on your tailnet:
 
 ```bash
-tailscale serve --bg http://127.0.0.1:8080
+tailscale serve --bg --https=8080 http://127.0.0.1:8080
 ```
 
-Your instance will be reachable only by your tailnet user at `https://your-mac-mini.your-tailnet.ts.net`.
+Your instance will be reachable only on your tailnet at `https://your-mac-mini.your-tailnet.ts.net:8080` (use `tailscale serve --bg http://127.0.0.1:8080` instead for the root path if nothing else is served there). Set `GOOGLE_REDIRECT_URI` to that origin plus `/api/auth/google/callback` and add the same URI to your Google OAuth client.
 
 ### 3. Set up `ai-bridge` (macOS launchd)
 
@@ -122,6 +122,29 @@ Optional Linear ops: set `LINEAR_API_KEY` and `LINEAR_TEAM_ID` (team UUID) and m
 ```bash
 docker compose up -d
 ```
+
+### 5. Operate
+
+| Task | Command |
+| --- | --- |
+| Update to the latest images | `docker compose -p career-os pull && docker compose -p career-os up -d` |
+| Status / logs | `docker compose -p career-os ps` · `docker compose -p career-os logs -f app` |
+| Import an old career-ops data dir (sources are created **disabled**) | `node scanner/tools/import-career-ops.mjs ~/career-data https://your-mac-mini.your-tailnet.ts.net:8080` (`--dry-run` to preview, `--enable-sources` to enable) |
+| Back up now | `scripts/backup-db.sh` (snapshot → `~/Backups/career-os/`, integrity-checked, 14 days kept) |
+| Nightly backup | copy `deploy/launchd/com.career-os.backup.plist.example` to `~/Library/LaunchAgents/com.career-os.backup.plist`, replace `your-user`, `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.career-os.backup.plist` |
+| Rotate the bridge token | new `openssl rand -hex 32` in both the bridge plist and `.env`; `launchctl kickstart -k gui/$(id -u)/com.career-os.ai-bridge`; `docker compose -p career-os up -d` |
+| Google reconnect | Testing mode expires every 7 days: Settings → Reconnect Google OAuth |
+
+**Restore a backup** (replaces the live database):
+
+```bash
+docker compose -p career-os stop app
+docker run --rm -v career-os_career_os_db:/v -v ~/Backups/career-os:/b:ro alpine:3 \
+  sh -c 'cp /b/career-os-YYYYMMDDTHHMMSSZ.db /v/career-os.db && rm -f /v/career-os.db-wal /v/career-os.db-shm'
+docker compose -p career-os start app
+```
+
+Restores need the same `TOKEN_ENCRYPTION_KEY` to read stored Google tokens (otherwise reconnect Google).
 
 ## Repository Structure
 

@@ -187,13 +187,20 @@ function demoSyncRun(): ApiSyncRun {
 }
 
 export const careerApi = {
-  healthz(): Promise<HealthResponse> {
-    return requestWithFallback('/api/healthz', { method: 'GET' }, () => ({
+  /** `GET /healthz` (API: `{status, service, version, db_ok}`). */
+  async healthz(): Promise<HealthResponse> {
+    const raw = await requestWithFallback<Record<string, unknown>>('/healthz', { method: 'GET' }, () => ({
       ok: true,
       service: 'career-os-demo',
       version: '0.1.0',
       demoMode: true,
     }));
+    if ('demoMode' in raw) return raw as unknown as HealthResponse;
+    return {
+      ok: raw.status === 'ok' && raw.db_ok !== false,
+      service: String(raw.service ?? ''),
+      version: String(raw.version ?? ''),
+    };
   },
 
   getAiUsage(): Promise<AiUsageResponse> {
