@@ -5,13 +5,13 @@
 
 ## Current Focus
 
-- **`JOB-11` Implemented (`feat/job-11-hardening`, PR `#36`):** hardening follow-ups (live API errors over demo fallback, persisted & validated commute prefs, `GET /api/integrations/linear`, OAuth callback 303 redirect + Settings notice, `needs_reply` automated-mail filter, `docs/architecture.md`) implemented with `CI Gate` green.
-- **Exact Next Concrete Step:** owner approval & merge of PR `#36` -> deploy updated `career-os-app` container on M2 & `curl` live endpoints -> run `project-verify-archive` for `JOB-11`.
+- **`JOB-11` Shipped, Verified & Archived:** PR `#36` merged to `main` (`d952d56`), `career-os-app` deployed live on M2 (`Release Container Images` `46170896112`), verified via live endpoints, and archived under `project/changes/archive/JOB-11-hardening-followups/`.
+- **Exact Next Concrete Step:** merge `docs/job-11-verify-archive`, then propose (`project-propose`) `JOB-12` (`/api/jobs/{id}/tailor`: resume/cover-letter Google Docs grounded in `DATA_DIR` + `project_docs`) or Ashby `embed: true` source opt-in.
 
 ## Active Branches / In-Flight Work
 
-- `main` (`a469075`): `JOB-9` + `JOB-10` live on M2 (`ai-bridge` + `career-os-app`).
-- `feat/job-11-hardening` (PR `#36`): open, `CI Gate` green, awaiting owner merge approval.
+- `main` (`d952d56`): `JOB-9`–`JOB-11` live on M2 (`ai-bridge` + `career-os-app`).
+- `docs/job-11-verify-archive`: archives `JOB-11` and refreshes `project/STATE.md` (awaiting owner merge approval).
 
 ## Container Baseline
 
@@ -19,15 +19,16 @@
 
 ## Upcoming Priorities
 
-1. Merge PR `#36`, deploy & verify `JOB-11` on M2, and archive `JOB-11`.
-2. Implement `/api/jobs/{id}/tailor` (`JOB-12`: resume/cover-letter Google Docs grounded in `DATA_DIR` + `project_docs`).
-3. Expose Ashby `embed: true` opt-in on `career-os` sources (scanner already supports it; deferred from `JOB-11`) & optional Linear sync (`JOB-8`–`JOB-11`).
+1. Implement `/api/jobs/{id}/tailor` (`JOB-12`: resume/cover-letter Google Docs grounded in `DATA_DIR` + `project_docs`).
+2. Expose Ashby `embed: true` opt-in on `career-os` sources (scanner already supports it; deferred from `JOB-11`).
+3. Optional Linear sync: backfill `JOB-8`–`JOB-11` in team `JOB` (`JOB-1`–`JOB-7` currently exist).
 
 ## Recent Decisions
 
 - ADR-001 split-plane; ADR-002 tool-less bridge (`agy` custom agent + deny hook + deny settings + watchdog; stdin prompts; re-run `cli_smoke -- --ignored` after CLI upgrades).
 - `JOB-9` capability tiers (`fast`/`balanced`/`deep`, `>= 75.0` escalation) & `auto` equal Claude/Gemini balancing live.
 - `JOB-10` Warm Paper + Terracotta mobile-first PWA (`@base-ui/react` primitives, `@tanstack/react-table` v9, 4-Part Fit Horizon, Focus Triage + Undo toast, `⌘K` Quick Capture) synced to `docs/architecture.md` & `README.md`.
+- `JOB-11` hardening: live 4xx/5xx over demo fallback (`tailor` excepted until `JOB-12`), persisted/validated commute prefs, `GET /api/integrations/linear`, OAuth 303 redirect, `needs_reply` automated filter.
 - GCP stays in Testing mode; `GOOGLE_DRIVE_PROJECTS_FOLDER_ID` scoped strictly to folder reads; Cloudflare untouched.
 
 ## Standing Gotchas
