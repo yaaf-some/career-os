@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SettingsView } from '@/routes/SettingsView';
+import { FilesView } from '@/features/files/FilesView';
+import { SettingsView } from '@/features/settings/SettingsView';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -12,7 +13,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('SettingsView Candidate Profile & Project Docs panel', () => {
+describe('Candidate profile on Files and Settings', () => {
   beforeEach(() => {
     vi.stubEnv('VITE_DEMO_MODE', 'false');
   });
@@ -92,12 +93,13 @@ describe('SettingsView Candidate Profile & Project Docs panel', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={client}>
+        <FilesView />
         <SettingsView />
       </QueryClientProvider>,
     );
 
-    await waitFor(() => expect(screen.getByTestId('profile-status-card')).toBeTruthy());
-    expect(screen.getByText('Profile Loaded')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('Profile Loaded')).toBeTruthy());
+    expect(screen.getByTestId('profile-status-card')).toBeTruthy();
     expect(screen.getByText('profile/targeting.yml')).toBeTruthy();
     expect(screen.getByText('Preview Platform Report')).toBeTruthy();
     expect(screen.getByText('Digested')).toBeTruthy();
@@ -105,7 +107,7 @@ describe('SettingsView Candidate Profile & Project Docs panel', () => {
     fireEvent.click(screen.getByRole('button', { name: /sync project docs/i }));
     await waitFor(() => expect(screen.getByText(/Synced 1 · Digested 1/)).toBeTruthy());
 
-    fireEvent.click(screen.getByRole('button', { name: /rescore pending jobs/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /rescore pending jobs/i }));
     await waitFor(() => expect(screen.getByText(/Reset 12 unapplied jobs · Scored 10/)).toBeTruthy());
 
     expect(calls).toContain('POST /api/profile/sync-docs');

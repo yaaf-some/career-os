@@ -37,7 +37,8 @@ test('a missing description can be pasted in and is cleaned', async ({ page }, i
   await page.getByRole('button', { name: 'Browse queue' }).click();
   await page.getByRole('button', { name: /DevOps Engineer/ }).click();
   await page.getByRole('button', { name: /Read posting/ }).click();
-  const sheet = page.getByRole('dialog');
+  await expect(page).toHaveURL(/\/jobs\//);
+  const sheet = page.getByTestId('job-page');
 
   await sheet.getByRole('button', { name: /^(Paste|Edit)$/ }).click();
   await sheet

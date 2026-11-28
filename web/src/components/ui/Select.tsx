@@ -26,6 +26,8 @@ export function Select<T extends string>({
 }) {
   return (
     <BaseSelect.Root
+      // Without `items`, the trigger shows the raw value instead of its label.
+      items={options as SelectOption<T>[]}
       value={value}
       disabled={disabled}
       onValueChange={(next) => {

@@ -12,9 +12,9 @@ import {
   type ApiTrackerEntry,
 } from '@/api/jobs';
 import { GoogleSyncPanel } from '@/components/GoogleSyncPanel';
-import { SourcesView } from '@/routes/SourcesView';
-import { TodayView } from '@/routes/TodayView';
-import { TrackerView } from '@/routes/TrackerView';
+import { SourcesView } from '@/features/sources/SourcesView';
+import { TodayView } from '@/features/today/TodayView';
+import { TrackerView } from '@/features/jobs/PipelineView';
 // Written by the API's `workspace_fixtures_match_web` test.
 import jobFixture from './fixtures/jobs.json';
 import todayFixture from './fixtures/today.json';

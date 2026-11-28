@@ -2,11 +2,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { RoleDetailSheet } from '@/components/RoleDetailSheet';
+import { JobPageHarness } from './jobPageHarness';
 import { ToastProvider } from '@/components/ui';
 import { ThemeProvider } from '@/lib/theme';
-import { TodayView } from '@/routes/TodayView';
-import { TriageView } from '@/routes/TriageView';
+import { TodayView } from '@/features/today/TodayView';
+import { TriageView } from '@/features/triage/TriageView';
 
 function renderWithProviders(ui: ReactElement) {
   const client = new QueryClient({
@@ -113,19 +113,19 @@ describe('TriageView Focus Paper Sheet & Fit Horizon', () => {
     await waitFor(() => expect(screen.getByText(/Saved Northstar Systems/i)).toBeTruthy());
   });
 
-  it('opens RoleDetailSheet tabs cleanly', async () => {
-    renderWithProviders(<RoleDetailSheet jobId="job-101" onClose={() => {}} />);
+  it('opens job page tabs cleanly', async () => {
+    renderWithProviders(<JobPageHarness jobId="job-101" />);
 
     await waitFor(() => {
       expect(screen.getByText('Staff Systems Engineer — Agent Runtime')).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Deep analysis' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Fit' }));
     await waitFor(() => {
       expect(screen.getByText(/Deep Analysis \(Blocks A–G\)/i)).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Comms & reminders' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Activity' }));
     await waitFor(() => {
       expect(screen.getByText('Linked Gmail threads')).toBeTruthy();
     });

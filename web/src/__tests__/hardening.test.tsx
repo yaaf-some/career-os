@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { careerApi, isDemoModeActive, linearStatusFromApi, settingsFromApi } from '@/api/client';
 import { ToastProvider } from '@/components/ui';
 import { ThemeProvider } from '@/lib/theme';
-import { SettingsView } from '@/routes/SettingsView';
+import { SettingsView } from '@/features/settings/SettingsView';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });

@@ -1,3 +1,4 @@
+import { ApiError, request } from './core';
 import { demoStore } from './demoData';
 import {
   jobDetailFromApi,
@@ -51,22 +52,12 @@ import type {
   UpdateTrackerRequest,
 } from './types';
 
+export { ApiError };
+
 let usingDemoFallback = false;
 
 export function isDemoModeActive(): boolean {
   return usingDemoFallback;
-}
-
-/** Error from the API's `{error, code}` body. */
-export class ApiError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly code: string | null,
-  ) {
-    super(message);
-    this.name = 'ApiError';
-  }
 }
 
 /** One-line message for a failed Google call (sync, draft, reminder). */
@@ -116,19 +107,6 @@ export function describeTailorError(err: unknown): string {
   return err instanceof Error ? err.message : 'Tailoring failed';
 }
 
-async function toApiError(res: Response): Promise<ApiError> {
-  const text = await res.text();
-  try {
-    const body = JSON.parse(text) as { error?: unknown; code?: unknown };
-    if (typeof body.error === 'string') {
-      return new ApiError(body.error, res.status, typeof body.code === 'string' ? body.code : null);
-    }
-  } catch {
-    // not JSON
-  }
-  return new ApiError(text || `API request failed (${res.status})`, res.status, null);
-}
-
 /**
  * Calls the API. `fallback` supplies demo data only in a `VITE_DEMO_MODE` build;
  * a live app always shows the real error.
@@ -143,25 +121,7 @@ async function requestWithFallback<T>(
     return fallback();
   }
   usingDemoFallback = false;
-
-  let res: Response;
-  try {
-    res = await fetch(path, {
-      ...init,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(init?.headers ?? {}),
-      },
-    });
-  } catch {
-    throw new ApiError(
-      'Cannot reach Career OS. Check your connection and Tailscale.',
-      0,
-      'NETWORK_ERROR',
-    );
-  }
-  if (!res.ok) throw await toApiError(res);
-  return (await res.json()) as T;
+  return request<T>(path, init);
 }
 
 /** The server caps one page at 200 jobs. */
@@ -707,6 +667,7 @@ export function toTriageRequest(payload: TriageActionRequest): { action: ApiTria
     shortlist: 'shortlist',
     skip: 'skip',
     reject: 'blacklist',
+    restore: 'restore',
   };
   return { action: map[payload.action] };
 }

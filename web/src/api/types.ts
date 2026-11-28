@@ -76,6 +76,11 @@ export interface JobSummary {
   url: string;
   triageStatus: TriageStatus;
   stage: PipelineStage;
+  /** False until the job has an application (saved or later). */
+  inPipeline: boolean;
+  tags: string[];
+  postedAt: string | null;
+  archivedAt: string | null;
   /** 0–100; null until fast triage scoring has run. */
   matchScore: number | null;
   /** Null for legacy scored rows without a 4-dimension breakdown. */
@@ -200,7 +205,7 @@ export interface JobsListResponse {
 }
 
 export interface TriageActionRequest {
-  action: 'shortlist' | 'skip' | 'reject';
+  action: 'shortlist' | 'skip' | 'reject' | 'restore';
   reason?: string;
 }
 
